@@ -929,9 +929,9 @@ h3 + table,
 	max-height: 32mm;
 	object-fit: contain;
 	margin: 0 auto 0;
-	transform: translateY(28px) rotate(-4deg);
-	transform-origin: center bottom;
-	filter: contrast(1.35);
+	transform: translateY(34px) rotate(-4deg) scale(var(--signature-auto-scale, 1));
+	transform-origin: center center;
+	filter: contrast(1.5);
 }
 
 @media print {

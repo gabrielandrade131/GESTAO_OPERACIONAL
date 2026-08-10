@@ -4111,6 +4111,7 @@ def _build_rdo_page_context(request, rdo_id):
         pass
 
     signature_data_uri = None
+    signature_auto_scale = 1
     try:
         approved_rdo = RDO.objects.select_related('aprovado_por__assinatura_rdo').get(pk=rdo_id)
         if approved_rdo.aprovado and approved_rdo.aprovado_por_id:
@@ -4119,6 +4120,18 @@ def _build_rdo_page_context(request, rdo_id):
                 with signature.imagem_processada.open('rb') as signature_file:
                     from .user_signatures import transparent_signature_png
                     transparent_png = transparent_signature_png(signature_file.read())
+                    try:
+                        from PIL import Image
+                        with Image.open(BytesIO(transparent_png)) as normalized_signature:
+                            width, height = normalized_signature.size
+                        aspect_ratio = width / max(height, 1)
+                        if aspect_ratio < 2:
+                            signature_auto_scale = round(
+                                min(1.55, 2 / max(aspect_ratio, 0.5)),
+                                2,
+                            )
+                    except Exception:
+                        signature_auto_scale = 1
                     encoded_signature = base64.b64encode(transparent_png).decode('ascii')
                 signature_data_uri = f'data:image/png;base64,{encoded_signature}'
     except Exception:
@@ -4132,6 +4145,7 @@ def _build_rdo_page_context(request, rdo_id):
         'ec_saidas': ec_saidas,
         'inline_css': _get_rdo_inline_css(),
         'approval_signature_data_uri': signature_data_uri,
+        'approval_signature_scale': signature_auto_scale,
     }
     try:
         tanques_list = rdo_payload.get('tanques') or []

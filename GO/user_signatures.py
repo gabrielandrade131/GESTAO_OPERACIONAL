@@ -15,11 +15,17 @@ def _crop_signature(image):
     white = Image.new('RGBA', image.size, (255, 255, 255, 255))
     flattened = Image.alpha_composite(white, image).convert('RGB')
     grayscale = ImageOps.grayscale(flattened)
-    ink_mask = grayscale.point(lambda value: 255 if value < 245 else 0)
+    # Delimita o carimbo pelos traços realmente visíveis. Usar tons próximos de
+    # branco aqui fazia riscos muito claros ampliarem a borda e diminuírem o
+    # conteúdo principal no PDF.
+    ink_mask = grayscale.point(lambda value: 255 if value < 225 else 0)
     bbox = ink_mask.getbbox()
     if not bbox:
+        ink_mask = grayscale.point(lambda value: 255 if value < 245 else 0)
+        bbox = ink_mask.getbbox()
+    if not bbox:
         raise ValidationError('O arquivo não contém uma assinatura visível.')
-    margin = max(4, int(min(image.size) * 0.015))
+    margin = max(5, int(min(image.size) * 0.03))
     left, top, right, bottom = bbox
     bbox = (
         max(0, left - margin),
@@ -41,9 +47,9 @@ def _make_white_background_transparent(image):
 
 
 def transparent_signature_png(contents):
-    """Normaliza também imagens antigas que ainda tenham fundo branco."""
+    """Recorta e normaliza também assinaturas antigas ao montar o RDO."""
     image = Image.open(io.BytesIO(contents))
-    transparent = _make_white_background_transparent(image)
+    transparent = _crop_signature(image)
     output = io.BytesIO()
     transparent.save(output, format='PNG', optimize=True)
     return output.getvalue()

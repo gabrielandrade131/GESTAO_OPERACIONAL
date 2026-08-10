@@ -31,6 +31,28 @@ def _png_signature():
     return output.getvalue()
 
 
+def _jpeg_signature_with_faint_stray_line():
+    image = Image.new('RGB', (700, 360), 'white')
+    draw = ImageDraw.Draw(image)
+    draw.text((90, 210), 'ASSINATURA TESTE', fill='black')
+    draw.line((80, 250, 300, 205, 390, 245), fill='navy', width=6)
+    draw.line((300, 205, 650, 15), fill=(242, 242, 250), width=2)
+    output = io.BytesIO()
+    image.save(output, format='JPEG', quality=95)
+    return output.getvalue()
+
+
+def _tall_signature():
+    image = Image.new('RGB', (260, 440), 'white')
+    draw = ImageDraw.Draw(image)
+    draw.text((55, 180), 'CARIMBO TESTE', fill='black')
+    draw.line((120, 35, 90, 390), fill='navy', width=7)
+    draw.line((45, 250, 210, 205), fill='navy', width=6)
+    output = io.BytesIO()
+    image.save(output, format='PNG')
+    return output.getvalue()
+
+
 def _pdf_signature():
     output = io.BytesIO()
     document = canvas.Canvas(output, pagesize=(400, 160))
@@ -132,6 +154,41 @@ class RdoUserSignatureTests(TestCase):
         signature = AssinaturaUsuario.objects.get(usuario=self.approver)
         self.assertTrue(signature.arquivo_original.name.endswith('.png'))
         self.assertTrue(signature.imagem_processada.name.endswith('.png'))
+
+    def test_faint_stray_line_does_not_shrink_signature_content(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse('administracao_atualizar_assinatura', args=[self.approver.id]),
+            {
+                'assinatura': SimpleUploadedFile(
+                    'assinatura-com-risco.jpg',
+                    _jpeg_signature_with_faint_stray_line(),
+                    content_type='image/jpeg',
+                )
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        signature = AssinaturaUsuario.objects.get(usuario=self.approver)
+        with signature.imagem_processada.open('rb') as processed_file:
+            processed = Image.open(processed_file)
+            self.assertLess(processed.width, 450)
+            self.assertLess(processed.height, 180)
+
+    def test_tall_signature_receives_automatic_zoom(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse('administracao_atualizar_assinatura', args=[self.approver.id]),
+            {
+                'assinatura': SimpleUploadedFile(
+                    'assinatura-alta.png',
+                    _tall_signature(),
+                    content_type='image/png',
+                )
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        document_response = self.client.get(reverse('rdo_page', args=[self.rdo.id]))
+        self.assertContains(document_response, '--signature-auto-scale: 1.55;')
 
     def test_pdf_signature_is_converted_and_used_by_rdo_document(self):
         self.client.force_login(self.admin)
