@@ -103,6 +103,20 @@ def user_can_open_or_edit_rdo(user):
         return False
 
 
+def user_can_open_rdo(user):
+    """Return whether the user may open the RDO editor UI for consultation."""
+    try:
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        if getattr(user, 'is_superuser', False):
+            return True
+        if user_has_read_only_access(user):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def user_can_delete_rdo(user):
     try:
         if not user or not getattr(user, 'is_authenticated', False):

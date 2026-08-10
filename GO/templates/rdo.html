@@ -11,7 +11,7 @@
      <link rel="stylesheet" href="{% static 'css/rdo.report.css' %}">
      <link rel="stylesheet" href="{% static 'css/notifications.css' %}?v=20260727a">
      {# O formulário Gerar RDO é compartilhado por supervisores e administradores. #}
-     <link rel="stylesheet" href="{% static 'css/rdo.supervisor.css' %}?v=20260727d">
+     <link rel="stylesheet" href="{% static 'css/rdo.supervisor.css' %}?v=20260810b">
      {% if is_supervisor %}
      <link rel="stylesheet" href="{% static 'css/rdo.mobile.css' %}?v=20260406b">
      {% endif %}
@@ -157,7 +157,7 @@
             
             </nav>
             
-            <div class="site-wrapper{% if not is_supervisor %} rdo-admin-page{% endif %}" id="site-wrapper" data-is-supervisor="{% if is_supervisor %}true{% else %}false{% endif %}" data-can-delete-rdo="{% if can_delete_rdo %}true{% else %}false{% endif %}" data-can-edit-system="{% if can_edit_system %}true{% else %}false{% endif %}" data-can-open-or-edit-rdo="{% if can_open_or_edit_rdo %}true{% else %}false{% endif %}">
+            <div class="site-wrapper{% if not is_supervisor %} rdo-admin-page{% endif %}" id="site-wrapper" data-is-supervisor="{% if is_supervisor %}true{% else %}false{% endif %}" data-can-delete-rdo="{% if can_delete_rdo %}true{% else %}false{% endif %}" data-can-edit-system="{% if can_edit_system %}true{% else %}false{% endif %}" data-can-open-rdo="{% if can_open_rdo %}true{% else %}false{% endif %}" data-can-edit-rdo="{% if can_open_or_edit_rdo %}true{% else %}false{% endif %}" data-can-open-or-edit-rdo="{% if can_open_or_edit_rdo %}true{% else %}false{% endif %}">
                 <header>
                     <div class="header-content">
                         <div class="hamburger" id="hamburger-menu" aria-label="Abrir menu" tabindex="0">
@@ -572,8 +572,8 @@
                             <th style="text-align:center">APROVAR</th>
                             <th>APROVADO POR</th>
                             <th>DATA APROVAÇÃO</th>
-                            {% if can_open_or_edit_rdo %}
-                            <th>EDITAR</th>
+                            {% if can_open_rdo %}
+                            <th>{% if can_open_or_edit_rdo %}EDITAR{% else %}VISUALIZAR{% endif %}</th>
                             {% endif %}
                             {% if can_delete_rdo %}
                             <th style="text-align:center">EXCLUIR</th>
@@ -644,10 +644,10 @@
                             <td>
                                 <span class="rdo-approved-em-display" id="rdo-approved-em-{{ r.id }}">{% if r.aprovado_em %}{{ r.aprovado_em|date:"d/m/Y H:i" }}{% else %}-{% endif %}</span>
                             </td>
-                            {% if can_open_or_edit_rdo %}
+                            {% if can_open_rdo %}
                             <td class="action-cell">
-                                <button class="action-btn edit allow-edit" type="button" data-tanque-id="{{ r.tanque_id|default:'' }}">
-                                        <span class="material-icons" aria-hidden="true">edit</span>
+                                <button class="action-btn edit allow-edit" type="button" data-tanque-id="{{ r.tanque_id|default:'' }}" aria-label="{% if can_open_or_edit_rdo %}Editar{% else %}Visualizar{% endif %} RDO {{ r.rdo|default:'-' }}">
+                                        <span class="material-icons" aria-hidden="true">{% if can_open_or_edit_rdo %}edit{% else %}find_in_page{% endif %}</span>
                                 </button>
                             </td>
                             {% endif %}
@@ -739,15 +739,15 @@
                                                 <span class="rdo-pill" title="RDO">RDO {{ r.rdo|default:'-' }}</span>
                                             </div>
                                             <div class="foot-right">
-                                                {% if can_open_or_edit_rdo %}
-                                                <button class="btn-rdo ghost small open-supervisor" type="button">Abrir</button>
+                                                {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor" type="button">Abrir</button>{% endif %}
+                                                {% if can_open_rdo %}
                                                 {% if r.rdo_id|default:r.id %}
                                                 <button class="btn-rdo secondary small open-editor" type="button" data-open="editor" data-limited-supervisor-edit="true" data-editor-scope="supervisor-card"
                                                         data-rdo-id="{{ r.rdo_id|default:r.id }}"
                                                         data-tanque-id="{{ r.tanque_id|default:'' }}"
                                                         data-os-id="{% if r.ordem_servico %}{{ r.ordem_servico.id }}{% endif %}"
                                                         data-os="{% if r.ordem_servico %}{{ r.ordem_servico.numero_os }}{% endif %}"
-                                                        data-rdo-count="{{ r.rdo|default:'' }}">Editar</button>
+                                                        data-rdo-count="{{ r.rdo|default:'' }}">{% if can_open_or_edit_rdo %}Editar{% else %}Visualizar{% endif %}</button>
                                                 {% endif %}
                                                 {% endif %}
                                                 <button class="btn-rdo danger small" type="button" disabled aria-disabled="true" title="Gerar RDO desabilitado para supervisores">Gerar RDO</button>
@@ -811,17 +811,17 @@
                                             <span class="rdo-pill" title="RDO">RDO {{ r.rdo|default:'-' }}</span>
                                         </div>
                                         <div class="foot-right">
-                                            {% if can_open_or_edit_rdo %}
-                                            <button class="btn-rdo ghost small open-supervisor" type="button">Abrir</button>
+                                            {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor" type="button">Abrir</button>{% endif %}
+                                            {% if can_open_rdo %}
                                             {% if r.rdo_id|default:r.id %}
                                             <button class="btn-rdo secondary small open-editor" type="button" data-open="editor" data-limited-supervisor-edit="true" data-editor-scope="supervisor-card"
                                                     data-rdo-id="{{ r.rdo_id|default:r.id }}"
                                                     data-tanque-id="{{ r.tanque_id|default:'' }}"
                                                     data-os-id="{% if r.ordem_servico %}{{ r.ordem_servico.id }}{% endif %}"
                                                     data-os="{% if r.ordem_servico %}{{ r.ordem_servico.numero_os }}{% endif %}"
-                                                    data-rdo-count="{{ r.rdo|default:'' }}">Editar</button>
+                                                    data-rdo-count="{{ r.rdo|default:'' }}">{% if can_open_or_edit_rdo %}Editar{% else %}Visualizar{% endif %}</button>
                                             {% endif %}
-                                            <button class="btn-rdo ghost small open-supervisor add-tanque-card" type="button" data-action="add-tanque" aria-label="Adicionar Tanque" style="display: none;">Adicionar Tanque</button>
+                                            {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor add-tanque-card" type="button" data-action="add-tanque" aria-label="Adicionar Tanque" style="display: none;">Adicionar Tanque</button>{% endif %}
                                             {% endif %}
                                             {% if r.rdo_id|default:r.id %}
                                             <a class="btn-rdo danger small" href="/rdo/{{ r.id }}/page/" target="_blank" rel="noopener noreferrer" aria-label="Gerar RDO para {{ r.rdo|default:'-' }}">Gerar RDO</a>
@@ -2087,7 +2087,7 @@
     <script src="{% static 'js/notifications.js' %}?v=20260727a"></script>
     <script src="{% static 'js/scripts.js' %}"></script>
     <script src="{% static 'js/supervisor_formdata.js' %}"></script>
-    <script src="{% static 'js/rdo.compartment.js' %}?v=20260406f"></script>
+    <script src="{% static 'js/rdo.compartment.js' %}?v=20260810d"></script>
     <script>
         
         (function(){

@@ -829,7 +829,8 @@
 .sup-comp-pill {
   flex: 0 0 auto;
   min-width: 48px;
-  height: 48px;
+  min-height: 64px;
+  height: auto;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -846,6 +847,22 @@
   touch-action: manipulation;
   transition: transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
   position: relative;
+}
+.sup-comp-pill.has-progress-label {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 9px;
+}
+.sup-comp-pill-progress {
+  display: grid;
+  gap: 1px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  opacity: 0.82;
 }
 .sup-comp-pill-num { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .sup-comp-pill.has-state-label {
@@ -968,6 +985,72 @@
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+}
+.sup-comp-insight {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid #cfe0ad;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f7fce9 0%, #eef7d5 100%);
+  color: #34420f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sup-comp-insight-title {
+  color: #526d12;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.sup-comp-insight-context {
+  color: #607125;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sup-comp-insight-summary {
+  margin-top: 2px;
+  color: #26320b;
+  font-size: 13px;
+}
+.sup-comp-insight-advanced {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.sup-comp-insight-item {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(82,109,18,.18);
+  border-radius: 9px;
+  background: rgba(255,255,255,.72);
+}
+.sup-comp-insight-item strong {
+  color: #40550d;
+  font-size: 12px;
+}
+.sup-comp-insight-item span {
+  color: #354016;
+  font-size: 11px;
+}
+.sup-comp-insight-unchanged {
+  margin-top: 5px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(82,109,18,.16);
+}
+.sup-comp-insight-unchanged summary {
+  width: fit-content;
+  color: #526d12;
+  font-weight: 800;
+  cursor: pointer;
+}
+.sup-comp-insight-unchanged div {
+  margin-top: 5px;
+  color: #58622f;
+  font-size: 11px;
 }
 
 .sup-comp-avanco-col { display:flex; flex-direction:column; gap:8px; min-width:0; align-items: stretch; flex: 1; }
@@ -1104,7 +1187,8 @@
   #supv-modal-overlay #sec-tanque #sup-comp-selector .sup-comp-pill {
     width: 100%;
     min-width: 0;
-    height: 44px;
+    min-height: 64px;
+    height: auto;
     padding: 4px 6px;
     gap: 4px;
     border-radius: 10px;
@@ -1134,7 +1218,7 @@
 
 @media (min-width: 520px) {
   .sup-comp-selector { gap:10px; }
-  .sup-comp-pill { min-width:48px; height:48px; border-radius:12px; }
+  .sup-comp-pill { min-width:58px; min-height:64px; height:auto; border-radius:12px; }
 }
 
 

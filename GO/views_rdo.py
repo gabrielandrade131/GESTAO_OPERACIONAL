@@ -40,6 +40,7 @@ from .translation_utils import translate_pt_to_en
 from .rdo_access import (
     build_rdo_open_edit_json_response as _build_rdo_open_edit_json_response,
     user_can_delete_rdo as _user_can_delete_rdo,
+    user_can_open_rdo as _user_can_open_rdo,
     user_can_open_or_edit_rdo as _user_can_open_or_edit_rdo,
 )
 from alertas_inteligentes.services import marcar_rdo_para_reanalise
@@ -6656,9 +6657,11 @@ def rdo_detail(request, rdo_id):
 
     try:
         if request.GET.get('render') in ('editor', 'html'):
-            blocked = _guard_rdo_open_edit_json(request, 'abrir ou editar RDO')
-            if blocked is not None:
-                return blocked
+            if not _user_can_open_rdo(getattr(request, 'user', None)):
+                return _build_rdo_open_edit_json_response(
+                    getattr(request, 'user', None),
+                    'abrir RDO',
+                )
             from django.template.loader import render_to_string
             logger = logging.getLogger(__name__)
             try:

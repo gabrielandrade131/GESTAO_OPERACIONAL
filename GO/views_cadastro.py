@@ -311,7 +311,7 @@ USER_PERMISSION_GROUPS = (
     (RDO_PERMISSION_MANAGER_GROUP_NAME, 'Gerenciar usuários e permissões', 'Permite administrar usuários e permissões.'),
     (ALERTS_AI_GROUP_NAME, 'Acessar alertas de IA', 'Permite acessar os alertas inteligentes.'),
     (SYSTEM_READ_ONLY_GROUP_NAME, 'Somente visualização', 'Restringe alterações no sistema.'),
-    (RDO_VIEW_ONLY_GROUP_NAME, 'Visualizar RDO', 'Permite consultar RDO sem editar.'),
+    (RDO_VIEW_ONLY_GROUP_NAME, 'Visualizar RDO', 'Permite abrir o modal completo do RDO em modo somente leitura.'),
     (RESPONSAVEIS_COORDENADORES_MANAGER_GROUP_NAME, 'Gerenciar responsáveis e coordenadores', 'Permite administrar a fonte central de nomes.'),
 )
 

@@ -216,6 +216,8 @@
 			var parts = ['Compartimento ' + n];
 			var state = btn.getAttribute('data-availability-label');
 			if (state) parts.push(state);
+			var progress = btn.getAttribute('data-progress-label');
+			if (progress) parts.push(progress);
 			if (btn.getAttribute('aria-pressed') === 'true') parts.push('selecionado para avanço hoje');
 			btn.setAttribute('aria-label', parts.join(', '));
 		}catch(_){ }
@@ -451,6 +453,7 @@
 
 	function renderPills(container, count, selectedSet, form, config){
 		var prevMap = getPreviousCompartimentos(form);
+		var currentMap = getCurrentCompartimentos(form, count);
 		var lockedForSupervisor = isSupervisorLimitedEditor(form);
 		container.innerHTML = '';
 		ensureLegend(container);
@@ -461,6 +464,9 @@
 				btn.type = 'button';
 				btn.className = 'sup-comp-pill';
 				var prev = prevMap && prevMap[n] ? prevMap[n] : null;
+				var current = currentMap && currentMap[n] ? currentMap[n] : { mecanizada: 0, fina: 0 };
+				var accumulatedM = Math.min(100, Math.max(0, (parseInt(prev && prev.mecanizada || 0, 10) || 0) + (parseInt(current.mecanizada || 0, 10) || 0)));
+				var accumulatedF = Math.min(100, Math.max(0, (parseInt(prev && prev.fina || 0, 10) || 0) + (parseInt(current.fina || 0, 10) || 0)));
 				var blockedM = !!(prev && prev.mecanizadaBloqueado);
 				var blockedF = !!(prev && prev.finaBloqueado);
 				var blockedAll = blockedM && blockedF;
@@ -482,6 +488,7 @@
 
 				btn.setAttribute('data-compartment', String(n));
 				btn.setAttribute('data-availability-label', stateTitle);
+				btn.setAttribute('data-progress-label', 'mecanizada acumulada ' + accumulatedM + '%, limpeza fina acumulada ' + accumulatedF + '%');
 
 				btn.setAttribute('aria-pressed', (!blockedAll && !lockedForSupervisor && selectedSet.has(n)) ? 'true' : 'false');
 				btn.setAttribute('aria-disabled', (blockedAll || lockedForSupervisor) ? 'true' : 'false');
@@ -494,7 +501,8 @@
 				btn.classList.toggle('is-fina-only', partialOnlyF);
 				btn.classList.toggle('is-readonly', !!lockedForSupervisor);
 				btn.classList.toggle('has-state-label', !!stateTag);
-				btn.title = stateTitle.charAt(0).toUpperCase() + stateTitle.slice(1) + '.';
+				btn.classList.add('has-progress-label');
+				btn.title = stateTitle.charAt(0).toUpperCase() + stateTitle.slice(1) + '. Mecanizada acumulada: ' + accumulatedM + '%. Limpeza fina acumulada: ' + accumulatedF + '%.';
 				var num = document.createElement('span');
 				num.className = 'sup-comp-pill-num';
 				num.textContent = String(n);
@@ -505,6 +513,15 @@
 					tag.textContent = stateTag;
 					btn.appendChild(tag);
 				}
+				var progress = document.createElement('span');
+				progress.className = 'sup-comp-pill-progress';
+				var progressM = document.createElement('span');
+				progressM.textContent = 'M ' + accumulatedM + '%';
+				var progressF = document.createElement('span');
+				progressF.textContent = 'F ' + accumulatedF + '%';
+				progress.appendChild(progressM);
+				progress.appendChild(progressF);
+				btn.appendChild(progress);
 				syncCompartmentAriaLabel(btn, n);
 				btn.addEventListener('click', function(){ toggle(n, btn, form, config); });
 				btn.addEventListener('keydown', function(ev){ if (ev.key === ' ' || ev.key === 'Enter'){ ev.preventDefault(); toggle(n, btn, form, config); } });
@@ -784,16 +801,87 @@
 				}
 			}catch(_){ }
 			container.appendChild(summary);
-			var selectedCompartments = Array.from(selectedSet)
-				.filter(function(v){ return v && v >= 1 && v <= total; })
-				.sort(function(a, b){ return a - b; });
-			if (!selectedCompartments.length){
-				var empty = document.createElement('div');
-				empty.className = 'sup-comp-empty';
-				empty.textContent = 'Selecione os compartimentos acima para lançar o avanço do dia. O resumo do tanque permanece visível aqui.';
-				container.appendChild(empty);
-				return;
+			var insight = document.createElement('div');
+			insight.className = 'sup-comp-insight';
+			insight.setAttribute('role', 'note');
+			var insightTitle = document.createElement('strong');
+			insightTitle.className = 'sup-comp-insight-title';
+			insightTitle.textContent = 'Synchro AI';
+			var advancedCompartments = [];
+			var unchangedCompartments = [];
+			for (var ai = 1; ai <= total; ai++){
+				var aiCurrent = currentMap[ai] || { mecanizada: 0, fina: 0 };
+				var aiM = Math.max(0, parseInt(aiCurrent.mecanizada || 0, 10) || 0);
+				var aiF = Math.max(0, parseInt(aiCurrent.fina || 0, 10) || 0);
+				var aiPrevious = prevMap && prevMap[ai] ? prevMap[ai] : null;
+				var aiPrevM = Math.max(0, parseInt(aiPrevious && aiPrevious.mecanizada || 0, 10) || 0);
+				var aiPrevF = Math.max(0, parseInt(aiPrevious && aiPrevious.fina || 0, 10) || 0);
+				var aiRow = {
+					index: ai,
+					mecanizadaAnterior: aiPrevM,
+					mecanizadaDia: aiM,
+					mecanizadaAtual: Math.min(100, aiPrevM + aiM),
+					finaAnterior: aiPrevF,
+					finaDia: aiF,
+					finaAtual: Math.min(100, aiPrevF + aiF)
+				};
+				if (aiM > 0 || aiF > 0) advancedCompartments.push(aiRow);
+				else unchangedCompartments.push(aiRow);
 			}
+			var insightContext = document.createElement('span');
+			insightContext.className = 'sup-comp-insight-context';
+			insightContext.textContent = hasPreviousCompartimentos(prevMap) ? 'Comparação com o RDO anterior' : 'Avanço registrado neste RDO';
+			var insightText = document.createElement('strong');
+			insightText.className = 'sup-comp-insight-summary';
+			if (!advancedCompartments.length){
+				insightText.textContent = hasPreviousCompartimentos(prevMap)
+					? 'Nenhum dos ' + total + ' compartimentos teve novo avanço neste RDO.'
+					: 'Nenhum dos ' + total + ' compartimentos possui avanço registrado.';
+			} else {
+				insightText.textContent = advancedCompartments.length + ' de ' + total + ' compartimentos avançaram; ' + unchangedCompartments.length + ' permaneceram sem novo avanço.';
+			}
+			insight.appendChild(insightTitle);
+			insight.appendChild(insightContext);
+			insight.appendChild(insightText);
+			if (advancedCompartments.length){
+				var advancedList = document.createElement('div');
+				advancedList.className = 'sup-comp-insight-advanced';
+				advancedCompartments.forEach(function(rowData){
+					var item = document.createElement('div');
+					item.className = 'sup-comp-insight-item';
+					var itemTitle = document.createElement('strong');
+					itemTitle.textContent = 'Compartimento ' + rowData.index;
+					var mecLine = document.createElement('span');
+					mecLine.textContent = 'Mecanizada: ' + rowData.mecanizadaAnterior + '% → ' + rowData.mecanizadaAtual + '% (avançou ' + rowData.mecanizadaDia + '%)';
+					var finaLine = document.createElement('span');
+					finaLine.textContent = 'Limpeza fina: ' + rowData.finaAnterior + '% → ' + rowData.finaAtual + '% (avançou ' + rowData.finaDia + '%)';
+					item.appendChild(itemTitle);
+					item.appendChild(mecLine);
+					item.appendChild(finaLine);
+					advancedList.appendChild(item);
+				});
+				insight.appendChild(advancedList);
+			}
+			if (unchangedCompartments.length){
+				var unchanged = document.createElement('details');
+				unchanged.className = 'sup-comp-insight-unchanged';
+				unchanged.open = unchangedCompartments.length <= 12;
+				var unchangedTitle = document.createElement('summary');
+				unchangedTitle.textContent = 'Sem novo avanço (' + unchangedCompartments.length + ')';
+				var unchangedText = document.createElement('div');
+				unchangedText.textContent = unchangedCompartments.map(function(rowData){
+					return 'Comp. ' + rowData.index + ' (M ' + rowData.mecanizadaAtual + '%, F ' + rowData.finaAtual + '%)';
+				}).join('; ');
+				unchanged.appendChild(unchangedTitle);
+				unchanged.appendChild(unchangedText);
+				insight.appendChild(unchanged);
+			}
+			container.appendChild(insight);
+
+			// Mostra sempre o acumulado de todos os compartimentos. Somente os
+			// selecionados permanecem habilitados para receber lançamento no dia.
+			var selectedCompartments = [];
+			for (var visibleIndex = 1; visibleIndex <= total; visibleIndex++) selectedCompartments.push(visibleIndex);
 
 			selectedCompartments.forEach(function(n){
 				var compartmentIndex = n;

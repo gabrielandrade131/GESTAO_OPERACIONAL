@@ -27,6 +27,7 @@
   }
 
   var RDO_EDIT_ACCESS_MESSAGE = 'Seu usuario nao possui permissao para abrir ou editar RDO.';
+  var RDO_READ_ONLY_MESSAGE = 'Modo somente leitura: voce pode consultar todos os dados, mas nao pode altera-los.';
 
   function canOpenOrEditRdo(){
     try {
@@ -38,6 +39,32 @@
     }
   }
 
+  function canOpenRdo(){
+    try {
+      var site = document.getElementById('site-wrapper');
+      if (!site || !site.dataset) return true;
+      var value = site.dataset.canOpenRdo;
+      if (value == null || value === '') return canOpenOrEditRdo();
+      return String(value).toLowerCase() !== 'false';
+    } catch(_){ return true; }
+  }
+
+  function canEditRdo(){
+    try {
+      var site = document.getElementById('site-wrapper');
+      if (!site || !site.dataset) return true;
+      var value = site.dataset.canEditRdo;
+      if (value == null || value === '') return canOpenOrEditRdo();
+      return String(value).toLowerCase() !== 'false';
+    } catch(_){ return true; }
+  }
+
+  function blockRdoOpenAccess(){
+    if (canOpenRdo()) return false;
+    try { showToast(RDO_EDIT_ACCESS_MESSAGE, 'info'); } catch(_){ }
+    return true;
+  }
+
   function blockRdoEditAccess(){
     if (canOpenOrEditRdo()) return false;
     try { showToast(RDO_EDIT_ACCESS_MESSAGE, 'info'); } catch(_){ }
@@ -45,9 +72,8 @@
   }
 
   onReady(function(){
-    if (canOpenOrEditRdo()) return;
     try {
-      qsa('[data-open="supervisor"]').forEach(function(node){
+      if (!canEditRdo()) qsa('[data-open="supervisor"]').forEach(function(node){
         try { node.removeAttribute('data-open'); } catch(_){ }
         try { node.removeAttribute('tabindex'); } catch(_){ }
         try { node.removeAttribute('role'); } catch(_){ }
@@ -56,14 +82,14 @@
           if (!node.getAttribute('title')) node.setAttribute('title', RDO_EDIT_ACCESS_MESSAGE);
         } catch(_){ }
       });
-      qsa('.open-supervisor, .btn-rdo.open-supervisor, .action-btn.open-supervisor').forEach(function(node){
+      if (!canEditRdo()) qsa('.open-supervisor, .btn-rdo.open-supervisor, .action-btn.open-supervisor').forEach(function(node){
         try { node.disabled = true; } catch(_){ }
         try { node.setAttribute('aria-disabled', 'true'); } catch(_){ }
         try {
           if (!node.getAttribute('title')) node.setAttribute('title', RDO_EDIT_ACCESS_MESSAGE);
         } catch(_){ }
       });
-      qsa('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"], .btn-rdo.open-editor').forEach(function(node){
+      if (!canOpenRdo()) qsa('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"], .btn-rdo.open-editor').forEach(function(node){
         try { node.disabled = true; } catch(_){ }
         try { node.setAttribute('aria-disabled', 'true'); } catch(_){ }
         try { node.setAttribute('tabindex', '-1'); } catch(_){ }
@@ -6042,6 +6068,10 @@
 
   async function submitEditorForm(ev){
     if (ev && ev.preventDefault) ev.preventDefault();
+    if (!canEditRdo()) {
+      try { showToast(RDO_READ_ONLY_MESSAGE, 'info'); } catch(_){ }
+      return;
+    }
     var form = qs('#form-editor');
     if (!form) return;
     try { if (typeof computeAndSetTopLevelSummaries === 'function') computeAndSetTopLevelSummaries(form); } catch(_){ }
@@ -7156,6 +7186,75 @@
     return false;
   }
 
+  function _isEditorReadOnlyMode(){
+    try {
+      var overlay = document.getElementById('modal-editor-overlay');
+      return !!(overlay && overlay.getAttribute('data-read-only') === 'true');
+    } catch(_){ }
+    return false;
+  }
+
+  function _editorApplyReadOnlyMode(){
+    try {
+      var overlay = document.getElementById('modal-editor-overlay');
+      if (!overlay || overlay.getAttribute('data-read-only') !== 'true') return;
+      overlay.classList.add('rdo-editor-read-only');
+      var title = document.getElementById('editor-title');
+      if (title) {
+        if (!title.dataset.defaultTitle) title.dataset.defaultTitle = title.textContent || 'Editar RDO';
+        title.textContent = 'Visualizar RDO';
+      }
+      var note = document.getElementById('edit-supervisor-mode-note');
+      if (note) {
+        note.textContent = RDO_READ_ONLY_MESSAGE;
+        note.hidden = false;
+      }
+      Array.prototype.forEach.call(overlay.querySelectorAll('#form-editor input, #form-editor select, #form-editor textarea, #form-editor button, .editor-toolbar input, .editor-toolbar select, .editor-toolbar button'), function(el){
+        try {
+          if (String(el.type || '').toLowerCase() === 'hidden') return;
+          if (el.matches && el.matches('.editor-cancel')) return;
+          el.disabled = true;
+          el.setAttribute('aria-disabled', 'true');
+          if ('readOnly' in el) {
+            el.readOnly = true;
+            el.setAttribute('aria-readonly', 'true');
+          }
+        } catch(_){ }
+      });
+      Array.prototype.forEach.call(overlay.querySelectorAll('#edit-save-btn, #edit-save-btn-header'), function(el){
+        try {
+          el.disabled = true;
+          el.hidden = true;
+          el.style.display = 'none';
+          el.setAttribute('aria-disabled', 'true');
+        } catch(_){ }
+      });
+      Array.prototype.forEach.call(overlay.querySelectorAll('[contenteditable="true"]'), function(el){
+        try { el.setAttribute('contenteditable', 'false'); } catch(_){ }
+      });
+      var content = document.getElementById('rdo-edit-content');
+      if (content) content.setAttribute('aria-readonly', 'true');
+      if (!overlay.__rdoReadOnlyGuardBound) {
+        var guardReadOnlyInteraction = function(ev){
+          try {
+            if (!_isEditorReadOnlyMode()) return;
+            var target = ev && ev.target;
+            if (!target || !target.closest) return;
+            var interactive = target.closest('#form-editor input, #form-editor select, #form-editor textarea, #form-editor button, #form-editor [contenteditable], #form-editor [role="switch"], #form-editor [role="button"]');
+            if (!interactive || (interactive.matches && interactive.matches('.editor-cancel'))) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+          } catch(_){ }
+        };
+        overlay.addEventListener('click', guardReadOnlyInteraction, true);
+        overlay.addEventListener('beforeinput', guardReadOnlyInteraction, true);
+        overlay.addEventListener('change', guardReadOnlyInteraction, true);
+        overlay.__rdoReadOnlyGuardBound = true;
+      }
+    } catch(_){ }
+  }
+
   function _lockSupervisorLimitedCustomControls(overlay){
     try {
       if (!overlay) return;
@@ -7463,11 +7562,15 @@
   }
 
   function openEditorModal(context){
-    if (blockRdoEditAccess()) return false;
+    if (blockRdoOpenAccess()) return false;
     try {
       var overlay = document.getElementById('modal-editor-overlay');
       if (!overlay) return false;
       _editorRestoreLimitedMode();
+      try {
+        if (canEditRdo()) overlay.removeAttribute('data-read-only');
+        else overlay.setAttribute('data-read-only', 'true');
+      } catch(_){ }
       var rememberedCtx = _getRememberedEditorContext();
       var effectiveContext = context || {};
       if (!effectiveContext.rdo_id && rememberedCtx.rdo_id) effectiveContext.rdo_id = rememberedCtx.rdo_id;
@@ -7527,13 +7630,14 @@
             }
           } catch(_){ }
         if (typeof showToast === 'function') {
-          showToast('Editando RDO ' + (_editRdoLabel || '') + (_editRdoLabel && _editOsLabel ? ' da OS ' : _editOsLabel ? ' da OS ' : '') + (_editOsLabel || ''), 'info');
+          showToast((canEditRdo() ? 'Editando RDO ' : 'Visualizando RDO ') + (_editRdoLabel || '') + (_editRdoLabel && _editOsLabel ? ' da OS ' : _editOsLabel ? ' da OS ' : '') + (_editOsLabel || ''), 'info');
         }
       } catch(_){ }
       overlay.classList.add('open');
       overlay.classList.remove('is-hidden');
       overlay.setAttribute('aria-hidden','false');
       if (limitedSupervisorEdit) _editorApplyLimitedMode();
+      if (_isEditorReadOnlyMode()) _editorApplyReadOnlyMode();
       try { document.documentElement.classList.add('modal-open'); } catch(_){}
       try { document.body.classList.add('modal-open'); } catch(_){}
       setTimeout(function(){
@@ -9299,7 +9403,7 @@
   try { if (window) window.syncEditorToolbarActiveTank = syncEditorToolbarActiveTank; } catch(_){ }
 
   async function loadEditorDetails(){
-    if (blockRdoEditAccess()) return false;
+    if (blockRdoOpenAccess()) return false;
     try {
       var btn = document.getElementById('edit-btn-load-details');
       var isLimitedEditor = _isEditorSupervisorLimitedMode();
@@ -9495,6 +9599,10 @@
               }
             } catch(_){ }
             try { _editorApplyLimitedMode(); } catch(_){ }
+            try { _editorApplyReadOnlyMode(); } catch(_){ }
+            try {
+              if (_isEditorReadOnlyMode()) window.setTimeout(_editorApplyReadOnlyMode, 180);
+            } catch(_){ }
 
             if (!isLimitedEditor) showToast('Detalhes carregados (render)', 'success');
             return;
@@ -9907,7 +10015,7 @@
         try { if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation(); } catch(_){ }
         var ctx = _extractEditorContextFromTrigger(btn);
         _rememberEditorContext(ctx);
-        if (blockRdoEditAccess()) return;
+        if (blockRdoOpenAccess()) return;
         try {
           try { window.__last_rdo_row_id = ctx.rdo_id || ''; } catch(_){ }
           try { window.__last_rdo_tanque_id = ctx.tanque_id || ''; } catch(_){ }

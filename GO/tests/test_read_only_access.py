@@ -10,6 +10,7 @@ from GO.rdo_access import (
     RDO_VIEW_ONLY_GROUP_NAME,
     SYSTEM_READ_ONLY_GROUP_NAME,
     ensure_rdo_access_groups,
+    user_can_open_rdo,
 )
 
 
@@ -202,7 +203,7 @@ class ReadOnlyAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-    def test_rdo_view_only_user_cannot_create_update_or_load_editor_rdo(self):
+    def test_rdo_view_only_user_can_load_editor_but_cannot_create_or_update_rdo(self):
         os_obj = self._create_os()
         rdo = RDO.objects.create(
             ordem_servico=os_obj,
@@ -211,6 +212,7 @@ class ReadOnlyAccessTests(TestCase):
             data_inicio=date(2026, 3, 26),
         )
         self.client.force_login(self.rdo_view_only_user)
+        self.assertTrue(user_can_open_rdo(self.rdo_view_only_user))
 
         create_response = self._post(
             reverse('api_rdo_create_ajax'),
@@ -227,10 +229,11 @@ class ReadOnlyAccessTests(TestCase):
 
         self.assertEqual(create_response.status_code, 403)
         self.assertEqual(update_response.status_code, 403)
-        self.assertEqual(detail_response.status_code, 403)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertTrue(detail_response.json().get('success'))
+        self.assertIn('form-section', detail_response.json().get('html', ''))
         self.assertIn('visualizacao do rdo', create_response.json().get('error', '').lower())
         self.assertIn('visualizacao do rdo', update_response.json().get('error', '').lower())
-        self.assertIn('visualizacao do rdo', detail_response.json().get('error', '').lower())
 
     def test_rdo_view_only_user_can_approve_without_edit_permission(self):
         os_obj = self._create_os()
