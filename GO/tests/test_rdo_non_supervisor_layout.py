@@ -98,3 +98,37 @@ class RdoNonSupervisorLayoutTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Mostrando 7')
         self.assertContains(response, '?page=1')
+
+    def test_rdo_document_action_is_a_native_link_without_javascript_click_handler(self):
+        cliente = Cliente.objects.create(nome='Cliente Link RDO')
+        unidade = Unidade.objects.create(nome='Unidade Link RDO')
+        ordem = OrdemServico.objects.create(
+            numero_os=99102,
+            data_inicio=date(2026, 8, 10),
+            dias_de_operacao=1,
+            servico='LIMPEZA DE TANQUE',
+            metodo='Manual',
+            observacao='',
+            pob=1,
+            tanque='',
+            volume_tanque='10.00',
+            Cliente=cliente,
+            Unidade=unidade,
+            tipo_operacao='Onshore',
+            solicitante='Teste',
+        )
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='123',
+            data=date(2026, 8, 10),
+            data_inicio=date(2026, 8, 10),
+        )
+
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse('rdo'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="action-btn rdo-page-link"')
+        self.assertContains(response, f'href="{reverse("rdo_page", args=[rdo.id])}"')
+        self.assertContains(response, 'target="_blank"')
+        self.assertNotContains(response, 'class="action-btn view"')

@@ -666,9 +666,13 @@
                             </td>
                             {% endif %}
                             <td class="action-cell">
-                                <button class="action-btn view" type="button">
+                                <a class="action-btn rdo-page-link"
+                                   href="{% url 'rdo_page' r.id %}"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   aria-label="Abrir página do RDO {{ r.rdo|default:r.id }}">
                                     <span class="material-icons" aria-hidden="true">visibility</span>
-                                </button>
+                                </a>
                             </td>
                             <td class="action-cell">
                                 {% if r.ordem_servico %}
@@ -2107,7 +2111,7 @@
             }
         })();
     </script>
-    <script src="{% static 'js/rdo.core.js' %}?v=20260731b"></script>
+    <script src="{% static 'js/rdo.core.js' %}?v=20260810a"></script>
     <script src="{% static 'js/rdo_approval.js' %}?v=20260805a"></script>
     {% if not is_supervisor %}
     <script src="{% static 'js/synchro_shell.js' %}?v=20260731g"></script>
@@ -2115,7 +2119,7 @@
     {% endif %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{% static 'js/rdo.mobile.js' %}?v=20260406c"></script>
-    <script src="{% static 'js/page_rdo.js' %}?v=20260406c"></script>
+    <script src="{% static 'js/page_rdo.js' %}?v=20260810a"></script>
     <script src="{% static 'js/rdo.tank_lookup.js' %}?v=20260422e"></script>
     <script src="{% static 'js/dropdown_select.js' %}?v=20260529a"></script>
     {% if not is_supervisor %}
