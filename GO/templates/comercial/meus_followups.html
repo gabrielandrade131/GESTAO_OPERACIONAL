@@ -1,0 +1,119 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meus Follow-ups | Synchro</title>
+    <link rel="shortcut icon" href="{% static 'js/img/ico/favicon.ico' %}" type="image/x-icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260731h">
+    <link rel="stylesheet" href="{% static 'css/meus_followups.css' %}?v=20260812a">
+</head>
+<body class="my-followups-body">
+    {% include '_synchro_shell.html' %}
+
+    <main class="my-followups-main">
+        <header class="my-followups-heading">
+            <div>
+                <a class="my-followups-back" href="{% url 'comercial_propostas' %}">
+                    <span class="material-icons" aria-hidden="true">arrow_back</span>
+                    Pipeline Comercial
+                </a>
+                <h1>Meus Follow-ups</h1>
+                <p>Acompanhe os próximos contatos comerciais sob sua responsabilidade.</p>
+            </div>
+            {% if responsible_names %}
+            <span class="my-followups-owner"><span class="material-icons" aria-hidden="true">person</span>{{ responsible_names|join:", " }}</span>
+            {% endif %}
+        </header>
+
+        <section class="my-followups-card">
+            <form class="my-followups-filters" method="get">
+                <label class="my-followups-search">
+                    <span class="material-icons" aria-hidden="true">search</span>
+                    <input type="search" name="q" value="{{ filters.q }}" placeholder="Buscar por cliente, proposta ou assunto" aria-label="Buscar follow-ups">
+                </label>
+                <label class="my-followups-filter-field">
+                    <span>Data inicial</span>
+                    <input type="date" name="start_date" value="{{ filters.start_date }}">
+                </label>
+                <label class="my-followups-filter-field">
+                    <span>Data final</span>
+                    <input type="date" name="end_date" value="{{ filters.end_date }}">
+                </label>
+                <label class="my-followups-filter-field">
+                    <span>Status</span>
+                    <select name="status">
+                        {% for option in status_options %}
+                        <option value="{{ option }}" {% if filters.status == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="my-followups-filter-field">
+                    <span>Ordenação</span>
+                    <select name="ordem">
+                        <option value="proximos" {% if filters.ordem == 'proximos' %}selected{% endif %}>Mais próximos primeiro</option>
+                        <option value="recentes" {% if filters.ordem == 'recentes' %}selected{% endif %}>Mais recentes primeiro</option>
+                    </select>
+                </label>
+                <div class="my-followups-filter-actions">
+                    <a href="{% url 'comercial_meus_followups' %}" class="my-followups-clear">Limpar</a>
+                    <button type="submit" class="my-followups-apply">Aplicar filtros</button>
+                </div>
+            </form>
+
+            {% if not has_responsible_profile %}
+            <div class="my-followups-empty">
+                <span class="material-icons" aria-hidden="true">manage_accounts</span>
+                <h2>Seu usuário ainda não está vinculado a um responsável comercial</h2>
+                <p>Solicite ao administrador a associação do seu usuário ao cadastro de responsável para visualizar seus acompanhamentos.</p>
+            </div>
+            {% elif followups %}
+            <div class="my-followups-table-wrap">
+                <table class="my-followups-table">
+                    <thead>
+                        <tr><th>Data</th><th>Hora</th><th>Proposta</th><th>Cliente</th><th>Assunto do acompanhamento / Observação</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in followups %}
+                            {% ifchanged item.group_label %}
+                            <tr class="my-followups-table__group"><td colspan="6"><span class="material-icons" aria-hidden="true">calendar_today</span>{{ item.group_label }}</td></tr>
+                            {% endifchanged %}
+                            <tr>
+                                <td>{{ item.data_formatada }}</td>
+                                <td>{{ item.hora|default:"--:--" }}</td>
+                                <td><a href="{% url 'comercial_propostas' %}?proposta={{ item.proposta_id }}">PROP-{{ item.numero_proposta }}</a></td>
+                                <td>{{ item.cliente }}</td>
+                                <td><strong>{{ item.titulo }}</strong>{% if item.comentario and item.comentario != item.titulo %}<small>{{ item.comentario }}</small>{% endif %}</td>
+                                <td><span class="my-followups-status">{{ item.status }}</span></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <footer class="my-followups-footer">
+                <span>Mostrando {{ followups|length }} de {{ total_followups }} follow-up{{ total_followups|pluralize:"s" }}</span>
+                {% if page_obj.paginator.num_pages > 1 %}
+                <nav class="my-followups-pagination" aria-label="Paginação">
+                    {% if page_obj.has_previous %}<a href="?q={{ filters.q|urlencode }}&start_date={{ filters.start_date }}&end_date={{ filters.end_date }}&status={{ filters.status|urlencode }}&ordem={{ filters.ordem }}&page={{ page_obj.previous_page_number }}" aria-label="Página anterior"><span class="material-icons">chevron_left</span></a>{% endif %}
+                    <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}<a href="?q={{ filters.q|urlencode }}&start_date={{ filters.start_date }}&end_date={{ filters.end_date }}&status={{ filters.status|urlencode }}&ordem={{ filters.ordem }}&page={{ page_obj.next_page_number }}" aria-label="Próxima página"><span class="material-icons">chevron_right</span></a>{% endif %}
+                </nav>
+                {% endif %}
+            </footer>
+            {% else %}
+            <div class="my-followups-empty">
+                <span class="material-icons" aria-hidden="true">event_available</span>
+                <h2>Nenhum follow-up encontrado</h2>
+                <p>Não há acompanhamentos sob sua responsabilidade para os filtros selecionados.</p>
+            </div>
+            {% endif %}
+        </section>
+    </main>
+    <script src="{% static 'js/synchro_shell.js' %}?v=20260731g"></script>
+</body>
+</html>

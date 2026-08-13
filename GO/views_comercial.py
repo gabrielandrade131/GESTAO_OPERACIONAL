@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import unicodedata
 from functools import wraps
@@ -12,13 +13,15 @@ from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.core.paginator import Paginator
+from django.http import FileResponse, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import AnaliseCriticaOportunidade, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
 
 
 logger = logging.getLogger(__name__)
@@ -704,6 +707,18 @@ def _serialize_financeiro_campos(financeiro):
     return items, total
 
 
+def _serialize_proposta_anexo(anexo):
+    return {
+        "id": anexo.id,
+        "nome": anexo.nome_original,
+        "tamanho": anexo.arquivo.size if anexo.arquivo else 0,
+        "criadoEm": timezone.localtime(anexo.criado_em).strftime("%d/%m/%Y %H:%M") if anexo.criado_em else "",
+        "enviadoPor": _clean_text(getattr(anexo.enviado_por, "get_full_name", lambda: "")()) or _clean_text(getattr(anexo.enviado_por, "username", "")),
+        "visualizarUrl": reverse("comercial_visualizar_anexo_proposta", args=[anexo.id]),
+        "excluirUrl": reverse("comercial_excluir_anexo_proposta", args=[anexo.id]),
+    }
+
+
 CRITICAL_ANALYSIS_FIELDS = AnaliseCriticaOportunidade.RESPONSE_FIELDS
 CRITICAL_ANALYSIS_VALID_RESPONSES = {value for value, _label in AnaliseCriticaOportunidade.RESPOSTAS}
 
@@ -1045,6 +1060,7 @@ def _serialize_financeiro(financeiro):
         "campos": campos,
         "totalCampos": _format_decimal_string(total_campos),
         "totalCamposFormatado": _format_currency_br(total_campos),
+        "anexos": [_serialize_proposta_anexo(anexo) for anexo in financeiro.anexos.all()],
     }
 
 
@@ -1060,10 +1076,13 @@ def _serialize_agenda_followup(financeiro, item, index=0):
         "id": f"{financeiro.proposta}-{index}",
         "proposta_id": financeiro.proposta,
         "numero_proposta": str(financeiro.proposta),
+        "revisao": _clean_text(financeiro.revisao),
         "cliente": cliente_nome,
         "unidade": unidade_nome,
+        "status_proposta": _clean_text(financeiro.status_proposta),
         "responsavel": _clean_text(item.get("responsavel")) or _clean_text(financeiro.responsavel),
         "data": data_iso,
+        "data_formatada": _format_date_br(data_followup),
         "hora": _clean_text(item.get("hora")) or "09:00",
         "status": _clean_text(item.get("status")) or FOLLOWUP_STATUSES[0],
         "titulo": _clean_text(item.get("proximaAcao") or item.get("comentario") or commercial_bundle.get("summary")),
@@ -1213,6 +1232,59 @@ def _agenda_responsavel_options(items):
         seen.add(key)
         ordered.append(responsavel)
     return ["Todos", *ordered]
+
+
+def _user_responsavel_names(user):
+    """Resolve os responsáveis comerciais que pertencem ao usuário autenticado.
+
+    A base atual ainda não possui uma FK direta entre usuário e responsável.
+    Enquanto essa relação não existe, a associação é feita apenas por identidade
+    normalizada do nome completo, login e e-mail, sempre no servidor.
+    """
+    raw_candidates = [
+        user.get_full_name(),
+        user.get_username(),
+        getattr(user, "email", ""),
+    ]
+    candidates = set()
+    for raw_value in raw_candidates:
+        text = _clean_text(raw_value)
+        if not text:
+            continue
+        candidates.add(_normalize_key(text))
+        candidates.add(_normalize_key(text.split("@", 1)[0].replace(".", " ").replace("_", " ").replace("-", " ")))
+
+    names = []
+    for person in ResponsavelCoordenador.objects.filter(ativo=True, responsavel_comercial=True).order_by("nome"):
+        if _normalize_key(person.nome) in candidates:
+            names.append(person.nome)
+    return names
+
+
+def _can_view_all_commercial_followups(user):
+    """Administradores consultam a agenda completa; os demais, apenas a própria."""
+    return bool(
+        getattr(user, "is_superuser", False)
+        or user_can_manage_rdo_permission_users(user)
+        or user_can_manage_responsaveis_coordenadores(user)
+    )
+
+
+def _collect_current_user_followup_items(user):
+    if _can_view_all_commercial_followups(user):
+        return _collect_followup_agenda_items(), []
+
+    responsible_names = _user_responsavel_names(user)
+    if not responsible_names:
+        return [], []
+
+    allowed_keys = {_normalize_key(name) for name in responsible_names}
+    items = [
+        item
+        for item in _collect_followup_agenda_items()
+        if _normalize_key(item.get("responsavel")) in allowed_keys
+    ]
+    return items, responsible_names
 
 
 def _is_proposal_late(financeiro):
@@ -1372,13 +1444,15 @@ def _build_bootstrap_payload():
             "metodo_cadastro",
             "cordenador",
             "analise_critica_oportunidade",
-        ).prefetch_related("campos").order_by("-proposta")
+        ).prefetch_related("campos", "anexos__enviado_por").order_by("-proposta")
     ]
 
     detail_pattern = reverse("comercial_detalhe_proposta", args=[0]).replace("/0/", "/__id__/")
     status_pattern = reverse("comercial_atualizar_status", args=[0]).replace("/0/", "/__id__/")
     update_pattern = reverse("comercial_atualizar_proposta", args=[0]).replace("/0/", "/__id__/")
     pdf_pattern = reverse("comercial_gerar_pdf_proposta", args=[0]).replace("/0/", "/__id__/")
+    attachment_list_pattern = reverse("comercial_listar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
+    attachment_upload_pattern = reverse("comercial_enviar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
 
     return {
         "proposals": propostas,
@@ -1392,6 +1466,8 @@ def _build_bootstrap_payload():
             "statusPattern": status_pattern,
             "updatePattern": update_pattern,
             "pdfPattern": pdf_pattern,
+            "attachmentListPattern": attachment_list_pattern,
+            "attachmentUploadPattern": attachment_upload_pattern,
             "quickClientCreate": reverse("comercial_criar_cliente"),
             "quickUnitCreate": reverse("comercial_criar_unidade"),
             "quickMethodCreate": reverse("comercial_criar_metodo"),
@@ -2292,9 +2368,8 @@ def comercial_criar_segmento(request):
 @commercial_preview_required
 @require_GET
 def comercial_agenda_followups(request):
-    all_items = _collect_followup_agenda_items()
+    all_items, _responsible_names = _collect_current_user_followup_items(request.user)
     search = _clean_text(request.GET.get("q"))
-    responsavel = _clean_text(request.GET.get("responsavel")) or "Todos"
     status = _clean_text(request.GET.get("status")) or "Todos"
     start_date = _parse_iso_query_date(request.GET.get("start_date"))
     end_date = _parse_iso_query_date(request.GET.get("end_date"))
@@ -2302,7 +2377,7 @@ def comercial_agenda_followups(request):
     filtered_items = _filter_agenda_items(
         all_items,
         search=search,
-        responsavel=responsavel,
+        responsavel="Todos",
         status=status,
         start_date=start_date,
         end_date=end_date,
@@ -2311,16 +2386,73 @@ def comercial_agenda_followups(request):
     return JsonResponse(
         {
             "success": True,
+            "can_view_all": _can_view_all_commercial_followups(request.user),
             "summary": _build_followup_agenda_summary(filtered_items, today=timezone.localdate()),
             "items": filtered_items,
             "calendar_days": _build_calendar_days(filtered_items),
-            "responsavel_options": _agenda_responsavel_options(all_items),
+            "responsavel_options": ["Todos"],
             "status_options": _agenda_status_options(all_items),
             "total_all": len(all_items),
             "total_filtered": len(filtered_items),
             "today": timezone.localdate().isoformat(),
         }
     )
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_meus_followups(request):
+    """Renderiza os acompanhamentos atribuídos ao responsável do usuário logado."""
+    all_items, responsible_names = _collect_current_user_followup_items(request.user)
+    search = _clean_text(request.GET.get("q"))
+    status = _clean_text(request.GET.get("status")) or "Todos"
+    start_date = _parse_iso_query_date(request.GET.get("start_date"))
+    end_date = _parse_iso_query_date(request.GET.get("end_date"))
+    ordering = _clean_text(request.GET.get("ordem")) or "proximos"
+
+    filtered_items = _filter_agenda_items(
+        all_items,
+        search=search,
+        responsavel="Todos",
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    filtered_items.sort(
+        key=lambda item: (item.get("data") or "9999-12-31", item.get("hora") or "23:59"),
+        reverse=ordering == "recentes",
+    )
+
+    today = timezone.localdate()
+    tomorrow = today + timedelta(days=1)
+    for item in filtered_items:
+        item_date = _parse_iso_query_date(item.get("data"))
+        if item_date == today:
+            item["group_label"] = f"Hoje - {_format_date_br(today)}"
+        elif item_date == tomorrow:
+            item["group_label"] = f"Amanhã - {_format_date_br(tomorrow)}"
+        else:
+            item["group_label"] = "Próximos dias"
+
+    paginator = Paginator(filtered_items, 12)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    context = {
+        "followups": page_obj.object_list,
+        "page_obj": page_obj,
+        "total_followups": len(filtered_items),
+        "status_options": _agenda_status_options(all_items),
+        "filters": {
+            "q": search,
+            "status": status,
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+            "ordem": ordering,
+        },
+        "responsible_names": responsible_names,
+        "has_responsible_profile": bool(responsible_names),
+    }
+    return render(request, "comercial/meus_followups.html", context)
 
 
 @login_required(login_url="/login/")
@@ -2403,10 +2535,90 @@ def comercial_detalhe_proposta(request, proposta_id):
             "metodo_cadastro",
             "cordenador",
             "analise_critica_oportunidade",
-        ).prefetch_related("campos"),
+        ).prefetch_related("campos", "anexos__enviado_por"),
         proposta=proposta_id,
     )
     return JsonResponse({"success": True, "proposal": _serialize_financeiro(proposta)})
+
+
+PROPOSTA_ANEXO_EXTENSOES_PERMITIDAS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".txt", ".png", ".jpg", ".jpeg",
+}
+PROPOSTA_ANEXO_TAMANHO_MAXIMO = 20 * 1024 * 1024
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_listar_anexos_proposta(request, proposta_id):
+    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    anexos = proposta.anexos.select_related("enviado_por").all()
+    return JsonResponse({
+        "success": True,
+        "anexos": [_serialize_proposta_anexo(anexo) for anexo in anexos],
+    })
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+@transaction.atomic
+def comercial_enviar_anexos_proposta(request, proposta_id):
+    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    arquivos = request.FILES.getlist("arquivos") or ([request.FILES["arquivo"]] if request.FILES.get("arquivo") else [])
+    if not arquivos:
+        return JsonResponse({"success": False, "message": "Selecione ao menos um documento."}, status=400)
+
+    errors = []
+    for arquivo in arquivos:
+        nome_original = os.path.basename(str(getattr(arquivo, "name", "") or ""))
+        extensao = os.path.splitext(nome_original)[1].lower()
+        if extensao not in PROPOSTA_ANEXO_EXTENSOES_PERMITIDAS:
+            errors.append(f"{nome_original or 'Arquivo'} possui um formato não permitido.")
+        elif arquivo.size > PROPOSTA_ANEXO_TAMANHO_MAXIMO:
+            errors.append(f"{nome_original} ultrapassa o limite de 20 MB.")
+
+    if errors:
+        return JsonResponse({"success": False, "message": "Não foi possível enviar os documentos.", "errors": errors}, status=400)
+
+    anexos = []
+    for arquivo in arquivos:
+        anexo = AnexoPropostaComercial.objects.create(
+            financeiro=proposta,
+            arquivo=arquivo,
+            nome_original=os.path.basename(str(getattr(arquivo, "name", "") or "documento")),
+            enviado_por=request.user,
+        )
+        anexos.append(_serialize_proposta_anexo(anexo))
+
+    return JsonResponse({"success": True, "message": "Documento(s) enviado(s) com sucesso.", "anexos": anexos}, status=201)
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_visualizar_anexo_proposta(request, anexo_id):
+    anexo = get_object_or_404(AnexoPropostaComercial, pk=anexo_id)
+    if not anexo.arquivo:
+        return HttpResponse("Arquivo não encontrado.", status=404)
+
+    try:
+        return FileResponse(anexo.arquivo.open("rb"), as_attachment=False, filename=anexo.nome_original)
+    except OSError:
+        return HttpResponse("Arquivo não encontrado.", status=404)
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+def comercial_excluir_anexo_proposta(request, anexo_id):
+    anexo = get_object_or_404(AnexoPropostaComercial, pk=anexo_id)
+    try:
+        anexo.arquivo.delete(save=False)
+    except OSError:
+        logger.warning("Não foi possível remover o arquivo do anexo comercial id=%s", anexo.id)
+    anexo.delete()
+    return JsonResponse({"success": True, "message": "Documento excluído com sucesso."})
 
 
 @login_required(login_url="/login/")

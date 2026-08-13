@@ -345,6 +345,11 @@
                                 <span class="quick-action-button__label">Exportar Excel</span>
                                 <span class="quick-action-button__chevron material-icons" aria-hidden="true">chevron_right</span>
                             </button>
+                            <button class="quick-action-button" data-quick-action="followups" type="button">
+                                <span class="quick-action-button__icon material-icons" aria-hidden="true">event_note</span>
+                                <span class="quick-action-button__label">Meus Follow-ups</span>
+                                <span class="quick-action-button__chevron material-icons" aria-hidden="true">chevron_right</span>
+                            </button>
                             <button class="quick-action-button" data-quick-action="client" type="button">
                                 <span class="quick-action-button__icon material-icons" aria-hidden="true">person_add</span>
                                 <span class="quick-action-button__label">Cadastrar Cliente</span>
@@ -356,6 +361,21 @@
                                 <span class="quick-action-button__chevron material-icons" aria-hidden="true">chevron_right</span>
                             </button>
                         </div>
+                    </section>
+
+                    <section class="commercial-panel sidebar-panel upcoming-followups-panel">
+                        <div class="sidebar-panel__header">
+                            <div>
+                                <h2>Próximos Follow-ups</h2>
+                                <p>Seus próximos acompanhamentos</p>
+                            </div>
+                            <span class="material-icons" aria-hidden="true">event_upcoming</span>
+                        </div>
+                        <div class="upcoming-followups-list" id="upcomingFollowupsList" aria-live="polite"></div>
+                        <button class="upcoming-followups-panel__link" data-quick-action="followups" type="button">
+                            Ver meus follow-ups
+                            <span class="material-icons" aria-hidden="true">arrow_forward</span>
+                        </button>
                     </section>
 
                     <section class="commercial-panel sidebar-panel revenue-panel">
@@ -485,6 +505,8 @@
     <div class="overlay-backdrop" id="overlayBackdrop"></div>
 
     <aside class="proposal-panel" id="proposalDrawer" aria-hidden="true"></aside>
+
+    <section class="agenda-modal" id="fullFollowupAgendaModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="agendaModalTitle"></section>
 
     <section class="proposal-modal" id="newProposalModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="proposalModalTitle">
         <div class="proposal-modal__card">

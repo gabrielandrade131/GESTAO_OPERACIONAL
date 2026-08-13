@@ -4970,6 +4970,39 @@ class FinanceiroCampo(models.Model):
         return f'{self.get_nome_display()}: {self.subtotal}'
 
 
+def anexo_proposta_comercial_upload_to(instance, filename):
+    base, ext = os.path.splitext(str(filename or ''))
+    ext = (ext or '').lower()
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', '_', base).strip('._') or 'documento'
+    return f'comercial/proposta_{instance.financeiro_id}/{safe_name}{ext}'
+
+
+class AnexoPropostaComercial(models.Model):
+    financeiro = models.ForeignKey(
+        Financeiro,
+        on_delete=models.CASCADE,
+        related_name='anexos',
+    )
+    arquivo = models.FileField(upload_to=anexo_proposta_comercial_upload_to)
+    nome_original = models.CharField(max_length=255)
+    enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='anexos_propostas_comerciais_enviados',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        verbose_name = 'anexo de proposta comercial'
+        verbose_name_plural = 'anexos de propostas comerciais'
+
+    def __str__(self):
+        return f'Proposta {self.financeiro_id} - {self.nome_original}'
+
+
 class RdoEquipamentoRetornoPrevisto(models.Model):
     rdo = models.ForeignKey(
         'RDO',

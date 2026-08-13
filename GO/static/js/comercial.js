@@ -129,6 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
         agendaDayFocus: "",
         agendaLoading: false,
         agendaLoaded: false,
+        agendaCanViewAll: false,
         agendaCreateOpen: false,
         agendaTotalAll: 0,
         agendaSummary: null,
@@ -683,6 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
         kpiFilterNotice: document.getElementById("kpiFilterNotice"),
         pipelineBoard: document.getElementById("pipelineBoard"),
         revenueBars: document.getElementById("revenueBars"),
+        upcomingFollowupsList: document.getElementById("upcomingFollowupsList"),
         contentGrid: document.getElementById("contentGrid"),
         sidebarStack: document.getElementById("sidebarStack"),
         quickActionsList: document.getElementById("quickActionsList"),
@@ -691,6 +693,7 @@ document.addEventListener("DOMContentLoaded", () => {
         overlayBackdrop: document.getElementById("overlayBackdrop"),
         proposalDrawer: document.getElementById("proposalDrawer"),
         newProposalModal: document.getElementById("newProposalModal"),
+        fullFollowupAgendaModal: document.getElementById("fullFollowupAgendaModal"),
         openNewProposalModal: document.getElementById("openNewProposalModal"),
         proposalStepper: document.getElementById("proposalStepper"),
         proposalPrevButton: document.getElementById("proposalPrevButton"),
@@ -755,6 +758,7 @@ document.addEventListener("DOMContentLoaded", () => {
     resetProposalItemsState();
     bindEvents();
     renderAll();
+    loadFollowups().then(renderUpcomingFollowups);
     renderProposalItemsSection();
     updateModalStep();
     simulateComercialLoading();
@@ -1011,6 +1015,11 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        if (action === "followups") {
+            openFullFollowupAgenda();
+            return;
+        }
+
         if (action === "client") {
             openProposalModal();
             state.modalStep = 2;
@@ -1222,6 +1231,15 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        if (actionTrigger.dataset.panelAction === "upload-documents") {
+            refs.proposalDrawer.querySelector("[data-proposal-attachments-input]")?.click();
+            return;
+        }
+        if (actionTrigger.dataset.panelAction === "delete-document") {
+            deleteProposalDocument(actionTrigger.dataset.documentUrl, actionTrigger.dataset.documentId);
+            return;
+        }
+
         const action = actionTrigger.dataset.panelAction;
         if (action === "close-panel") {
             closeProposalPanel();
@@ -1262,6 +1280,10 @@ document.addEventListener("DOMContentLoaded", () => {
             renderProposalPanel();
         } else if (action === "save-followup") {
             saveFollowup();
+        } else if (action === "upload-documents") {
+            refs.proposalDrawer.querySelector("[data-proposal-attachments-input]")?.click();
+        } else if (action === "delete-document") {
+            deleteProposalDocument(actionTrigger.dataset.documentUrl, actionTrigger.dataset.documentId);
         } else if (action === "new-rev") {
             createNewRevision();
         } else if (action === "generate-pdf") {
@@ -1302,6 +1324,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function handleDelegatedChange(event) {
         const field = event.target;
+        if (field.matches("[data-proposal-attachments-input]")) {
+            uploadProposalDocuments(Array.from(field.files || []));
+            return;
+        }
         if (field.matches("[data-critical-analysis-field]")) {
             state.criticalAnalysisAnswers[field.dataset.criticalAnalysisField] = field.value;
             renderCriticalAnalysisControls();
@@ -2304,6 +2330,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${renderPanelTab("resumo", "Resumo")}
                     ${renderPanelTab("dados", "Dados Comerciais")}
                     ${renderPanelTab("escopo", "Escopo")}
+                    ${renderPanelTab("documentos", "Documentos")}
                     ${renderPanelTab("followups", "Follow-ups")}
                     ${renderPanelTab("historico", "Histórico")}
                 </div>
@@ -2331,6 +2358,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (state.activeDetailTab === "escopo") {
             return renderEscopoTab(proposal);
+        }
+        if (state.activeDetailTab === "documentos") {
+            return renderDocumentosTab(proposal);
         }
         if (state.activeDetailTab === "followups") {
             return renderFollowupsTabClean(proposal);
@@ -2571,7 +2601,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("Emissão Mês", "emissaoMes", proposal.emissaoMes, false),
                         editableField("Responsável", "responsavel", proposal.responsavel, true, RESPONSAVEIS),
                         editableField("Natureza", "natureza", proposal.natureza, true, NATUREZAS),
-                        editableField("Unidade", "unidade", proposal.unidade, true),
+                        editableField("Unidade", "unidade", proposal.unidade, true, getDetailSelectOptions("unidades", proposal.unidade)),
                         editableField("Heat Map", "heatMap", proposal.heatMap, true, HEATMAPS),
                         editableField("Status da Proposta", "statusProposta", proposal.statusProposta, true, STATUS_OPTIONS)
                     ])}
@@ -2583,7 +2613,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("Follow Up", "followUp", proposal.followUp, true)
                     ])}
                     ${renderDataGroup("Cliente", [
-                        editableField("Empresa", "empresa", proposal.empresa, true),
+                        editableField("Empresa / Cliente", "empresa", proposal.empresa, true, getDetailSelectOptions("clientes", proposal.empresa)),
                         editableField("UF", "uf", proposal.uf, true, UFS),
                         editableField("Embarcação / Local", "embarcacaoLocal", proposal.embarcacaoLocal, true),
                         editableField("Fonte do Lead", "fonteLead", proposal.fonteLead, true, FONTE_LEAD),
@@ -2804,6 +2834,65 @@ document.addEventListener("DOMContentLoaded", () => {
                 </section>
             </div>
         `;
+    }
+
+    function renderDocumentosTab(proposal) {
+        const attachments = Array.isArray(proposal.anexos) ? proposal.anexos : [];
+
+        return `
+            <div class="detail-main detail-main--full">
+                <section class="detail-card proposal-documents-card">
+                    <div class="detail-card__heading">
+                        <div>
+                            <h3>Documentos da proposta</h3>
+                            <p>Anexe arquivos comerciais, técnicos e documentos de apoio.</p>
+                        </div>
+                        <button class="panel-button panel-button--primary" data-panel-action="upload-documents" type="button">
+                            <span class="material-icons" aria-hidden="true">upload_file</span>
+                            Anexar documentos
+                        </button>
+                        <input class="proposal-documents-input" data-proposal-attachments-input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg" hidden>
+                    </div>
+                    <p class="proposal-documents-card__hint">Formatos aceitos: PDF, Office, CSV, TXT e imagens. Limite de 20 MB por arquivo.</p>
+                    ${attachments.length ? `
+                        <div class="proposal-documents-list">
+                            ${attachments.map((attachment) => `
+                                <article class="proposal-document-row">
+                                    <span class="material-icons proposal-document-row__icon" aria-hidden="true">description</span>
+                                    <div class="proposal-document-row__details">
+                                        <strong>${escapeHtml(attachment.nome || "Documento")}</strong>
+                                        <span>${escapeHtml(formatAttachmentSize(attachment.tamanho))} · ${escapeHtml(attachment.criadoEm || "")}${attachment.enviadoPor ? ` · ${escapeHtml(attachment.enviadoPor)}` : ""}</span>
+                                    </div>
+                                    <div class="proposal-document-row__actions">
+                                        <a class="panel-button panel-button--soft panel-button--compact" href="${escapeHtml(attachment.visualizarUrl)}" target="_blank" rel="noopener">
+                                            <span class="material-icons" aria-hidden="true">visibility</span>
+                                            Visualizar
+                                        </a>
+                                        <button class="panel-button panel-button--danger panel-button--compact" data-panel-action="delete-document" data-document-id="${attachment.id}" data-document-url="${escapeHtml(attachment.excluirUrl)}" type="button">
+                                            <span class="material-icons" aria-hidden="true">delete_outline</span>
+                                            Excluir
+                                        </button>
+                                    </div>
+                                </article>
+                            `).join("")}
+                        </div>
+                    ` : `
+                        <div class="proposal-documents-empty">
+                            <span class="material-icons" aria-hidden="true">folder_open</span>
+                            <strong>Nenhum documento anexado</strong>
+                            <p>Use “Anexar documentos” para incluir arquivos nesta proposta.</p>
+                        </div>
+                    `}
+                </section>
+            </div>
+        `;
+    }
+
+    function formatAttachmentSize(size) {
+        const bytes = Number(size) || 0;
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(".", ",")} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
     }
 
     function renderFollowupsTabClean(proposal) {
@@ -3154,8 +3243,8 @@ document.addEventListener("DOMContentLoaded", () => {
         lockProposalNumberField();
 
         state.todayIso = bootstrap?.today || "2026-07-17";
-        state.agendaDefaultPeriod = buildDefaultAgendaPeriod(state.todayIso);
-        state.agendaPeriod = state.agendaDefaultPeriod;
+        state.agendaDefaultPeriod = "";
+        state.agendaPeriod = "";
         state.agendaSelectedDate = state.todayIso;
         state.endpoints = {
             create: bootstrap?.endpoints?.create || "",
@@ -3163,6 +3252,8 @@ document.addEventListener("DOMContentLoaded", () => {
             statusPattern: bootstrap?.endpoints?.statusPattern || "",
             updatePattern: bootstrap?.endpoints?.updatePattern || "",
             pdfPattern: bootstrap?.endpoints?.pdfPattern || "",
+            attachmentListPattern: bootstrap?.endpoints?.attachmentListPattern || "",
+            attachmentUploadPattern: bootstrap?.endpoints?.attachmentUploadPattern || "",
             quickClientCreate: bootstrap?.endpoints?.quickClientCreate || "",
             quickUnitCreate: bootstrap?.endpoints?.quickUnitCreate || "",
             quickMethodCreate: bootstrap?.endpoints?.quickMethodCreate || "",
@@ -3674,6 +3765,68 @@ document.addEventListener("DOMContentLoaded", () => {
                 type: "warning",
                 title: "Erro ao gerar PDF",
                 message: error.message || "Não foi possível gerar o PDF da proposta."
+            });
+        }
+    }
+
+    async function uploadProposalDocuments(files) {
+        const proposal = getSelectedProposal();
+        const endpoint = buildEndpoint(state.endpoints.attachmentUploadPattern, proposal?.id);
+        if (!proposal || !endpoint || !files.length) {
+            return;
+        }
+
+        const formData = new FormData();
+        files.forEach((file) => formData.append("arquivos", file));
+
+        try {
+            const response = await fetch(endpoint, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "X-CSRFToken": getCsrfToken() },
+                body: formData,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload?.message || payload?.errors?.join(" ") || "Não foi possível enviar os documentos.");
+            }
+
+            proposal.anexos = [...(proposal.anexos || []), ...(payload.anexos || [])];
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Documentos anexados",
+                message: payload.message || "Os documentos foram anexados à proposta."
+            });
+        } catch (error) {
+            showNotification({
+                type: "warning",
+                title: "Erro ao anexar documentos",
+                message: error.message || "Não foi possível enviar os documentos selecionados."
+            });
+        }
+    }
+
+    async function deleteProposalDocument(endpoint, documentId) {
+        const proposal = getSelectedProposal();
+        if (!proposal || !endpoint || !documentId) {
+            return;
+        }
+
+        try {
+            const payload = await fetchJson(endpoint, { method: "POST" });
+            proposal.anexos = (proposal.anexos || []).filter((attachment) => Number(attachment.id) !== Number(documentId));
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Documento excluído",
+                message: payload.message || "O documento foi removido da proposta."
+            });
+        } catch (error) {
+            showNotification({
+                type: "warning",
+                title: "Erro ao excluir documento",
+                message: error.message || "Não foi possível remover o documento."
             });
         }
     }
@@ -6443,6 +6596,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function handleDelegatedClick(event) {
+        const quickActionTrigger = event.target.closest("[data-quick-action]");
+        if (quickActionTrigger && !refs.quickActionsList?.contains(quickActionTrigger)) {
+            handleQuickActionClick(event);
+            return;
+        }
+
         const seeAllTrigger = event.target.closest("[data-see-all-stage]");
         if (seeAllTrigger) {
             openFocusedStageView(seeAllTrigger.dataset.seeAllStage);
@@ -6586,6 +6745,15 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        if (actionTrigger.dataset.panelAction === "upload-documents") {
+            refs.proposalDrawer.querySelector("[data-proposal-attachments-input]")?.click();
+            return;
+        }
+        if (actionTrigger.dataset.panelAction === "delete-document") {
+            deleteProposalDocument(actionTrigger.dataset.documentUrl, actionTrigger.dataset.documentId);
+            return;
+        }
+
         const action = actionTrigger.dataset.panelAction;
         if (action === "close-panel") {
             closeProposalPanel();
@@ -6674,6 +6842,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.add("comercial-no-scroll");
         renderFollowupAgenda();
         await loadFollowups();
+        renderUpcomingFollowups();
     }
 
     function closeFullFollowupAgenda() {
@@ -6714,6 +6883,7 @@ document.addEventListener("DOMContentLoaded", () => {
             state.agendaResponsavelOptions = Array.isArray(payload?.responsavel_options) && payload.responsavel_options.length ? payload.responsavel_options : ["Todos"];
             state.agendaStatusOptions = Array.isArray(payload?.status_options) && payload.status_options.length ? payload.status_options : ["Todos", ...FOLLOWUP_STATUSES];
             state.agendaTotalAll = Number(payload?.total_all || 0);
+            state.agendaCanViewAll = Boolean(payload?.can_view_all);
             state.agendaLoaded = true;
             state.agendaLoading = false;
             state.followupsError = false;
@@ -6721,6 +6891,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!agendaFollowups.some((item) => item.data === state.agendaSelectedDate)) {
                 state.agendaSelectedDate = agendaFollowups[0]?.data || state.todayIso;
             }
+            renderUpcomingFollowups();
             renderFollowupAgenda();
         } catch (error) {
             state.agendaLoading = false;
@@ -6824,7 +6995,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.agendaSearch = "";
         state.agendaResponsavel = "Todos";
         state.agendaStatus = "Todos";
-        state.agendaPeriod = state.agendaDefaultPeriod || buildDefaultAgendaPeriod(state.todayIso);
+        state.agendaPeriod = state.agendaDefaultPeriod;
         state.agendaPage = 1;
         state.agendaPerPage = 10;
         state.agendaDayFocus = "";
@@ -6886,17 +7057,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function parseAgendaPeriod(value) {
-        if (!value) return ["", ""];
+        if (!value || !value.trim()) return ["", ""];
         if (value.includes("|")) {
             const [start, end] = value.split("|").map((item) => item.trim());
-            return [start, end];
+            return [normalizeAgendaDateToIso(start), normalizeAgendaDateToIso(end)];
         }
-        return [state.agendaDefaultPeriod.split("|")[0], state.agendaDefaultPeriod.split("|")[1]];
+        return ["", ""];
+    }
+
+    function getDetailSelectOptions(metadataKey, currentValue) {
+        const options = Array.isArray(commercialBootstrap?.metadata?.[metadataKey])
+            ? [...commercialBootstrap.metadata[metadataKey]]
+            : [];
+        const normalizedCurrentValue = String(currentValue || "").trim();
+
+        // Preserva a exibição de registros antigos que já não estejam disponíveis para novos cadastros.
+        if (normalizedCurrentValue && !options.some((item) => String(item || "").trim() === normalizedCurrentValue)) {
+            options.unshift(normalizedCurrentValue);
+        }
+
+        return options;
     }
 
     function formatAgendaPeriodLabel(value) {
-        const [start, end] = parseAgendaPeriod(value);
-        return `${start} | ${end}`;
+        if (!value || !value.trim()) return "";
+        const [start = "", end = ""] = value.split("|").map((item) => item.trim());
+        const formattedStart = formatAgendaDateBr(start);
+        const formattedEnd = formatAgendaDateBr(end);
+
+        if (formattedStart && formattedEnd) return `${formattedStart} | ${formattedEnd}`;
+        return formattedStart || formattedEnd;
+    }
+
+    function normalizeAgendaDateToIso(value) {
+        const date = String(value || "").trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+
+        const match = date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
+    }
+
+    function formatAgendaDateBr(value) {
+        const date = String(value || "").trim();
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return date;
+        return formatDateBr(normalizeAgendaDateToIso(date));
     }
 
     function formatAgendaGroupDate(isoDate) {
@@ -7092,11 +7296,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const selectedDayItems = getAgendaDayItems(state.agendaSelectedDate, summaryItems);
         const summary = state.agendaSummary || { hoje: 0, esta_semana: 0, pendentes: 0, responsavel_principal: { nome: "-", total: 0 } };
 
-        refs.fullFollowupAgendaModal.innerHTML = `<div class="agenda-modal__card"><div class="agenda-modal__header"><div class="agenda-modal__title-wrap"><span class="agenda-modal__title-icon"><span class="material-icons" aria-hidden="true">calendar_month</span></span><div><h2 id="agendaModalTitle">Acompanhamentos Comerciais</h2><p>Visualize, filtre e registre os acompanhamentos das propostas comerciais.</p></div></div><button class="agenda-modal__close" data-agenda-action="close" type="button" aria-label="Fechar"><span class="material-icons" aria-hidden="true">close</span></button></div><div class="agenda-modal__body"><section class="agenda-summary-cards">${renderAgendaSummaryCard("today", "Acompanhamentos hoje", `${summary.hoje}`, "acompanhamentos")}${renderAgendaSummaryCard("date_range", "Esta semana", `${summary.esta_semana}`, "acompanhamentos")}${renderAgendaSummaryCard("schedule", "Pendentes de retorno", `${summary.pendentes}`, "acompanhamentos")}<article class="agenda-summary-card"><span class="agenda-summary-card__icon"><span class="material-icons" aria-hidden="true">person_outline</span></span><div class="agenda-summary-card__content"><span class="agenda-summary-card__label">Responsável principal</span><strong class="agenda-summary-card__value">${escapeHtml(summary.responsavel_principal?.nome || "-")}</strong><span class="agenda-summary-card__meta">${escapeHtml(String(summary.responsavel_principal?.total || 0))} acompanhamentos</span></div></article></section><section class="agenda-filters"><label class="agenda-filter-field agenda-filter-field--search"><span>Buscar acompanhamento</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">search</span><input data-agenda-input="search" type="search" value="${escapeHtml(state.agendaSearch)}" placeholder="Buscar por proposta, cliente ou assunto"></div></label><label class="agenda-filter-field"><span>Período</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">calendar_today</span><input data-agenda-input="period" type="text" value="${escapeHtml(formatAgendaPeriodLabel(state.agendaPeriod))}" placeholder="2026-07-01 | 2026-07-31"></div></label><label class="agenda-filter-field"><span>Responsável</span><select data-agenda-select="responsavel">${state.agendaResponsavelOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaResponsavel ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><label class="agenda-filter-field"><span>Status</span><select data-agenda-select="status">${state.agendaStatusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><div class="agenda-filters__actions"><button class="agenda-button agenda-button--secondary" data-agenda-action="clear-filters" type="button">Limpar filtros</button><button class="agenda-button agenda-button--primary" data-agenda-action="apply-filters" type="button">Aplicar filtros</button></div></section>${renderAgendaCreateForm()}<div class="agenda-layout"><section class="agenda-main"><div class="agenda-list-card"><div class="agenda-list-card__header"><div class="agenda-list-card__title"><h3>Acompanhamentos por data</h3><span class="agenda-list-card__badge">${pagedItems.total} itens</span></div></div><div class="agenda-groups">${state.agendaLoading ? `<div class="agenda-empty agenda-empty--loading"><span class="material-icons" aria-hidden="true">hourglass_top</span><p>Carregando acompanhamentos...</p></div>` : groups.length ? groups.map(renderAgendaGroup).join("") : renderAgendaEmptyState()}</div>${pagedItems.total ? `<div class="agenda-pagination"><span class="agenda-pagination__text">Mostrando ${pagedItems.start} a ${pagedItems.end} de ${pagedItems.total} itens</span><div class="agenda-pagination__controls"><button class="agenda-page-btn" data-agenda-action="prev-page" type="button" ${state.agendaPage === 1 ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_left</span></button>${renderAgendaPageButtons(pagedItems.totalPages)}<button class="agenda-page-btn" data-agenda-action="next-page" type="button" ${state.agendaPage === pagedItems.totalPages ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_right</span></button></div><select class="agenda-pagination__select" data-agenda-select="per-page">${[10, 20, 30].map((size) => `<option value="${size}" ${size === state.agendaPerPage ? "selected" : ""}>${size} por página</option>`).join("")}</select></div>` : ""}</div></section><aside class="agenda-side"><section class="agenda-side-card"><div class="agenda-side-card__header"><h3>Calendário</h3><div class="agenda-calendar__nav"><span>${escapeHtml(formatAgendaMonthLabel(state.agendaSelectedDate || state.todayIso))}</span></div></div>${renderAgendaCalendar()}</section><section class="agenda-side-card"><div class="agenda-side-card__header"><div><h3>Acompanhamentos do dia</h3><p>${escapeHtml(formatAgendaSummaryDay(state.agendaSelectedDate || state.todayIso))}</p></div><span class="agenda-side-card__badge">${selectedDayItems.length} itens</span></div><div class="agenda-day-summary">${selectedDayItems.length ? selectedDayItems.map((item) => `<article class="agenda-day-summary__item"><span class="agenda-day-summary__dot"></span><div><strong>${escapeHtml(item.hora)} — ${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</strong><p>${escapeHtml(item.numeroProposta || item.numero_proposta || "")} • ${escapeHtml(item.cliente)}</p></div></article>`).join("") : `<p class="agenda-day-summary__empty">Sem acompanhamentos para o dia selecionado.</p>`}</div><button class="agenda-day-summary__link" data-agenda-action="view-day" type="button">Ver todos do dia</button></section></aside></div></div><div class="agenda-modal__footer"><button class="agenda-button agenda-button--secondary" data-agenda-action="new-followup" type="button"><span class="material-icons" aria-hidden="true">add</span>Registrar acompanhamento</button><button class="agenda-button agenda-button--primary" data-agenda-action="close" type="button">Fechar</button></div></div>`;
+        const agendaTitle = state.agendaCanViewAll ? "Acompanhamentos Comerciais" : "Meus Follow-ups";
+        const agendaSubtitle = state.agendaCanViewAll ? "Visualize, filtre e registre os acompanhamentos comerciais." : "Visualize, filtre e registre os seus acompanhamentos comerciais.";
+        refs.fullFollowupAgendaModal.innerHTML = `<div class="agenda-modal__card"><div class="agenda-modal__header"><div class="agenda-modal__title-wrap"><span class="agenda-modal__title-icon"><span class="material-icons" aria-hidden="true">calendar_month</span></span><div><h2 id="agendaModalTitle">${agendaTitle}</h2><p>${agendaSubtitle}</p></div></div><button class="agenda-modal__close" data-agenda-action="close" type="button" aria-label="Fechar"><span class="material-icons" aria-hidden="true">close</span></button></div><div class="agenda-modal__body"><section class="agenda-summary-cards">${renderAgendaSummaryCard("today", "Hoje", `${summary.hoje}`, "acompanhamentos")}${renderAgendaSummaryCard("date_range", "Esta semana", `${summary.esta_semana}`, "acompanhamentos")}${renderAgendaSummaryCard("schedule", "Pendentes de retorno", `${summary.pendentes}`, "acompanhamentos")}</section><section class="agenda-filters"><label class="agenda-filter-field agenda-filter-field--search"><span>Buscar acompanhamento</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">search</span><input data-agenda-input="search" type="search" value="${escapeHtml(state.agendaSearch)}" placeholder="Buscar por proposta, cliente ou assunto"></div></label><label class="agenda-filter-field"><span>Período</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">calendar_today</span><input data-agenda-input="period" type="text" inputmode="numeric" value="${escapeHtml(formatAgendaPeriodLabel(state.agendaPeriod))}" placeholder="dd/mm/aaaa | dd/mm/aaaa"></div></label><label class="agenda-filter-field"><span>Status</span><select data-agenda-select="status">${state.agendaStatusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><div class="agenda-filters__actions"><button class="agenda-button agenda-button--secondary" data-agenda-action="clear-filters" type="button">Limpar filtros</button><button class="agenda-button agenda-button--primary" data-agenda-action="apply-filters" type="button">Aplicar filtros</button></div></section>${renderAgendaCreateForm()}<div class="agenda-layout"><section class="agenda-main"><div class="agenda-list-card"><div class="agenda-list-card__header"><div class="agenda-list-card__title"><h3>Acompanhamentos por data</h3><span class="agenda-list-card__badge">${pagedItems.total} itens</span></div></div><div class="agenda-groups">${state.agendaLoading ? `<div class="agenda-empty agenda-empty--loading"><span class="material-icons" aria-hidden="true">hourglass_top</span><p>Carregando acompanhamentos...</p></div>` : groups.length ? groups.map(renderAgendaGroup).join("") : renderAgendaEmptyState()}</div>${pagedItems.total ? `<div class="agenda-pagination"><span class="agenda-pagination__text">Mostrando ${pagedItems.start} a ${pagedItems.end} de ${pagedItems.total} itens</span><div class="agenda-pagination__controls"><button class="agenda-page-btn" data-agenda-action="prev-page" type="button" ${state.agendaPage === 1 ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_left</span></button>${renderAgendaPageButtons(pagedItems.totalPages)}<button class="agenda-page-btn" data-agenda-action="next-page" type="button" ${state.agendaPage === pagedItems.totalPages ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_right</span></button></div><select class="agenda-pagination__select" data-agenda-select="per-page">${[10, 20, 30].map((size) => `<option value="${size}" ${size === state.agendaPerPage ? "selected" : ""}>${size} por página</option>`).join("")}</select></div>` : ""}</div></section><aside class="agenda-side"><section class="agenda-side-card"><div class="agenda-side-card__header"><h3>Calendário</h3><div class="agenda-calendar__nav"><span>${escapeHtml(formatAgendaMonthLabel(state.agendaSelectedDate || state.todayIso))}</span></div></div>${renderAgendaCalendar()}</section><section class="agenda-side-card"><div class="agenda-side-card__header"><div><h3>Acompanhamentos do dia</h3><p>${escapeHtml(formatAgendaSummaryDay(state.agendaSelectedDate || state.todayIso))}</p></div><span class="agenda-side-card__badge">${selectedDayItems.length} itens</span></div><div class="agenda-day-summary">${selectedDayItems.length ? selectedDayItems.map((item) => `<article class="agenda-day-summary__item"><span class="agenda-day-summary__dot"></span><div><strong>${escapeHtml(item.hora)} — ${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</strong><p>${escapeHtml(item.numeroProposta || item.numero_proposta || "")} • ${escapeHtml(item.cliente)}</p></div></article>`).join("") : `<p class="agenda-day-summary__empty">Sem acompanhamentos para este dia.</p>`}</div></section></aside></div></div><div class="agenda-modal__footer"><button class="agenda-button agenda-button--secondary" data-agenda-action="new-followup" type="button"><span class="material-icons" aria-hidden="true">add</span>Registrar acompanhamento</button><button class="agenda-button agenda-button--primary" data-agenda-action="close" type="button">Fechar</button></div></div>`;
     }
 
     function renderAgendaGroup(group) {
-        return `<section class="agenda-group"><div class="agenda-group__header"><div class="agenda-group__title"><span class="material-icons" aria-hidden="true">calendar_today</span><h4>${escapeHtml(formatAgendaGroupDate(group.date))}</h4></div><span>${group.entries.length} acompanhamentos</span></div><div class="agenda-group__items">${group.entries.map((item) => `<article class="agenda-item"><div class="agenda-item__date"><strong>${escapeHtml(formatAgendaDay(item.data))}</strong><span>${escapeHtml(formatAgendaMonthShort(item.data))}</span></div><div class="agenda-item__time">${escapeHtml(item.hora || "--:--")}</div><div class="agenda-item__content"><span class="agenda-item__proposal">${escapeHtml(item.numero_proposta || item.numeroProposta)}</span><strong>${escapeHtml(item.cliente)}</strong><p>${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</p></div><div class="agenda-item__owner">${escapeHtml(item.responsavel)}</div><div class="agenda-item__contact"><span class="material-icons" aria-hidden="true">contact_phone</span></div><div class="agenda-item__status"><span class="agenda-status-badge ${slugify(item.status)}">${escapeHtml(item.status)}</span></div></article>`).join("")}</div></section>`;
+        return `<section class="agenda-group"><div class="agenda-group__header"><div class="agenda-group__title"><span class="material-icons" aria-hidden="true">calendar_today</span><h4>${escapeHtml(formatAgendaGroupDate(group.date))}</h4></div><span>${group.entries.length} acompanhamentos</span></div><div class="agenda-group__items">${group.entries.map((item) => `<article class="agenda-item agenda-item--detailed"><div class="agenda-item__date"><strong>${escapeHtml(formatAgendaDay(item.data))}</strong><span>${escapeHtml(formatAgendaMonthShort(item.data))}</span></div><div class="agenda-item__contact-meta"><strong><i></i>${escapeHtml(item.hora || "--:--")}</strong><span><span class="material-icons" aria-hidden="true">${agendaContactIcon(item.tipo_contato)}</span>${escapeHtml(item.tipo_contato || "Acompanhamento")}</span></div><div class="agenda-item__proposal-detail"><strong>${escapeHtml(item.numero_proposta || item.numeroProposta)}</strong><span>${escapeHtml(item.cliente || "Cliente não informado")}</span><small>${item.revisao ? `REV ${escapeHtml(item.revisao)} · ` : ""}${escapeHtml(item.unidade || "Unidade não informada")}</small></div><div class="agenda-item__subject"><strong>${escapeHtml(item.titulo || "Acompanhamento comercial")}</strong><p>${escapeHtml(item.comentario || "Sem observação complementar.")}</p></div><div class="agenda-item__owner-detail"><span class="material-icons" aria-hidden="true">person</span><strong>${escapeHtml(item.responsavel || "Não informado")}</strong></div><div class="agenda-item__outcome"><span class="agenda-proposal-status ${slugify(item.status_proposta || item.status)}">${escapeHtml(item.status_proposta || item.status || "Sem status")}</span><small>Próxima ação</small><p>${escapeHtml(item.proxima_acao || "Não informada")}</p></div></article>`).join("")}</div></section>`;
+    }
+
+    function agendaContactIcon(type) {
+        const normalized = String(type || "").toLowerCase();
+        if (normalized.includes("e-mail") || normalized.includes("email")) return "mail";
+        if (normalized.includes("whatsapp")) return "chat";
+        if (normalized.includes("reuni")) return "groups";
+        if (normalized.includes("liga")) return "call";
+        return "event_note";
     }
 
     function todayDate() {
@@ -7123,5 +7338,40 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    function renderUpcomingFollowups() {
+        if (!refs.upcomingFollowupsList) {
+            return;
+        }
+
+        const upcomingItems = agendaFollowups
+            .filter((item) => item.status !== "Realizado" && item.status !== "Concluído" && item.status !== "Cancelado")
+            .sort((left, right) => `${left.data || ""}${left.hora || ""}`.localeCompare(`${right.data || ""}${right.hora || ""}`))
+            .slice(0, 3);
+
+        if (!upcomingItems.length) {
+            refs.upcomingFollowupsList.innerHTML = `
+                <div class="upcoming-followups-empty">
+                    <span class="material-icons" aria-hidden="true">event_available</span>
+                    <p>Nenhum follow-up próximo para você.</p>
+                </div>
+            `;
+            return;
+        }
+
+        refs.upcomingFollowupsList.innerHTML = upcomingItems.map((item) => `
+            <article class="upcoming-followup-item">
+                <time class="upcoming-followup-item__date" datetime="${escapeHtml(item.data)}">
+                    <strong>${escapeHtml(formatAgendaDay(item.data))}</strong>
+                    <span>${escapeHtml(formatAgendaMonthShort(item.data))}</span>
+                </time>
+                <div class="upcoming-followup-item__content">
+                    <strong>${escapeHtml(item.cliente || "Cliente não informado")}</strong>
+                    <p>${escapeHtml(item.titulo || item.proxima_acao || "Acompanhamento comercial")}</p>
+                </div>
+                <span class="upcoming-followup-item__time">${escapeHtml(item.hora || "--:--")}</span>
+            </article>
+        `).join("");
     }
 });
