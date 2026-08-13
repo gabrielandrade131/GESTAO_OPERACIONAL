@@ -2895,93 +2895,211 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
         from html import escape
 
         from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import Image as ReportLabImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         serialized = _serialize_financeiro(proposta)
         analysis = serialized.get("analiseCriticaOportunidade") or {}
         answers = analysis.get("respostas") or {}
         styles = getSampleStyleSheet()
         styles.add(ParagraphStyle(
-            name="CriticalPdfTitle",
-            parent=styles["Heading1"],
-            fontName="Helvetica-Bold",
-            fontSize=19,
-            leading=23,
-            textColor=colors.HexColor("#14213d"),
-            spaceAfter=4,
-        ))
-        styles.add(ParagraphStyle(
-            name="CriticalPdfBody",
+            name="CriticalFormBody",
             parent=styles["BodyText"],
             fontName="Helvetica",
-            fontSize=9,
-            leading=12,
-            textColor=colors.HexColor("#26364c"),
+            fontSize=7.6,
+            leading=9.1,
+            textColor=colors.black,
         ))
         styles.add(ParagraphStyle(
-            name="CriticalPdfHeader",
+            name="CriticalFormLabel",
             parent=styles["BodyText"],
             fontName="Helvetica-Bold",
-            fontSize=8,
+            fontSize=7.6,
+            leading=9.1,
+            textColor=colors.black,
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormHeader",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=7.6,
+            leading=9.1,
+            alignment=TA_CENTER,
+            textColor=colors.black,
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormTitle",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=8.5,
             leading=10,
-            textColor=colors.HexColor("#52647d"),
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#777777"),
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormLogo",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=16,
+            leading=18,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#888888"),
         ))
 
-        def paragraph(value, style="CriticalPdfBody"):
+        def paragraph(value, style="CriticalFormBody"):
             return Paragraph(escape(str(value or "-")).replace(chr(10), "<br/>"), styles[style])
 
-        answer_labels = dict(AnaliseCriticaOportunidade.RESPOSTAS)
-        rows = [[
-            paragraph("Critério", "CriticalPdfHeader"),
-            paragraph("Resposta", "CriticalPdfHeader"),
-        ]]
-        for index, field_name in enumerate(CRITICAL_ANALYSIS_FIELDS, start=1):
-            rows.append([
-                paragraph(f"{index}. {CRITICAL_ANALYSIS_QUESTIONS[field_name]}"),
-                paragraph(answer_labels.get(answers.get(field_name), "Não respondida")),
-            ])
+        def field_value(label, value):
+            safe_value = escape(str(value or "")).replace(chr(10), "<br/>")
+            return Paragraph(f"<b>{escape(label)}</b> {safe_value}", styles["CriticalFormBody"])
 
+        def field_label(label):
+            return Paragraph(f"<b>{escape(label)}</b>", styles["CriticalFormBody"])
+
+        def form_table(data, widths, commands=None, row_heights=None):
+            table = Table(data, colWidths=widths, rowHeights=row_heights)
+            table_commands = [
+                ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+            if commands:
+                table_commands.extend(commands)
+            table.setStyle(TableStyle(table_commands))
+            return table
+
+        def answer_value(field_name):
+            return {
+                "SIM": "SIM",
+                "NAO": "NÃO",
+                "NA": "NA",
+            }.get(answers.get(field_name), "")
+
+        def criterion_row(field_name):
+            return [paragraph(CRITICAL_ANALYSIS_QUESTIONS[field_name]), paragraph(answer_value(field_name), "CriticalFormHeader")]
+
+        green = colors.HexColor("#92d050")
+        content_width = 17.6 * cm
+        label_width = 6.2 * cm
+        logo_path = os.path.join(os.path.dirname(__file__), "static", "js", "img", "Logo_Preto.png")
+        logo = (
+            ReportLabImage(logo_path, width=3.05 * cm, height=0.89 * cm)
+            if os.path.exists(logo_path)
+            else Paragraph("ambipar<super>®</super>", styles["CriticalFormLogo"])
+        )
         pdf_io = BytesIO()
         document = SimpleDocTemplate(
             pdf_io,
             pagesize=A4,
-            leftMargin=1.5 * cm,
-            rightMargin=1.5 * cm,
-            topMargin=1.4 * cm,
-            bottomMargin=1.4 * cm,
+            leftMargin=1.45 * cm,
+            rightMargin=1.45 * cm,
+            topMargin=0.95 * cm,
+            bottomMargin=0.7 * cm,
         )
-        status = analysis.get("status") or "Pendente"
-        progress = f"{analysis.get('quantidadeRespondida', 0)} de {analysis.get('totalPerguntas', len(CRITICAL_ANALYSIS_FIELDS))} perguntas respondidas"
-        story = [
-            paragraph("SYNCHRO COMERCIAL", "CriticalPdfHeader"),
-            Paragraph("Análise Crítica da Oportunidade", styles["CriticalPdfTitle"]),
-            paragraph(f"Proposta {serialized.get('numeroProposta') or proposta.proposta} | {serialized.get('empresa') or 'Cliente não informado'}"),
-            paragraph(f"Status: {status} | {progress} | Gerado em {timezone.localtime().strftime('%d/%m/%Y %H:%M')}"),
-            Spacer(1, 0.35 * cm),
+        story = []
+        story.append(form_table(
+            [[
+                logo,
+                Paragraph("ANÁLISE CRÍTICA DA OPORTUNIDADE", styles["CriticalFormTitle"]),
+                Paragraph("FOR-SGQ-034 - Rev.6", styles["CriticalFormTitle"]),
+            ]],
+            [3.9 * cm, 8.7 * cm, 5.0 * cm],
+            row_heights=[1.45 * cm],
+        ))
+        story.append(Spacer(1, 0.5 * cm))
+
+        story.append(form_table(
+            [
+                [field_value("Número da Proposta:", serialized.get("numeroProposta")), "", ""],
+                [field_value("Fonte do lead:", serialized.get("fonteLead")), "", field_value("Data:", serialized.get("emissao"))],
+            ],
+            [6.2 * cm, 6.0 * cm, 5.4 * cm],
+            commands=[("SPAN", (0, 0), (2, 0))],
+        ))
+        story.append(Spacer(1, 0.42 * cm))
+
+        offshore = str(serialized.get("tipoOperacao") or "").strip().lower() == "offshore"
+        onshore = str(serialized.get("tipoOperacao") or "").strip().lower() == "onshore"
+        story.append(form_table(
+            [
+                [field_label("Cliente:"), paragraph(serialized.get("empresa"))],
+                [field_label("Unidade / Plataforma / Planta"), paragraph(serialized.get("unidade"))],
+                [field_label("Tipo de operação"), paragraph(f"( {'X' if onshore else ' '} ) Onshore    ( {'X' if offshore else ' '} ) Offshore")],
+                [field_label("Serviço:"), paragraph(serialized.get("escopo") or serialized.get("servico"))],
+                [field_label("Local de embarque / local da operação:"), paragraph(serialized.get("embarcacaoLocal"))],
+                [field_label("Data prevista da operação:"), paragraph(serialized.get("dataEntregaProposta"))],
+            ],
+            [label_width, content_width - label_width],
+        ))
+        story.append(Spacer(1, 0.55 * cm))
+
+        criteria_rows = [
+            [paragraph("CRITÉRIO", "CriticalFormHeader"), paragraph("AVALIAÇÃO", "CriticalFormHeader")],
+            [paragraph("Requisitos do cliente", "CriticalFormLabel"), ""],
+            criterion_row("capacidade_atender_requisitos"),
+            criterion_row("habilitacao_tecnica_atendida"),
+            [paragraph("Requisitos técnicos", "CriticalFormLabel"), ""],
+            criterion_row("visita_tecnica_necessaria"),
+            criterion_row("escopo_claramente_definido"),
+            criterion_row("competencia_tecnica_execucao"),
+            [paragraph("Recursos operacionais", "CriticalFormLabel"), ""],
+            criterion_row("recursos_disponiveis"),
+            criterion_row("equipe_com_treinamentos"),
+            criterion_row("equipe_irata_disponivel"),
+            criterion_row("equipe_resgate_disponivel"),
+            [paragraph("Logística", "CriticalFormLabel"), ""],
+            criterion_row("tempo_habil_mobilizacao"),
+            criterion_row("tempo_habil_aquisicao"),
+            [paragraph("Viabilidade comercial", "CriticalFormLabel"), ""],
+            criterion_row("riscos_comerciais_relevantes"),
+            criterion_row("oportunidade_viavel_rentavel"),
+            criterion_row("pendencias_financeiras_cliente"),
+            [paragraph("OBSERVAÇÕES GERAIS", "CriticalFormLabel"), ""],
+            [paragraph(analysis.get("comentario") or ""), ""],
         ]
+        group_rows = [1, 4, 8, 13, 16, 20]
+        criteria_table = form_table(
+            criteria_rows,
+            [14.6 * cm, 3.0 * cm],
+            commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), green),
+                *[("BACKGROUND", (0, row), (-1, row), green) for row in group_rows],
+                ("SPAN", (0, 1), (1, 1)),
+                ("SPAN", (0, 4), (1, 4)),
+                ("SPAN", (0, 8), (1, 8)),
+                ("SPAN", (0, 13), (1, 13)),
+                ("SPAN", (0, 16), (1, 16)),
+                ("SPAN", (0, 20), (1, 20)),
+                ("SPAN", (0, 21), (1, 21)),
+                ("ALIGN", (1, 0), (1, -1), "CENTER"),
+            ],
+        )
+        story.append(criteria_table)
+        story.append(Spacer(1, 0.45 * cm))
 
-        table = Table(rows, colWidths=[14.2 * cm, 3.2 * cm], repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f6f8")),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#dfe6ee")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dfe6ee")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 7),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(table)
-
-        if analysis.get("comentario"):
-            story.extend([
-                Spacer(1, 0.35 * cm),
-                paragraph("Comentário da Análise Crítica", "CriticalPdfHeader"),
-                paragraph(analysis["comentario"]),
-            ])
+        participate = answers.get("iremos_participar")
+        participation_rows = [
+            [field_value("Participaremos da oportunidade?", f"( {'X' if participate == 'SIM' else ' '} ) Sim    ( {'X' if participate == 'NAO' else ' '} ) Não")],
+            [field_value("Motivo:", serialized.get("motivoDeclinioPerda") if participate == "NAO" else "")],
+        ]
+        story.append(form_table(participation_rows, [content_width], row_heights=[0.7 * cm, 0.7 * cm]))
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(form_table(
+            [[
+                paragraph("Nome", "CriticalFormHeader"),
+                paragraph("Setor", "CriticalFormHeader"),
+                paragraph("Assinatura", "CriticalFormHeader"),
+            ], ["", "", ""]],
+            [5.7 * cm, 5.7 * cm, 6.2 * cm],
+            commands=[("BACKGROUND", (0, 0), (-1, 0), green)],
+            row_heights=[0.55 * cm, 1.15 * cm],
+        ))
 
         document.build(story)
         pdf_content = pdf_io.getvalue()
