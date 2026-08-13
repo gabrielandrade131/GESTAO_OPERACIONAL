@@ -217,7 +217,12 @@ def _parse_decimal_input(value):
     if value in (None, ""):
         return Decimal("0")
     text = str(value).strip().replace("R$", "").replace(" ", "")
-    text = text.replace(".", "").replace(",", ".")
+    # Accept both the visual Brazilian format (1.600,00) and the decimal
+    # format sent by the JavaScript payload (1600.00).
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif text.count(".") > 1:
+        text = text.replace(".", "")
     try:
         return Decimal(text)
     except (InvalidOperation, TypeError, ValueError):

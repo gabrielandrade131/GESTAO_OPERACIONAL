@@ -2821,6 +2821,61 @@ body.comercial-is-loading .commercial-main-content {
     font-size: 0.9rem;
 }
 
+.scope-items-editor {
+    margin-top: 18px;
+    border: 1px solid #e1e8f0;
+    border-radius: 18px;
+    background: #fafcfe;
+    padding: 16px;
+}
+
+.scope-items-editor__heading,
+.scope-items-editor__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.scope-items-editor__heading {
+    margin-bottom: 14px;
+}
+
+.scope-items-editor__heading h4 {
+    margin: 0;
+    color: #182235;
+    font-size: 0.98rem;
+}
+
+.scope-items-editor__heading p {
+    margin: 4px 0 0;
+    color: #667085;
+    font-size: 0.84rem;
+}
+
+.scope-items-editor__heading strong {
+    color: #182235;
+    white-space: nowrap;
+}
+
+.scope-items-editor__list {
+    display: grid;
+    gap: 10px;
+}
+
+.scope-items-editor__row {
+    grid-template-columns: minmax(180px, 1.6fr) minmax(130px, .95fr) minmax(95px, .7fr) minmax(130px, .9fr) 42px;
+}
+
+.scope-items-editor__footer {
+    justify-content: flex-start;
+    margin-top: 14px;
+}
+
+.scope-items-editor__quick-create {
+    margin-top: 14px;
+}
+
 .edit-field--span-two {
     grid-column: 1 / -1;
 }
@@ -5883,6 +5938,16 @@ body.comercial-no-scroll {
     }
 
     .scope-service-row {
+        grid-template-columns: 1fr;
+    }
+
+    .scope-items-editor__heading,
+    .scope-items-editor__footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .scope-items-editor__row {
         grid-template-columns: 1fr;
     }
 

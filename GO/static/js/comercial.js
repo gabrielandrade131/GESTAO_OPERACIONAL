@@ -150,6 +150,8 @@ document.addEventListener("DOMContentLoaded", () => {
         proposalItems: [],
         proposalDraftServices: [""],
         scopeDraftServices: [],
+        scopeDraftItems: [],
+        scopeQuickItemOpen: false,
         proposalItemCounter: 1,
         lastCreatedProposalPayload: null,
         toastTimer: null,
@@ -1378,6 +1380,20 @@ document.addEventListener("DOMContentLoaded", () => {
             updateScopeDraftService(Number(field.dataset.scopeServiceIndex), field.value);
         }
 
+        if (field.matches("[data-scope-item-field]")) {
+            updateScopeDraftItem(
+                Number(field.dataset.scopeItemIndex),
+                field.dataset.scopeItemField,
+                field.value
+            );
+            if (field.dataset.scopeItemField === "unitPrice") {
+                field.value = formatCurrencyInputValue(parseCurrencyValue(field.value));
+            }
+            if (field.dataset.scopeItemField === "quantity") {
+                field.value = String(Math.max(1, Number(field.value) || 1));
+            }
+        }
+
         if (field.matches("[data-proposal-item-field='item']")) {
             updateProposalItem(Number(field.dataset.itemId), "item", field.value);
         }
@@ -1411,6 +1427,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (field.matches("[data-proposal-item-field='unitPrice']")) {
             updateProposalItem(Number(field.dataset.itemId), "unitPrice", field.value);
+        }
+
+        if (field.matches("[data-scope-item-field='unitPrice']")) {
+            updateScopeDraftItem(Number(field.dataset.scopeItemIndex), "unitPrice", field.value);
+        }
+
+        if (field.matches("[data-scope-item-field='quantity']")) {
+            updateScopeDraftItem(Number(field.dataset.scopeItemIndex), "quantity", field.value);
         }
 
         if (field.matches("[data-proposal-item-field='quantity']")) {
@@ -2707,6 +2731,38 @@ document.addEventListener("DOMContentLoaded", () => {
                                 <input id="scopeTempo" type="text" value="${escapeHtml(proposal.tempoContratoDias)}">
                             </div>
                         </div>
+                        <section class="scope-items-editor">
+                            <div class="scope-items-editor__heading">
+                                <div>
+                                    <h4>Equipamentos / Itens da Proposta</h4>
+                                    <p>Inclua, altere ou remova os itens vinculados a esta proposta.</p>
+                                </div>
+                                <strong data-scope-items-total>${escapeHtml(formatCurrencyDisplay(getScopeDraftItemsTotal()))}</strong>
+                            </div>
+                            <div class="scope-items-editor__list">
+                                ${state.scopeDraftItems.map((item, index) => renderScopeDraftItemRow(item, index)).join("")}
+                            </div>
+                            <div class="scope-items-editor__footer">
+                                <button class="panel-button panel-button--soft" data-panel-action="add-scope-item" type="button">
+                                    <span class="material-icons" aria-hidden="true">add</span>
+                                    Adicionar item
+                                </button>
+                                <button class="proposal-inline-link" data-panel-action="open-scope-quick-item" type="button">Cadastrar item/equipamento</button>
+                            </div>
+                            ${state.scopeQuickItemOpen ? `
+                                <div class="proposal-inline-card scope-items-editor__quick-create">
+                                    <strong>Novo item / equipamento</strong>
+                                    <label class="proposal-field proposal-field--inline">
+                                        <span>Nome do item <em>*</em></span>
+                                        <input id="scopeQuickItemName" type="text" placeholder="Digite o nome do item ou equipamento">
+                                    </label>
+                                    <div class="proposal-inline-card__actions">
+                                        <button class="proposal-button proposal-button--secondary" data-panel-action="cancel-scope-quick-item" type="button">Cancelar</button>
+                                        <button class="proposal-button proposal-button--primary" data-panel-action="save-scope-quick-item" type="button">Salvar item</button>
+                                    </div>
+                                </div>
+                            ` : ""}
+                        </section>
                         <div class="detail-actions-row">
                             <button class="panel-button panel-button--soft" data-panel-action="cancel-scope" type="button">Cancelar</button>
                             <button class="panel-button panel-button--primary" data-panel-action="save-scope" type="button">Salvar escopo</button>
@@ -2756,6 +2812,147 @@ document.addEventListener("DOMContentLoaded", () => {
     function syncScopeDraftServicesFromProposal(proposal) {
         const services = getProposalScopeServices(proposal);
         state.scopeDraftServices = services.length ? [...services] : [""];
+    }
+
+    function syncScopeDraftItemsFromProposal(proposal) {
+        state.scopeDraftItems = Array.isArray(proposal?.campos) && proposal.campos.length
+            ? proposal.campos.map((item) => ({
+                item: String(item.nome || ""),
+                unitPrice: Number(item.preco_unitario || 0) || 0,
+                quantity: Number(item.quantidade || 1) || 1
+            }))
+            : [];
+        state.scopeQuickItemOpen = false;
+    }
+
+    function createEmptyScopeDraftItem() {
+        return { item: "", unitPrice: 0, quantity: 1 };
+    }
+
+    function getScopeDraftItemsTotal() {
+        return (state.scopeDraftItems || []).reduce(
+            (total, item) => total + ((Number(item.unitPrice) || 0) * (Number(item.quantity) || 0)),
+            0
+        );
+    }
+
+    function renderScopeDraftItemRow(item, index) {
+        const subtotal = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+        return `
+            <div class="proposal-item-row scope-items-editor__row" data-scope-item-row="${index}">
+                <div class="proposal-item-field">
+                    <label>Item / Equipamento</label>
+                    <select data-scope-item-field="item" data-scope-item-index="${index}">
+                        <option value="">Selecione o item</option>
+                        ${renderProposalItemOptions(item.item)}
+                    </select>
+                </div>
+                <div class="proposal-item-field">
+                    <label>Preço unitário</label>
+                    <div class="proposal-item-price">
+                        <span>R$</span>
+                        <input type="text" value="${escapeHtml(formatCurrencyInputValue(item.unitPrice))}" data-scope-item-field="unitPrice" data-scope-item-index="${index}" inputmode="decimal" placeholder="0,00">
+                    </div>
+                </div>
+                <div class="proposal-item-field">
+                    <label>Quantidade</label>
+                    <input type="number" min="1" step="1" value="${escapeHtml(String(item.quantity || 1))}" data-scope-item-field="quantity" data-scope-item-index="${index}">
+                </div>
+                <div class="proposal-item-field">
+                    <label>Subtotal</label>
+                    <div class="proposal-item-subtotal" data-scope-item-subtotal="${index}">${escapeHtml(formatCurrencyDisplay(subtotal))}</div>
+                </div>
+                <button class="proposal-item-remove" data-panel-action="remove-scope-item" data-scope-item-index="${index}" type="button" aria-label="Remover item">
+                    <span class="material-icons" aria-hidden="true">delete</span>
+                </button>
+            </div>
+        `;
+    }
+
+    function addScopeDraftItem() {
+        state.scopeDraftItems.push(createEmptyScopeDraftItem());
+        renderProposalPanel();
+    }
+
+    function removeScopeDraftItem(index) {
+        state.scopeDraftItems.splice(index, 1);
+        renderProposalPanel();
+    }
+
+    function updateScopeDraftItem(index, field, value) {
+        const item = state.scopeDraftItems[index];
+        if (!item) return;
+        if (field === "item") item.item = value;
+        if (field === "unitPrice") item.unitPrice = parseCurrencyValue(value);
+        if (field === "quantity") item.quantity = Math.max(1, Number(value) || 1);
+
+        const subtotal = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+        const subtotalField = refs.proposalDrawer.querySelector(`[data-scope-item-subtotal="${index}"]`);
+        if (subtotalField) subtotalField.textContent = formatCurrencyDisplay(subtotal);
+        const total = refs.proposalDrawer.querySelector("[data-scope-items-total]");
+        if (total) total.textContent = formatCurrencyDisplay(getScopeDraftItemsTotal());
+    }
+
+    function buildScopeDraftItemsPayload() {
+        return (state.scopeDraftItems || [])
+            .filter((item) => item.item || Number(item.unitPrice) > 0)
+            .map((item) => ({
+                nome: item.item,
+                preco_unitario: Number(item.unitPrice || 0).toFixed(2),
+                quantidade: String(Math.max(1, Number(item.quantity) || 1))
+            }));
+    }
+
+    async function saveScopeQuickItem() {
+        const input = refs.proposalDrawer.querySelector("#scopeQuickItemName");
+        const nome = input?.value.trim() || "";
+        if (!nome) {
+            showNotification({
+                type: "warning",
+                title: "Informe o item",
+                message: "Digite o nome do item ou equipamento para cadastrá-lo."
+            });
+            input?.focus();
+            return;
+        }
+
+        try {
+            const response = await fetchJson(state.endpoints.quickItemCreate, {
+                method: "POST",
+                body: JSON.stringify({ nome })
+            });
+            const item = response?.item || {};
+            const choices = Array.isArray(commercialBootstrap?.metadata?.financeiroCampoChoices)
+                ? commercialBootstrap.metadata.financeiroCampoChoices
+                : [];
+            if (!choices.some((choice) => choice.value === item.value)) {
+                choices.push({
+                    value: item.value,
+                    label: item.label || item.value,
+                    group: item.group || "Itens cadastrados"
+                });
+            }
+            commercialBootstrap.metadata.financeiroCampoChoices = choices;
+            applyFinanceiroCampoChoices(choices);
+            state.scopeDraftItems.push({
+                item: item.value,
+                unitPrice: 0,
+                quantity: 1
+            });
+            state.scopeQuickItemOpen = false;
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Item cadastrado com sucesso",
+                message: "${item.label || item.value} foi adicionado à edição da proposta."
+            });
+        } catch (error) {
+            showNotification({
+                type: "warning",
+                title: "Não foi possível cadastrar o item",
+                message: error?.details?.nome || error.message || "Tente novamente."
+            });
+        }
     }
 
     function addScopeDraftService() {
@@ -5589,20 +5786,24 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const escopo = escopos.join(" | ");
+        const campos = buildScopeDraftItemsPayload();
 
         persistProposalUpdate(proposal.id, {
             servico: escopo,
             estimativo_receita: estimativaReceita,
             tempo_contrato_dias: tempoContrato,
+            campos,
             history_entry: {
                 usuario: proposal.responsavel,
                 acao: "Escopo atualizado",
-                detalhe: "Escopos, receita estimada e tempo de contrato foram atualizados."
+                detalhe: "Escopos, itens, receita estimada e tempo de contrato foram atualizados."
             }
         }).then(() => {
             state.scopeEditMode = false;
             state.saveProposalError = false;
             state.scopeDraftServices = [];
+            state.scopeDraftItems = [];
+            state.scopeQuickItemOpen = false;
             renderProposalPanel();
             showNotification({
                 type: "success",
@@ -6836,11 +7037,14 @@ document.addEventListener("DOMContentLoaded", () => {
             state.scopeEditMode = true;
             state.saveProposalError = false;
             syncScopeDraftServicesFromProposal(getSelectedProposal());
+            syncScopeDraftItemsFromProposal(getSelectedProposal());
             renderProposalPanel();
         } else if (action === "cancel-scope") {
             state.saveProposalError = false;
             state.scopeEditMode = false;
             state.scopeDraftServices = [];
+            state.scopeDraftItems = [];
+            state.scopeQuickItemOpen = false;
             renderProposalPanel();
         } else if (action === "save-scope") {
             saveScopeData();
@@ -6848,6 +7052,19 @@ document.addEventListener("DOMContentLoaded", () => {
             addScopeDraftService();
         } else if (action === "remove-scope-service") {
             removeScopeDraftService(Number(actionTrigger.dataset.scopeServiceIndex));
+        } else if (action === "add-scope-item") {
+            addScopeDraftItem();
+        } else if (action === "remove-scope-item") {
+            removeScopeDraftItem(Number(actionTrigger.dataset.scopeItemIndex));
+        } else if (action === "open-scope-quick-item") {
+            state.scopeQuickItemOpen = true;
+            renderProposalPanel();
+            window.requestAnimationFrame(() => refs.proposalDrawer.querySelector("#scopeQuickItemName")?.focus());
+        } else if (action === "cancel-scope-quick-item") {
+            state.scopeQuickItemOpen = false;
+            renderProposalPanel();
+        } else if (action === "save-scope-quick-item") {
+            saveScopeQuickItem();
         } else if (action === "open-followup") {
             state.activeDetailTab = "followups";
             state.followupFormOpen = true;
