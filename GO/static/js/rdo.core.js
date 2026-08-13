@@ -6672,8 +6672,122 @@
   }
   try { window.rdoOpenSupervisorModal = openSupervisorModal; } catch(_){ }
   try { onReady(_initEditorActivityDragReorder); } catch(_){ }
+
+  async function _confirmLatestRdoBeforeCreate(context, sourceEl){
+    try {
+      if (sourceEl && sourceEl.getAttribute('data-is-latest-for-os') === '0') {
+        showToast('Somente o último RDO da OS pode originar um novo RDO.', 'info');
+        return false;
+      }
+
+      var osId = String((context && context.os_id) || '').trim();
+      var currentRdoId = String((context && context.rdo_id) || '').trim();
+      if (!osId || !currentRdoId) return true;
+
+      var response = await fetch('/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/', {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      var payload = null;
+      try { payload = await response.json(); } catch(_){ payload = null; }
+      if (!response.ok || !payload || !payload.success) {
+        showToast('Não foi possível confirmar o último RDO da OS. Atualize a página e tente novamente.', 'error');
+        return false;
+      }
+
+      var rdos = Array.isArray(payload.rdos) ? payload.rdos : [];
+      var latest = rdos.length ? rdos[rdos.length - 1] : null;
+      if (latest && String(latest.id || '') !== currentRdoId) {
+        showToast('Este não é mais o último RDO. O RDO atual da OS é o ' + String(latest.rdo || latest.id || '') + '.', 'info');
+        return false;
+      }
+      return true;
+    } catch(_){
+      showToast('Não foi possível confirmar o último RDO da OS. Atualize a página e tente novamente.', 'error');
+      return false;
+    }
+  }
+
+  function _setNewRdoButtonAvailability(container, enabled, latestRdoLabel){
+    try {
+      if (!container) return;
+      var buttons = container.querySelectorAll('.open-supervisor');
+      Array.prototype.forEach.call(buttons, function(button){
+        try {
+          button.disabled = !enabled;
+          button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+          button.classList.toggle('rdo-new-rdo-disabled', !enabled);
+          if (!enabled) {
+            var suffix = latestRdoLabel ? (' O último é o RDO ' + latestRdoLabel + '.') : '';
+            button.title = 'Somente o último RDO da OS pode originar um novo RDO.' + suffix;
+          } else {
+            button.removeAttribute('title');
+          }
+        } catch(_){ }
+      });
+      container.setAttribute('data-is-latest-for-os', enabled ? '1' : '0');
+    } catch(_){ }
+  }
+
+  async function _refreshNewRdoAvailability(){
+    var containers = [];
+    try {
+      containers = Array.prototype.slice.call(document.querySelectorAll(
+        '.rdo-admin-table tbody tr[data-rdo-id], .rdo-mobile-card[data-rdo-id], .rdo-mobile-item[data-rdo-id]'
+      ));
+    } catch(_){ containers = []; }
+
+    var groups = Object.create(null);
+    containers.forEach(function(container){
+      try {
+        var rdoId = String(container.getAttribute('data-rdo-id') || '').trim();
+        if (!rdoId) return;
+        var osNumber = String(
+          container.getAttribute('data-numero-os') || container.getAttribute('data-os') || ''
+        ).trim();
+        var osId = String(container.getAttribute('data-os-id') || '').trim();
+        var key = osNumber ? ('number:' + osNumber) : ('id:' + osId);
+        if (!groups[key]) groups[key] = { osId: osId, containers: [] };
+        if (!groups[key].osId && osId) groups[key].osId = osId;
+        groups[key].containers.push(container);
+
+        // Estado seguro enquanto a sequencia completa e consultada.
+        _setNewRdoButtonAvailability(container, false, '');
+      } catch(_){ }
+    });
+
+    var tasks = Object.keys(groups).map(async function(key){
+      var group = groups[key];
+      if (!group || !group.osId) return;
+      try {
+        var response = await fetch('/api/rdo/os/' + encodeURIComponent(group.osId) + '/rdos/', {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        var payload = null;
+        try { payload = await response.json(); } catch(_){ payload = null; }
+        if (!response.ok || !payload || !payload.success) return;
+        var rdos = Array.isArray(payload.rdos) ? payload.rdos : [];
+        var latest = rdos.length ? rdos[rdos.length - 1] : null;
+        if (!latest || !latest.id) return;
+        group.containers.forEach(function(container){
+          var currentId = String(container.getAttribute('data-rdo-id') || '').trim();
+          _setNewRdoButtonAvailability(
+            container,
+            currentId === String(latest.id),
+            String(latest.rdo || latest.id || '')
+          );
+        });
+      } catch(_){
+        // Em caso de falha, permanece bloqueado para nunca partir de RDO antigo.
+      }
+    });
+    await Promise.all(tasks);
+  }
+
   onReady(function(){
-    document.addEventListener('click', function(ev){
+    try { _refreshNewRdoAvailability(); } catch(_){ }
+    document.addEventListener('click', async function(ev){
       try {
         var editorIntent = ev.target && ev.target.closest && ev.target.closest('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"]');
         if (editorIntent) return;
@@ -6721,6 +6835,7 @@
               } catch(_){ }
               console.log && console.log('rdo: supTrigger (table) opening modal, ctx', ctx);
             } catch(_){ }
+            if (!(await _confirmLatestRdoBeforeCreate(ctx, tr))) return;
             try { window.rdoOpenSupervisorModal(ctx); } catch(e){ openSupervisorModal(ctx); }
             return;
           }
@@ -6745,6 +6860,7 @@
               max_tanques_servicos: cardFromTrigger.getAttribute('data-max-tanques-servicos') || cardFromTrigger.dataset && (cardFromTrigger.dataset.maxTanquesServicos || cardFromTrigger.dataset.servicosCount) || '',
               current_tanques: cardFromTrigger.getAttribute('data-current-tanques-os') || cardFromTrigger.dataset && (cardFromTrigger.dataset.currentTanquesOs || cardFromTrigger.dataset.totalTanquesOs) || ''
             };
+            if (!(await _confirmLatestRdoBeforeCreate(ctxCard, cardFromTrigger))) return;
             try { window.rdoOpenSupervisorModal(ctxCard); } catch(e){ openSupervisorModal(ctxCard); }
             return;
           }
@@ -6773,6 +6889,7 @@
             current_tanques: card.getAttribute('data-current-tanques-os') || card.dataset && (card.dataset.currentTanquesOs || card.dataset.totalTanquesOs) || ''
           };
           try { console.log && console.log('rdo: open-supervisor (card) clicked, card ctx', ctx2); } catch(_){}
+          if (!(await _confirmLatestRdoBeforeCreate(ctx2, card))) return;
           try { window.rdoOpenSupervisorModal(ctx2); } catch(e){ openSupervisorModal(ctx2); }
           return;
         }

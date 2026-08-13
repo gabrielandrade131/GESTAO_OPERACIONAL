@@ -730,6 +730,23 @@
     background: #eff9dc;
 }
 
+.rdo-admin-layout .rdo-admin-table .action-btn.open-supervisor:disabled,
+.rdo-admin-layout .rdo-admin-table .action-btn.open-supervisor[aria-disabled="true"],
+.rdo-admin-layout .rdo-admin-table .action-btn.open-supervisor.rdo-new-rdo-disabled,
+.rdo-admin-layout .rdo-admin-table .action-btn.open-supervisor:disabled:hover,
+.rdo-admin-layout .rdo-admin-table .action-btn.open-supervisor[aria-disabled="true"]:hover,
+.rdo-admin-layout .rdo-admin-table .action-btn.open-supervisor.rdo-new-rdo-disabled:hover {
+    color: #cbd5df;
+    border-color: #e9eef2;
+    background: #fafcfd;
+    opacity: 0.42;
+    cursor: not-allowed;
+    box-shadow: none;
+    filter: grayscale(1);
+    transform: none;
+    pointer-events: none;
+}
+
 .rdo-admin-layout .rdo-pagination {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
