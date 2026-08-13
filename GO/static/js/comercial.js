@@ -3894,7 +3894,6 @@ document.addEventListener("DOMContentLoaded", () => {
             "proposalMotivo",
             "proposalAnaliseComentario",
             "proposalPo",
-            "proposalRfi",
             "proposalSolicitante",
             "proposalEmailSolicitante",
             "proposalTelefoneSolicitante"
@@ -4771,7 +4770,6 @@ document.addEventListener("DOMContentLoaded", () => {
             heat_map: valueOf("proposalHeatMap"),
             motivo_perda: valueOf("proposalMotivo"),
             po: valueOf("proposalPo"),
-            rfi: valueOf("proposalRfi"),
             cliente: valueOf("proposalCliente"),
             unidade: valueOf("proposalUnidade"),
             solicitante: valueOf("proposalSolicitante"),
