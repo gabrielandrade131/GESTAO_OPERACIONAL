@@ -11009,10 +11009,10 @@
   function _ensurePdfLibs(){
     var tasks = [];
     if (!window.html2canvas){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/html2canvas.min.js'));
     }
     if (!((window.jspdf && window.jspdf.jsPDF) || window.jsPDF)){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/jspdf.umd.min.js'));
     }
     return Promise.all(tasks);
   }
@@ -11168,12 +11168,6 @@
   function _sortRdosForPdfExport(list){
     var arr = Array.isArray(list) ? list.slice() : [];
     arr.sort(function(a, b){
-      var da = _safeParseRdoDate(a && a.data);
-      var db = _safeParseRdoDate(b && b.data);
-      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
-      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
-      if (ta !== tb) return ta - tb;
-
       var na = _safeParseRdoNumber(a && a.rdo);
       var nb = _safeParseRdoNumber(b && b.rdo);
       if (na !== null || nb !== null){
@@ -11181,6 +11175,12 @@
         if (nb === null) return -1;
         if (na !== nb) return na - nb;
       }
+
+      var da = _safeParseRdoDate(a && a.data);
+      var db = _safeParseRdoDate(b && b.data);
+      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
+      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
 
       var ia = _safeParseRdoNumber(a && a.id);
       var ib = _safeParseRdoNumber(b && b.id);
@@ -11570,6 +11570,8 @@
         if (!target || !target.closest) return;
         var btn = target.closest('.action-btn.pdf-all');
         if (!btn) return;
+        if (ev.__rdoPdfAllHandled) return;
+        ev.__rdoPdfAllHandled = true;
         ev.preventDefault();
         if (btn.disabled) return;
         var tr = btn.closest('tr');
@@ -12056,10 +12058,10 @@
   function _ensurePdfLibs(){
     var tasks = [];
     if (!window.html2canvas){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/html2canvas.min.js'));
     }
     if (!((window.jspdf && window.jspdf.jsPDF) || window.jsPDF)){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/jspdf.umd.min.js'));
     }
     return Promise.all(tasks);
   }
@@ -12215,12 +12217,6 @@
   function _sortRdosForPdfExport(list){
     var arr = Array.isArray(list) ? list.slice() : [];
     arr.sort(function(a, b){
-      var da = _safeParseRdoDate(a && a.data);
-      var db = _safeParseRdoDate(b && b.data);
-      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
-      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
-      if (ta !== tb) return ta - tb;
-
       var na = _safeParseRdoNumber(a && a.rdo);
       var nb = _safeParseRdoNumber(b && b.rdo);
       if (na !== null || nb !== null){
@@ -12228,6 +12224,12 @@
         if (nb === null) return -1;
         if (na !== nb) return na - nb;
       }
+
+      var da = _safeParseRdoDate(a && a.data);
+      var db = _safeParseRdoDate(b && b.data);
+      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
+      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
 
       var ia = _safeParseRdoNumber(a && a.id);
       var ib = _safeParseRdoNumber(b && b.id);
@@ -12617,6 +12619,8 @@
         if (!target || !target.closest) return;
         var btn = target.closest('.action-btn.pdf-all');
         if (!btn) return;
+        if (ev.__rdoPdfAllHandled) return;
+        ev.__rdoPdfAllHandled = true;
         ev.preventDefault();
         if (btn.disabled) return;
         var tr = btn.closest('tr');
