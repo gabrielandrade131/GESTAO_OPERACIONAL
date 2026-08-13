@@ -4852,6 +4852,7 @@ class AnaliseCriticaOportunidade(models.Model):
         "riscos_comerciais_relevantes",
         "oportunidade_viavel_rentavel",
         "pendencias_financeiras_cliente",
+        "iremos_participar",
     )
 
     proposta = models.OneToOneField(
@@ -4873,6 +4874,7 @@ class AnaliseCriticaOportunidade(models.Model):
     riscos_comerciais_relevantes = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
     oportunidade_viavel_rentavel = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
     pendencias_financeiras_cliente = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
+    iremos_participar = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
     comentario = models.TextField(blank=True, default="")
     # Preserva o indicador anterior em propostas legadas sem inventar respostas.
     status_legado_realizada = models.BooleanField(null=True, blank=True, editable=False)

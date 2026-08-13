@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "escopo_claramente_definido", "competencia_tecnica_execucao", "recursos_disponiveis",
         "equipe_com_treinamentos", "equipe_irata_disponivel", "equipe_resgate_disponivel",
         "tempo_habil_mobilizacao", "tempo_habil_aquisicao", "riscos_comerciais_relevantes",
-        "oportunidade_viavel_rentavel", "pendencias_financeiras_cliente"
+        "oportunidade_viavel_rentavel", "pendencias_financeiras_cliente", "iremos_participar"
     ];
     const CRITICAL_ANALYSIS_OPTIONS = [
         { value: "SIM", label: "Sim" },
@@ -745,10 +745,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const commercialBootstrap = readCommercialBootstrap();
 
     const modalFieldsByStep = {
-        1: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
-        2: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"],
-        3: ["proposalServico", "proposalReceita"],
-        4: [],
+        1: [],
+        2: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
+        3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"],
+        4: ["proposalServico", "proposalReceita"],
         5: ["proposalStatus"]
     };
 
@@ -1022,7 +1022,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (action === "client") {
             openProposalModal();
-            state.modalStep = 2;
+            state.modalStep = 3;
             updateModalStep();
             openQuickClientForm();
             return;
@@ -1030,7 +1030,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (action === "unit") {
             openProposalModal();
-            state.modalStep = 2;
+            state.modalStep = 3;
             updateModalStep();
             openQuickUnitForm();
         }
@@ -1110,12 +1110,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download);
+            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            return;
+        }
+
+        const proposalPdfMenuTrigger = event.target.closest("[data-proposal-pdf-menu]");
+        if (proposalPdfMenuTrigger) {
+            event.preventDefault();
+            const menu = proposalPdfMenuTrigger.closest(".proposal-card__pdf-menu");
+            const isOpen = menu?.classList.toggle("is-open");
+            proposalPdfMenuTrigger.setAttribute("aria-expanded", String(Boolean(isOpen)));
             return;
         }
 
         const proposalTrigger = event.target.closest("[data-proposal-id]");
-        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf]")) {
+        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf], [data-proposal-pdf-menu]")) {
             openProposalPanel(Number(proposalTrigger.dataset.proposalId));
             return;
         }
@@ -1426,7 +1435,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download);
+            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
             return;
         }
 
@@ -1798,6 +1807,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderProposalCard(proposal) {
         const statusTone = getStatusTone(proposal.statusProposta);
         const pdfEndpoint = buildEndpoint(state.endpoints.pdfPattern, proposal.id);
+        const criticalAnalysisPdfEndpoint = buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id);
 
         return `
             <article class="proposal-card" data-proposal-id="${proposal.id}" role="button" tabindex="0" aria-label="Abrir detalhes de ${escapeHtml(proposal.numeroProposta)}">
@@ -1820,10 +1830,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="proposal-footer">
                     ${pdfEndpoint ? `
-                        <a class="proposal-card__pdf" data-proposal-pdf href="${escapeHtml(pdfEndpoint)}" download="proposta_${escapeHtml(proposal.numeroProposta || proposal.id)}.pdf">
-                            <span class="material-icons" aria-hidden="true">picture_as_pdf</span>
-                            Gerar PDF
-                        </a>
+                        <div class="proposal-card__pdf-menu">
+                            <button class="proposal-card__pdf" data-proposal-pdf-menu type="button" aria-expanded="false">
+                                <span class="material-icons" aria-hidden="true">picture_as_pdf</span>
+                                PDFs
+                                <span class="material-icons proposal-card__pdf-chevron" aria-hidden="true">expand_more</span>
+                            </button>
+                            <div class="proposal-card__pdf-options" role="menu">
+                                <a data-proposal-pdf data-pdf-label="Proposta" href="${escapeHtml(pdfEndpoint)}" download="proposta_${escapeHtml(proposal.numeroProposta || proposal.id)}.pdf" role="menuitem">PDF da proposta</a>
+                                ${criticalAnalysisPdfEndpoint ? `<a data-proposal-pdf data-pdf-label="Análise crítica" href="${escapeHtml(criticalAnalysisPdfEndpoint)}" download="analise_critica_proposta_${escapeHtml(proposal.numeroProposta || proposal.id)}.pdf" role="menuitem">PDF da análise crítica</a>` : ""}
+                            </div>
+                        </div>
                     ` : ""}
                     <strong class="proposal-value">${escapeHtml(proposal.estimativaReceita)}</strong>
                 </div>
@@ -2324,6 +2341,14 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="material-icons" aria-hidden="true">chat</span>
                             Registrar acompanhamento
                         </button>
+                        <button class="panel-action panel-action--pdf" data-panel-action="generate-pdf" type="button">
+                            <span class="material-icons" aria-hidden="true">picture_as_pdf</span>
+                            PDF proposta
+                        </button>
+                        <button class="panel-action panel-action--pdf" data-panel-action="generate-critical-analysis-pdf" type="button">
+                            <span class="material-icons" aria-hidden="true">fact_check</span>
+                            PDF análise crítica
+                        </button>
                     </div>
                 </div>
                 <div class="proposal-panel__tabs proposal-details-tabs">
@@ -2528,7 +2553,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             ${renderCompactItem("Segmento Cliente", proposal.segmentoCliente || "Não informado")}
                             ${renderCompactItem("PT", proposal.pt || "Não informado")}
                             ${renderCompactItem("PC / PTC", proposal.pcPtc || "Não informado")}
-                            ${renderCompactItem("Análise Crítica", proposal.analiseCriticaResumo || proposal.analiseCriticaRealizada || "Pendente - 0 de 14 respondidas")}
+                            ${renderCompactItem("Análise Crítica", proposal.analiseCriticaResumo || proposal.analiseCriticaRealizada || "Pendente - 0 de 15 respondidas")}
                             ${renderCompactItem("Comentário", proposal.comentario || "Sem comentário")}
                         </div>
                     </section>
@@ -3252,6 +3277,7 @@ document.addEventListener("DOMContentLoaded", () => {
             statusPattern: bootstrap?.endpoints?.statusPattern || "",
             updatePattern: bootstrap?.endpoints?.updatePattern || "",
             pdfPattern: bootstrap?.endpoints?.pdfPattern || "",
+            criticalAnalysisPdfPattern: bootstrap?.endpoints?.criticalAnalysisPdfPattern || "",
             attachmentListPattern: bootstrap?.endpoints?.attachmentListPattern || "",
             attachmentUploadPattern: bootstrap?.endpoints?.attachmentUploadPattern || "",
             quickClientCreate: bootstrap?.endpoints?.quickClientCreate || "",
@@ -3432,6 +3458,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function updateCriticalAnalysisProgress() {
+        const willNotParticipate = proposalWillNotParticipate();
         const answered = CRITICAL_ANALYSIS_FIELDS.filter((fieldName) =>
             ["SIM", "NAO", "NA"].includes(state.criticalAnalysisAnswers[fieldName])
         ).length;
@@ -3446,6 +3473,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (progress) {
             progress.textContent = `${answered} de ${CRITICAL_ANALYSIS_FIELDS.length} perguntas respondidas`;
         }
+        refs.newProposalModal?.classList.toggle("is-not-participating", willNotParticipate);
     }
 
     function populateSelect(selectId, options, config = {}) {
@@ -3638,7 +3666,8 @@ document.addEventListener("DOMContentLoaded", () => {
             tempo_habil_aquisicao: "Existe tempo hábil para aquisição de materiais ou equipamentos específicos, quando aplicável?",
             riscos_comerciais_relevantes: "O contrato apresenta riscos comerciais relevantes?",
             oportunidade_viavel_rentavel: "A oportunidade é comercialmente viável e rentável para a empresa?",
-            pendencias_financeiras_cliente: "Existem pendências financeiras do cliente junto à Ambipar?"
+            pendencias_financeiras_cliente: "Existem pendências financeiras do cliente junto à Ambipar?",
+            iremos_participar: "Iremos participar?"
         };
         return labels[fieldName] || fieldName;
     }
@@ -3719,9 +3748,13 @@ document.addEventListener("DOMContentLoaded", () => {
         syncOverlayState();
     }
 
-    function generateProposalPdf() {
+    function generateProposalPdf(kind = "proposta") {
         const proposal = getSelectedProposal();
-        const endpoint = buildEndpoint(state.endpoints.pdfPattern, proposal?.id);
+        const isCriticalAnalysis = kind === "analise-critica";
+        const endpoint = buildEndpoint(
+            isCriticalAnalysis ? state.endpoints.criticalAnalysisPdfPattern : state.endpoints.pdfPattern,
+            proposal?.id
+        );
         if (!proposal || !endpoint) {
             showNotification({
                 type: "warning",
@@ -3731,10 +3764,11 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        downloadProposalPdf(endpoint, `proposta_${proposal.numeroProposta || proposal.id}.pdf`);
+        const filenamePrefix = isCriticalAnalysis ? "analise_critica_proposta" : "proposta";
+        downloadProposalPdf(endpoint, `${filenamePrefix}_${proposal.numeroProposta || proposal.id}.pdf`, isCriticalAnalysis ? "Análise crítica" : "Proposta");
     }
 
-    async function downloadProposalPdf(endpoint, filename) {
+    async function downloadProposalPdf(endpoint, filename, label = "Proposta") {
         try {
             const response = await fetch(endpoint, {
                 credentials: "same-origin"
@@ -3758,7 +3792,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotification({
                 type: "success",
                 title: "PDF gerado",
-                message: "O PDF da proposta foi baixado com sucesso."
+                message: `O PDF ${label.toLowerCase()} foi baixado com sucesso.`
             });
         } catch (error) {
             showNotification({
@@ -4341,6 +4375,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const fieldIds = modalFieldsByStep[state.modalStep] || [];
         let isValid = true;
 
+        if (proposalWillNotParticipate()) {
+            return true;
+        }
+
         fieldIds.forEach((id) => {
             const field = document.getElementById(id);
             if (!field) {
@@ -4354,11 +4392,11 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
-        if (state.modalStep === 3 && !validateProposalItems()) {
+        if (state.modalStep === 4 && !validateProposalItems()) {
             isValid = false;
         }
 
-        if (state.modalStep === 3) {
+        if (state.modalStep === 4) {
             const selectedServices = (state.proposalDraftServices || [])
                 .map((item) => String(item || "").trim())
                 .filter(Boolean);
@@ -4378,7 +4416,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (isCreateAction && !validateNewProposalForm()) {
             if (hasProposalItemErrors()) {
-                state.modalStep = 3;
+                state.modalStep = 4;
                 updateModalStep();
                 setFeedback("Revise os itens obrigatórios da proposta antes de continuar.", "error");
                 showNotification({
@@ -4845,7 +4883,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ...(targetItem.errors || {}),
                         [frontItemFieldMap[backendItemField]]: message
                     };
-                    state.modalStep = 3;
+                    state.modalStep = 4;
                 }
                 return;
             }
@@ -4858,7 +4896,7 @@ document.addEventListener("DOMContentLoaded", () => {
             setProposalFieldError(frontField, message);
         });
 
-        if (state.modalStep === 3) {
+        if (state.modalStep === 4) {
             updateModalStep();
             renderProposalItemsSection();
             window.requestAnimationFrame(() => {
@@ -4869,13 +4907,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (Object.keys(state.createProposalErrorFields).length) {
             const firstFieldId = Object.keys(state.createProposalErrorFields)[0];
             if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
-                state.modalStep = 2;
-            } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
                 state.modalStep = 3;
+            } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
+                state.modalStep = 4;
             } else if (["proposalStatus", "proposalMotivo"].includes(firstFieldId)) {
                 state.modalStep = 5;
             } else {
-                state.modalStep = 1;
+                state.modalStep = 2;
             }
             updateModalStep();
             focusFieldById(firstFieldId);
@@ -4902,7 +4940,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!validateNewProposalForm()) {
             if (hasProposalItemErrors()) {
-                state.modalStep = 3;
+                state.modalStep = 4;
                 updateModalStep();
                 setFeedback("Revise os itens obrigatórios da proposta antes de continuar.", "error");
             } else {
@@ -5064,7 +5102,7 @@ document.addEventListener("DOMContentLoaded", () => {
             openProposalModal();
         }
         state.createProposalError = true;
-        state.modalStep = 1;
+        state.modalStep = 2;
         updateModalStep();
         if (!Object.keys(state.createProposalErrorFields).length) {
             state.createProposalErrorFields = {
@@ -6470,7 +6508,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return ["perdida/recusada", "cancelada", "declinio"].includes(normalizedStatus);
     }
 
+    function proposalWillNotParticipate() {
+        return state.criticalAnalysisAnswers?.iremos_participar === "NAO";
+    }
+
     function validateNewProposalForm() {
+        if (proposalWillNotParticipate()) {
+            state.createProposalErrorFields = {};
+            clearAllErrors();
+            hideProposalModalAlert();
+            return true;
+        }
+
         const validations = {
             proposalRev: "Informe a revisão.",
             proposalEmissao: "Informe a emissão.",
@@ -6543,7 +6592,7 @@ document.addEventListener("DOMContentLoaded", () => {
             openProposalModal();
         }
         state.createProposalError = true;
-        state.modalStep = 1;
+        state.modalStep = 2;
         updateModalStep();
         if (!Object.keys(state.createProposalErrorFields).length) {
             state.createProposalErrorFields = {
@@ -6627,8 +6676,24 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
+        if (proposalPdfTrigger) {
+            event.preventDefault();
+            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            return;
+        }
+
+        const proposalPdfMenuTrigger = event.target.closest("[data-proposal-pdf-menu]");
+        if (proposalPdfMenuTrigger) {
+            event.preventDefault();
+            const menu = proposalPdfMenuTrigger.closest(".proposal-card__pdf-menu");
+            const isOpen = menu?.classList.toggle("is-open");
+            proposalPdfMenuTrigger.setAttribute("aria-expanded", String(Boolean(isOpen)));
+            return;
+        }
+
         const proposalTrigger = event.target.closest("[data-proposal-id]");
-        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf]")) {
+        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf], [data-proposal-pdf-menu]")) {
             openProposalPanel(Number(proposalTrigger.dataset.proposalId));
             return;
         }
@@ -6796,6 +6861,8 @@ document.addEventListener("DOMContentLoaded", () => {
             createNewRevision();
         } else if (action === "generate-pdf") {
             generateProposalPdf();
+        } else if (action === "generate-critical-analysis-pdf") {
+            generateProposalPdf("analise-critica");
         } else if (action === "focus-status") {
             state.activeDetailTab = "resumo";
             state.focusStatusSection = true;

@@ -45,6 +45,7 @@ urlpatterns = [
     path('comercial/propostas/anexos/<int:anexo_id>/visualizar/', views_comercial.comercial_visualizar_anexo_proposta, name='comercial_visualizar_anexo_proposta'),
     path('comercial/propostas/anexos/<int:anexo_id>/excluir/', views_comercial.comercial_excluir_anexo_proposta, name='comercial_excluir_anexo_proposta'),
     path('comercial/propostas/<int:proposta_id>/pdf/', views_comercial.comercial_gerar_pdf_proposta, name='comercial_gerar_pdf_proposta'),
+    path('comercial/propostas/<int:proposta_id>/analise-critica/pdf/', views_comercial.comercial_gerar_pdf_analise_critica, name='comercial_gerar_pdf_analise_critica'),
     path('comercial/propostas/<int:proposta_id>/atualizar/', views_comercial.comercial_atualizar_proposta, name='comercial_atualizar_proposta'),
     path('comercial/propostas/<int:proposta_id>/status/', views_comercial.comercial_atualizar_status, name='comercial_atualizar_status'),
     path('comercial/resumo-propostas/', views_comercial.comercial_resumo_propostas, name='comercial_resumo_propostas'),

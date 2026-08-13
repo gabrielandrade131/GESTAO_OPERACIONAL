@@ -963,9 +963,10 @@ body.comercial-is-loading .commercial-main-content {
 }
 
 .critical-analysis__option.is-selected span {
-    border-color: #234a85;
-    background: #e8f0fd;
-    color: #173b72;
+    border-color: #9bd100;
+    background: #b7f000;
+    color: #10233f;
+    box-shadow: 0 0 0 2px rgba(155, 209, 0, 0.16);
 }
 
 .critical-analysis__comment {
@@ -1447,6 +1448,11 @@ body.comercial-is-loading .commercial-main-content {
     align-items: center;
 }
 
+.proposal-card__pdf-menu {
+    position: relative;
+    display: inline-flex;
+}
+
 .proposal-card__pdf {
     min-height: 28px;
     display: inline-flex;
@@ -1463,6 +1469,10 @@ body.comercial-is-loading .commercial-main-content {
     transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
+.proposal-card__pdf-menu .proposal-card__pdf {
+    cursor: pointer;
+}
+
 .proposal-card__pdf:hover {
     border-color: #dc2626;
     background: #fee2e2;
@@ -1470,6 +1480,48 @@ body.comercial-is-loading .commercial-main-content {
 
 .proposal-card__pdf .material-icons {
     font-size: 15px;
+}
+
+.proposal-card__pdf-chevron {
+    margin-left: -2px;
+    transition: transform 0.16s ease;
+}
+
+.proposal-card__pdf-menu.is-open .proposal-card__pdf-chevron {
+    transform: rotate(180deg);
+}
+
+.proposal-card__pdf-options {
+    position: absolute;
+    z-index: 12;
+    bottom: calc(100% + 6px);
+    left: 0;
+    display: none;
+    min-width: 178px;
+    padding: 5px;
+    border: 1px solid #e1e7ef;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(16, 35, 63, 0.14);
+}
+
+.proposal-card__pdf-menu.is-open .proposal-card__pdf-options {
+    display: grid;
+    gap: 2px;
+}
+
+.proposal-card__pdf-options a {
+    padding: 7px 8px;
+    border-radius: 7px;
+    color: #233a5e;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.proposal-card__pdf-options a:hover {
+    background: #fff1f1;
+    color: #b42318;
 }
 
 .proposal-footer {
@@ -3235,6 +3287,10 @@ body.comercial-is-loading .commercial-main-content {
     display: block;
 }
 
+.proposal-modal.is-not-participating .proposal-field em {
+    display: none;
+}
+
 /* Keep the shell header visually aligned with the dimmed page while the modal is open. */
 body.comercial-proposal-modal-open .synchro-header {
     z-index: 40 !important;
@@ -3341,17 +3397,17 @@ body.comercial-proposal-modal-open .synchro-header {
 }
 
 .proposal-step.is-active {
-    color: #173f7a;
+    color: #10233f;
 }
 
 .proposal-step.is-active::after {
-    background: #173f7a;
+    background: #b7f000;
 }
 
 .proposal-step.is-active .proposal-step__index {
-    border-color: #173f7a;
-    background: #173f7a;
-    color: #ffffff;
+    border-color: #9bd100;
+    background: #b7f000;
+    color: #10233f;
 }
 
 .proposal-step.is-complete::after {

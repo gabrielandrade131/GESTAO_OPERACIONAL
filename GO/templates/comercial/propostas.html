@@ -523,19 +523,19 @@
             <div class="proposal-stepper" id="proposalStepper">
                 <button class="proposal-step is-active" data-step-target="1" type="button">
                     <span class="proposal-step__index">1</span>
-                    <span class="proposal-step__label">Dados Gerais</span>
+                    <span class="proposal-step__label">Análise Crítica</span>
                 </button>
                 <button class="proposal-step" data-step-target="2" type="button">
                     <span class="proposal-step__index">2</span>
-                    <span class="proposal-step__label">Cliente / Local</span>
+                    <span class="proposal-step__label">Dados Gerais</span>
                 </button>
                 <button class="proposal-step" data-step-target="3" type="button">
                     <span class="proposal-step__index">3</span>
-                    <span class="proposal-step__label">Escopo / Valores</span>
+                    <span class="proposal-step__label">Cliente / Local</span>
                 </button>
                 <button class="proposal-step" data-step-target="4" type="button">
                     <span class="proposal-step__index">4</span>
-                    <span class="proposal-step__label">Análise Crítica</span>
+                    <span class="proposal-step__label">Escopo / Valores</span>
                 </button>
                 <button class="proposal-step" data-step-target="5" type="button">
                     <span class="proposal-step__index">5</span>
@@ -546,7 +546,7 @@
             <div class="proposal-modal__alert is-hidden" id="proposalModalAlert" aria-live="polite"></div>
 
             <div class="proposal-modal__body">
-                <section class="proposal-step-panel is-active" data-step-panel="1">
+                <section class="proposal-step-panel" data-step-panel="2">
                     <div class="commercial-step-sections">
                         <section class="commercial-step-section">
                             <div class="commercial-step-section__aside">
@@ -616,7 +616,7 @@
                     </div>
                 </section>
 
-                <section class="proposal-step-panel" data-step-panel="2">
+                <section class="proposal-step-panel" data-step-panel="3">
                     <div class="commercial-step-sections">
                         <section class="commercial-step-section">
                             <div class="commercial-step-section__aside">
@@ -847,7 +847,7 @@
                     </div>
                 </section>
 
-                <section class="proposal-step-panel" data-step-panel="3">
+                <section class="proposal-step-panel" data-step-panel="4">
                     <div class="commercial-step-sections">
                         <section class="commercial-step-section">
                             <div class="commercial-step-section__aside">
@@ -966,7 +966,7 @@
                     </div>
                 </section>
 
-                <section class="proposal-step-panel" data-step-panel="4">
+                <section class="proposal-step-panel is-active" data-step-panel="1">
                     <div class="critical-analysis">
                         <div class="critical-analysis__intro">
                             <div>
@@ -976,7 +976,7 @@
                             <div class="critical-analysis__status" aria-live="polite">
                                 <span>Status da análise</span>
                                 <strong class="critical-analysis__badge is-pending" id="criticalAnalysisStatusBadge">Pendente</strong>
-                                <small id="criticalAnalysisProgress">0 de 14 perguntas respondidas</small>
+                                <small id="criticalAnalysisProgress">0 de 15 perguntas respondidas</small>
                             </div>
                         </div>
 
@@ -1017,6 +1017,7 @@
                                 <div class="critical-analysis__question" data-critical-question="riscos_comerciais_relevantes"><p>12. O contrato apresenta riscos comerciais relevantes?</p><div class="critical-analysis__answers"></div></div>
                                 <div class="critical-analysis__question" data-critical-question="oportunidade_viavel_rentavel"><p>13. A oportunidade é comercialmente viável e rentável para a empresa?</p><div class="critical-analysis__answers"></div></div>
                                 <div class="critical-analysis__question" data-critical-question="pendencias_financeiras_cliente"><p>14. Existem pendências financeiras do cliente junto à Ambipar?</p><div class="critical-analysis__answers"></div></div>
+                                <div class="critical-analysis__question" data-critical-question="iremos_participar"><p>15. Iremos participar?</p><div class="critical-analysis__answers"></div></div>
                             </div>
                         </section>
                         <label class="proposal-field critical-analysis__comment">
