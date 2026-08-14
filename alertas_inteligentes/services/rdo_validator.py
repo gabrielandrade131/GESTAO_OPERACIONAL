@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django.utils import timezone
 
 from alertas_inteligentes.models import AlertaInteligente
 from alertas_inteligentes.services.anomaly_detector import detectar_anomalia_rdo, montar_mensagem_anomalia
@@ -506,9 +507,25 @@ def validar_pt(rdo):
 
     turnos_pt = get_field(rdo, "select_turnos", default=[])
     turnos_pt_text = lower(" ".join(turnos_pt) if isinstance(turnos_pt, (list, tuple)) else turnos_pt)
-    turno_pt_manha = get_field(rdo, "turno_pt_manha", "pt_turno_manha") or "manha" in turnos_pt_text or "manh" in turnos_pt_text
-    turno_pt_tarde = get_field(rdo, "turno_pt_tarde", "pt_turno_tarde") or "tarde" in turnos_pt_text
-    turno_pt_noite = get_field(rdo, "turno_pt_noite", "pt_turno_noite") or "noite" in turnos_pt_text
+    # Registros antigos e algumas edicoes podem ter o numero da PT salvo sem a
+    # lista auxiliar ``select_turnos``. O numero preenchido e evidencia
+    # suficiente do turno e nao deve gerar um falso PT_SEM_TURNO.
+    turno_pt_manha = (
+        get_field(rdo, "turno_pt_manha", "pt_turno_manha")
+        or "manha" in turnos_pt_text
+        or "manh" in turnos_pt_text
+        or bool(str(pt_manha or "").strip())
+    )
+    turno_pt_tarde = (
+        get_field(rdo, "turno_pt_tarde", "pt_turno_tarde")
+        or "tarde" in turnos_pt_text
+        or bool(str(pt_tarde or "").strip())
+    )
+    turno_pt_noite = (
+        get_field(rdo, "turno_pt_noite", "pt_turno_noite")
+        or "noite" in turnos_pt_text
+        or bool(str(pt_noite or "").strip())
+    )
 
     if sim(houve_pt):
         marcou_algum_turno = any([
@@ -1093,3 +1110,69 @@ def validar_rdo(rdo):
         )
 
     return alertas
+
+
+def sincronizar_alertas_anomalia_da_os(ordem_servico, *, excluir_rdo_id=None):
+    """Remove ou atualiza anomalias antigas quando a base estatistica muda.
+
+    A deteccao usa o historico inteiro da OS. Portanto, a inclusao de um novo
+    RDO pode fazer um alerta anterior deixar de ser reproduzivel, mesmo sem o
+    RDO alertado ter sido editado.
+    """
+    if not ordem_servico:
+        return {"reavaliados": 0, "resolvidos": 0, "atualizados": 0}
+
+    alertas = AlertaInteligente.objects.filter(
+        rdo__ordem_servico=ordem_servico,
+        tipo__in=["RDO_OUTLIER", "RDO_REVISAR_ANOMALIA"],
+        status="pendente",
+    ).select_related("rdo")
+    if excluir_rdo_id is not None:
+        alertas = alertas.exclude(rdo_id=excluir_rdo_id)
+
+    resultado = {"reavaliados": 0, "resolvidos": 0, "atualizados": 0}
+    for alerta in alertas:
+        resultado["reavaliados"] += 1
+        anomalia = detectar_anomalia_rdo(alerta.rdo)
+        nivel = anomalia.get("nivel")
+        tipo_atual = {
+            "alerta": "RDO_OUTLIER",
+            "revisao": "RDO_REVISAR_ANOMALIA",
+        }.get(nivel)
+
+        if tipo_atual != alerta.tipo:
+            alerta.status = "resolvido"
+            alerta.resolvido_em = timezone.now()
+            alerta.justificativa = (
+                "Resolvido automaticamente porque a anomalia nao foi "
+                "confirmada apos a atualizacao do historico da OS."
+            )
+            alerta.save(update_fields=["status", "resolvido_em", "justificativa"])
+            resultado["resolvidos"] += 1
+            continue
+
+        score = anomalia.get("score", 0.0)
+        alerta.mensagem = (
+            f"{identificar_rdo(alerta.rdo)} - "
+            f"{montar_mensagem_anomalia(alerta.rdo, anomalia)}"
+        )
+        alerta.prioridade = "alta" if tipo_atual == "RDO_OUTLIER" and score >= 0.85 else (
+            "media" if tipo_atual == "RDO_OUTLIER" else "baixa"
+        )
+        alerta.anomaly_score = score
+        alerta.anomaly_flags = sanitize_json_value(anomalia.get("flags", {}))
+        alerta.baseline_snapshot = sanitize_json_value(
+            anomalia.get("baseline_snapshot", {})
+        )
+        alerta.save(
+            update_fields=[
+                "mensagem",
+                "prioridade",
+                "anomaly_score",
+                "anomaly_flags",
+                "baseline_snapshot",
+            ]
+        )
+        resultado["atualizados"] += 1
+
+    return resultado

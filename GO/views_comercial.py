@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf
 from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
 
 
@@ -2674,10 +2675,52 @@ def comercial_excluir_anexo_proposta(request, anexo_id):
     return JsonResponse({"success": True, "message": "Documento excluído com sucesso."})
 
 
+def _generate_official_proposal_response(proposta_id):
+    """Build the approved proposal document and expose it as a PDF response."""
+    proposta = get_object_or_404(
+        Financeiro.objects.select_related(
+            "cliente__Cliente",
+            "cliente__Unidade",
+            "unidade__Cliente",
+            "unidade__Unidade",
+            "tipo_operacao",
+            "metodo",
+            "metodo_cadastro",
+            "cordenador",
+        ).prefetch_related("campos"),
+        proposta=proposta_id,
+    )
+
+    try:
+        serialized = _serialize_financeiro(proposta)
+        pdf_content, filename = generate_official_proposal_pdf(
+            proposta,
+            serialized=serialized,
+            items=serialized.get("campos") or [],
+        )
+    except OfficialProposalPdfError as error:
+        logger.warning("Unable to generate official proposal %s: %s", proposta_id, error)
+        return HttpResponse(str(error), status=400, content_type="text/plain; charset=utf-8")
+    except Exception:
+        logger.exception("Error generating official proposal %s.", proposta_id)
+        return HttpResponse(
+            "Nao foi possivel gerar a proposta oficial. Tente novamente.",
+            status=500,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf_content, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 @login_required(login_url="/login/")
 @commercial_preview_required
 @require_GET
 def comercial_gerar_pdf_proposta(request, proposta_id):
+    return _generate_official_proposal_response(proposta_id)
+
+    """Generate a proposal PDF from the persisted Commercial data."""
     """Generate a proposal PDF from the persisted Commercial data."""
     proposta = get_object_or_404(
         Financeiro.objects.select_related(
@@ -2895,6 +2938,28 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
         ),
         proposta=proposta_id,
     )
+
+    try:
+        serialized = _serialize_financeiro(proposta)
+        pdf_content, filename = generate_official_proposal_pdf(
+            proposta,
+            serialized=serialized,
+            items=serialized.get("campos") or [],
+        )
+    except OfficialProposalPdfError as error:
+        logger.warning("Não foi possível gerar a proposta oficial %s: %s", proposta_id, error)
+        return HttpResponse(str(error), status=400, content_type="text/plain; charset=utf-8")
+    except Exception:
+        logger.exception("Erro ao gerar a proposta oficial %s.", proposta_id)
+        return HttpResponse(
+            "Não foi possível gerar a proposta oficial. Tente novamente.",
+            status=500,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf_content, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
     try:
         from html import escape

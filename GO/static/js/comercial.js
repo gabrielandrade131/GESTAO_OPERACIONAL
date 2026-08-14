@@ -3968,7 +3968,8 @@ document.addEventListener("DOMContentLoaded", () => {
     async function downloadProposalPdf(endpoint, filename, label = "Proposta") {
         try {
             const response = await fetch(endpoint, {
-                credentials: "same-origin"
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "XMLHttpRequest" }
             });
 
             if (!response.ok) {
@@ -3976,15 +3977,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(message || "Não foi possível gerar o PDF da proposta.");
             }
 
+            const contentType = response.headers.get("content-type") || "";
+            if (!contentType.includes("application/pdf")) {
+                const message = await response.text();
+                throw new Error(message || "O servidor n\u00e3o retornou um arquivo PDF v\u00e1lido.");
+            }
+
+            const contentDisposition = response.headers.get("content-disposition") || "";
+            const serverFilename = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^;\"]+)/i)?.[1];
             const pdfBlob = await response.blob();
             const downloadUrl = URL.createObjectURL(pdfBlob);
             const downloadLink = document.createElement("a");
             downloadLink.href = downloadUrl;
-            downloadLink.download = filename || "proposta.pdf";
+            downloadLink.download = decodeURIComponent(serverFilename || filename || "proposta.pdf").replace(/[\"']/g, "");
             document.body.appendChild(downloadLink);
             downloadLink.click();
             downloadLink.remove();
-            URL.revokeObjectURL(downloadUrl);
+            // Alguns navegadores iniciam o download de forma ass\u00edncrona; revogar agora pode cancel\u00e1-lo.
+            window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
 
             showNotification({
                 type: "success",

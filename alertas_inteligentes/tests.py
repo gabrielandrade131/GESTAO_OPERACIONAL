@@ -44,10 +44,12 @@ from alertas_inteligentes.services.rdos_tanque_incompleto import (
 )
 from alertas_inteligentes.services.rdo_validator import (
     criar_alerta,
+    sincronizar_alertas_anomalia_da_os,
     validar_campos_basicos,
     validar_dados_operacionais,
     validar_fotos,
     validar_observacoes,
+    validar_pt,
     validar_rdo_duplicado,
     validar_tanque_incompleto_rdo,
 )
@@ -1700,6 +1702,79 @@ class RdoValidatorConsolidacaoTests(TestCase):
             status_comercial="Em aberto",
             status_planejamento="Pendente",
         )
+
+    @patch(
+        "alertas_inteligentes.services.rdo_validator.detectar_anomalia_rdo",
+        return_value={"nivel": "normal", "score": 0.0, "flags": {}},
+    )
+    def test_resolve_anomalia_que_deixou_de_existir_no_historico(self, detector_mock):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="500",
+            data=date(2026, 6, 1),
+        )
+        alerta = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo="RDO_OUTLIER",
+            referencia="anomalia_estatistica",
+            mensagem="Anomalia calculada com base antiga.",
+            prioridade="alta",
+            status="pendente",
+        )
+
+        resultado = sincronizar_alertas_anomalia_da_os(self.os_obj)
+
+        alerta.refresh_from_db()
+        self.assertEqual(alerta.status, "resolvido")
+        self.assertIsNotNone(alerta.resolvido_em)
+        self.assertIn("nao foi confirmada", alerta.justificativa)
+        self.assertEqual(resultado["resolvidos"], 1)
+        detector_mock.assert_called_once_with(rdo)
+
+    def test_pt_com_numero_preenchido_infere_turno_ausente_na_lista_auxiliar(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="502",
+            data=date(2026, 6, 2),
+            exist_pt=True,
+            select_turnos=[],
+            pt_manha="6289/2026",
+        )
+        # Simula um registro legado, anterior a sincronizacao no model.
+        RDO.objects.filter(pk=rdo.pk).update(select_turnos=[])
+        rdo.refresh_from_db()
+
+        alertas = validar_pt(rdo)
+
+        self.assertNotIn("PT_SEM_TURNO", [alerta.tipo for alerta in alertas])
+        self.assertNotIn("PT_SEM_NUMERO", [alerta.tipo for alerta in alertas])
+
+    def test_salvar_rdo_sincroniza_turno_com_numero_da_pt(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="504",
+            data=date(2026, 6, 4),
+            exist_pt=True,
+            select_turnos=[],
+            pt_manha="6289/2026",
+        )
+
+        rdo.refresh_from_db()
+
+        self.assertIn("Manh", str(rdo.select_turnos))
+
+    def test_pt_sem_turno_e_sem_numero_continua_gerando_alerta(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="503",
+            data=date(2026, 6, 3),
+            exist_pt=True,
+            select_turnos=[],
+        )
+
+        alertas = validar_pt(rdo)
+
+        self.assertEqual([alerta.tipo for alerta in alertas], ["PT_SEM_TURNO"])
 
     def test_validar_dados_operacionais_considera_campos_diretos_do_rdo(self):
         rdo = RDO.objects.create(

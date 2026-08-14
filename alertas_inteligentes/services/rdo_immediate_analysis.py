@@ -13,7 +13,10 @@ def analisar_rdo_imediatamente(rdo_id):
     """Claim and analyse one RDO without allowing a failure to affect its creation."""
     from GO.models import RDO
     from alertas_inteligentes.models import AlertaInteligente
-    from alertas_inteligentes.services.rdo_validator import validar_rdo
+    from alertas_inteligentes.services.rdo_validator import (
+        sincronizar_alertas_anomalia_da_os,
+        validar_rdo,
+    )
 
     try:
         rdo_id = int(rdo_id)
@@ -44,6 +47,10 @@ def analisar_rdo_imediatamente(rdo_id):
             )
 
             alerts = validar_rdo(rdo)
+            sincronizar_alertas_anomalia_da_os(
+                rdo.ordem_servico,
+                excluir_rdo_id=rdo.pk,
+            )
             RDO.objects.filter(pk=rdo_id).update(
                 status_analise_ia='analisado',
                 data_analise_ia=timezone.now(),

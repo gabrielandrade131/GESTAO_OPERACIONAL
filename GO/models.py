@@ -2079,6 +2079,52 @@ class RDO(models.Model):
         return tank
 
     def save(self, *args, **kwargs):
+        # A tela historicamente representa um turno como marcado quando o
+        # respectivo numero de PT esta preenchido. Mantenha select_turnos com
+        # a mesma semantica para que interface, banco e validadores concordem.
+        try:
+            raw_turnos = getattr(self, 'select_turnos', None) or []
+            if isinstance(raw_turnos, str):
+                raw_turnos = [item.strip() for item in raw_turnos.split(',') if item.strip()]
+
+            turnos = []
+            turnos_normalizados = set()
+            for raw_turno in raw_turnos:
+                turno = str(raw_turno or '').strip()
+                normalized = ''.join(
+                    char for char in unicodedata.normalize('NFKD', turno.lower())
+                    if not unicodedata.combining(char)
+                )
+                canonical = {
+                    'manha': 'ManhÃ£',
+                    'tarde': 'Tarde',
+                    'noite': 'Noite',
+                }.get(normalized, turno)
+                canonical_key = canonical.lower()
+                if canonical and canonical_key not in turnos_normalizados:
+                    turnos.append(canonical)
+                    turnos_normalizados.add(canonical_key)
+
+            for field_name, canonical in (
+                ('pt_manha', 'ManhÃ£'),
+                ('pt_tarde', 'Tarde'),
+                ('pt_noite', 'Noite'),
+            ):
+                if str(getattr(self, field_name, None) or '').strip():
+                    canonical_key = canonical.lower()
+                    if canonical_key not in turnos_normalizados:
+                        turnos.append(canonical)
+                        turnos_normalizados.add(canonical_key)
+
+            previous_turnos = list(raw_turnos)
+            if turnos != previous_turnos:
+                self.select_turnos = turnos
+                update_fields = kwargs.get('update_fields')
+                if update_fields is not None:
+                    kwargs['update_fields'] = set(update_fields) | {'select_turnos'}
+        except Exception:
+            pass
+
         try:
             if getattr(self, 'data', None) and not getattr(self, 'data_inicio', None):
                 self.data_inicio = self.data
