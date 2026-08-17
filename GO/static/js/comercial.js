@@ -1112,7 +1112,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            handleProposalPdfRequest(proposalPdfTrigger);
             return;
         }
 
@@ -1459,7 +1459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            handleProposalPdfRequest(proposalPdfTrigger);
             return;
         }
 
@@ -3475,6 +3475,8 @@ document.addEventListener("DOMContentLoaded", () => {
             updatePattern: bootstrap?.endpoints?.updatePattern || "",
             pdfPattern: bootstrap?.endpoints?.pdfPattern || "",
             criticalAnalysisPdfPattern: bootstrap?.endpoints?.criticalAnalysisPdfPattern || "",
+            documentReviewPattern: bootstrap?.endpoints?.documentReviewPattern || "",
+            documentReviewSavePattern: bootstrap?.endpoints?.documentReviewSavePattern || "",
             attachmentListPattern: bootstrap?.endpoints?.attachmentListPattern || "",
             attachmentUploadPattern: bootstrap?.endpoints?.attachmentUploadPattern || "",
             quickClientCreate: bootstrap?.endpoints?.quickClientCreate || "",
@@ -3973,7 +3975,14 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                const message = await response.text();
+                const rawMessage = await response.text();
+                let message = rawMessage;
+                try {
+                    const payload = JSON.parse(rawMessage);
+                    message = payload.message || payload.error || rawMessage;
+                } catch (_) {
+                    // Respostas legadas podem não ser JSON; preservamos a mensagem recebida.
+                }
                 throw new Error(message || "Não foi possível gerar o PDF da proposta.");
             }
 
@@ -4008,6 +4017,135 @@ document.addEventListener("DOMContentLoaded", () => {
                 message: error.message || "Não foi possível gerar o PDF da proposta."
             });
         }
+    }
+
+    async function handleProposalPdfRequest(trigger) {
+        const label = trigger.dataset.pdfLabel || "Proposta";
+        if (label !== "Proposta") {
+            downloadProposalPdf(trigger.href, trigger.download, label);
+            return;
+        }
+        const proposalId = Number(trigger.href.match(/propostas\/(\d+)\/pdf\//)?.[1]);
+        if (!proposalId || !state.endpoints.documentReviewPattern) {
+            downloadProposalPdf(trigger.href, trigger.download, label);
+            return;
+        }
+        try {
+            const endpoint = buildEndpoint(state.endpoints.documentReviewPattern, proposalId);
+            const payload = await fetchJson(endpoint);
+            openDocumentReviewModal(payload, proposalId, trigger.href, trigger.download);
+        } catch (error) {
+            // O backend é a fonte de verdade: tipos ainda não suportados mantêm o download legado.
+            if (String(error.message || "").includes("apenas para propostas Offshore")) {
+                downloadProposalPdf(trigger.href, trigger.download, label);
+                return;
+            }
+            showNotification({ type: "warning", title: "Revisão indisponível", message: error.message || "Não foi possível abrir a revisão documental." });
+        }
+    }
+
+    function openDocumentReviewModal(payload, proposalId, pdfEndpoint, filename) {
+        const review = payload.revisao;
+        const lines = review.linhas || {};
+        const renderLines = (kind, label, quantity = false) => `
+            <section class="document-review__section" data-document-kind="${kind}"><h3>${label}</h3>
+            <div class="document-review__lines">${(lines[kind] || []).map((line) => `<div class="document-review__line"><input value="${escapeHtml(line.descricao)}"><input class="document-review__quantity ${quantity ? "" : "is-hidden"}" value="${escapeHtml(line.quantidade || "")}" placeholder="${quantity ? "Qtd./POB" : ""}"><button type="button" data-document-remove>Remover</button></div>`).join("")}</div>
+            <button type="button" data-document-add>+ Adicionar linha</button><label><input type="checkbox" data-document-confirm ${review.confirmacoes?.[kind.toLowerCase().replace("PROCEDIMENTO", "procedimento").replace("EQUIPE", "equipe").replace("EQUIPAMENTO", "equipamentos").replace("PREMISSA", "premissas").replace("OBRIGACAO", "obrigacoes")] ? "checked" : ""}> Conteúdo revisado</label></section>`;
+        const modal = document.createElement("section");
+        modal.className = "document-review-modal";
+        document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
+        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(payload.proposta.rev)} • Offshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais</h3><p><strong>Cliente:</strong> ${escapeHtml(payload.proposta.empresa)} &nbsp; <strong>Unidade:</strong> ${escapeHtml(payload.proposta.unidade)} &nbsp; <strong>Serviço:</strong> ${escapeHtml(payload.proposta.escopo || payload.proposta.servico)}</p></section><p class="document-review__notice">Conteúdo carregado do modelo oficial. Revise e confirme cada seção antes da emissão.</p><label>Introdução e objetivo<textarea data-document-introduction>${escapeHtml(review.introducao || "")}</textarea></label><label>Título do procedimento<input data-document-procedure-title value="${escapeHtml(review.procedimentoTitulo || "")}"></label>${renderLines("PROCEDIMENTO", "Procedimento")}${renderLines("EQUIPE", "Equipe", true)}${renderLines("EQUIPAMENTO", "Equipamentos", true)}${renderLines("PREMISSA", "Premissas")}${renderLines("OBRIGACAO", "Obrigações da contratante")}<section class="document-review__section"><h3>Proposta financeira</h3><p>Origem: dados oficiais da proposta comercial.</p>${(review.financeiro || []).map((item) => `<div>${escapeHtml(item.descricao)} — R$ ${escapeHtml(item.preco_unitario)} × ${escapeHtml(item.quantidade)}</div>`).join("")}</section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar</button><button type="button" data-document-generate>Gerar PDF oficial</button></footer></div>`;
+        document.body.appendChild(modal);
+        const close = () => {
+            modal.remove();
+            document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll");
+        };
+
+        const saveReview = async (notify = true) => {
+            const linhasPayload = {};
+            modal.querySelectorAll("[data-document-kind]").forEach((block) => {
+                linhasPayload[block.dataset.documentKind] = [...block.querySelectorAll(".document-review__line")].map((row) => ({
+                    descricao: row.querySelector("input").value,
+                    quantidade: row.querySelector(".document-review__quantity")?.value || "",
+                }));
+            });
+
+            const confirmacoes = {};
+            modal.querySelectorAll("[data-document-kind]").forEach((block) => {
+                const key = {
+                    PROCEDIMENTO: "procedimento",
+                    EQUIPE: "equipe",
+                    EQUIPAMENTO: "equipamentos",
+                    PREMISSA: "premissas",
+                    OBRIGACAO: "obrigacoes",
+                }[block.dataset.documentKind];
+                confirmacoes[key] = block.querySelector("[data-document-confirm]").checked;
+            });
+
+            const response = await fetchJson(
+                buildEndpoint(state.endpoints.documentReviewSavePattern, proposalId),
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        introducao: modal.querySelector("[data-document-introduction]").value,
+                        procedimentoTitulo: modal.querySelector("[data-document-procedure-title]").value,
+                        linhas: linhasPayload,
+                        confirmacoes,
+                    }),
+                },
+            );
+
+            if (notify) {
+                showNotification({
+                    type: "success",
+                    title: "Rascunho salvo",
+                    message: "A revisão documental foi salva.",
+                });
+            }
+            return response;
+        };
+
+        modal.addEventListener("click", async (event) => {
+            if (event.target.closest("[data-document-close]")) return close();
+            const section = event.target.closest("[data-document-kind]");
+            if (event.target.closest("[data-document-add]")) section.querySelector(".document-review__lines").insertAdjacentHTML("beforeend", `<div class="document-review__line"><input><input class="document-review__quantity ${section.dataset.documentKind === "EQUIPE" || section.dataset.documentKind === "EQUIPAMENTO" ? "" : "is-hidden"}" placeholder="Qtd./POB"><button type="button" data-document-remove>Remover</button></div>`);
+            if (event.target.closest("[data-document-remove]")) event.target.closest(".document-review__line").remove();
+            if (event.target.closest("[data-document-save]")) {
+                try {
+                    await saveReview();
+                } catch (error) {
+                    showNotification({
+                        type: "warning",
+                        title: "Não foi possível salvar",
+                        message: error.message || "Revise os dados e tente novamente.",
+                    });
+                }
+            }
+            if (event.target.closest("[data-document-preview]")) {
+                try {
+                    await saveReview(false);
+                    await downloadProposalPdf(`${pdfEndpoint}?document_mode=preview`, filename, "Pré-visualização");
+                } catch (error) {
+                    showNotification({
+                        type: "warning",
+                        title: "Pré-visualização indisponível",
+                        message: error.message || "Não foi possível salvar a revisão antes da pré-visualização.",
+                    });
+                }
+            }
+            if (event.target.closest("[data-document-generate]")) {
+                try {
+                    await saveReview(false);
+                    await downloadProposalPdf(`${pdfEndpoint}?document_mode=final`, filename, "Proposta");
+                } catch (error) {
+                    showNotification({
+                        type: "warning",
+                        title: "PDF não gerado",
+                        message: error.message || "Não foi possível salvar a revisão antes de gerar o PDF.",
+                    });
+                }
+            }
+        });
     }
 
     async function uploadProposalDocuments(files) {
@@ -6890,7 +7028,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            handleProposalPdfRequest(proposalPdfTrigger);
             return;
         }
 

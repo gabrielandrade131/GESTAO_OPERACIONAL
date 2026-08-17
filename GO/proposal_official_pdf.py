@@ -149,12 +149,7 @@ def _fill_offshore_financial_table(document, items):
         table._tbl.remove(row._tr)
 
     if not items:
-        row = table.add_row()
-        _set_cell_text(row.cells[0], "1")
-        _set_cell_text(row.cells[1], "")
-        _set_cell_text(row.cells[2], "")
-        _set_cell_text(row.cells[3], "")
-        return
+        raise OfficialProposalPdfError("A proposta Offshore precisa possuir ao menos um item financeiro para gerar o PDF oficial.")
 
     for index, item in enumerate(items, start=1):
         if reference_row is not None:
@@ -166,6 +161,73 @@ def _fill_offshore_financial_table(document, items):
         _set_cell_text(row.cells[1], item["label"])
         _set_cell_text(row.cells[2], "")
         _set_cell_text(row.cells[3], _format_currency(item["preco_unitario"]) if item["preco_unitario"] else "")
+
+
+def _fill_table_rows(table, rows, columns):
+    """Replace variable table rows while preserving the template row formatting."""
+    reference_row = deepcopy(table.rows[1]._tr) if len(table.rows) > 1 else None
+    for row in list(table.rows[1:]):
+        table._tbl.remove(row._tr)
+    for index, values in enumerate(rows, start=1):
+        if reference_row is not None:
+            table._tbl.append(deepcopy(reference_row))
+            row = table.rows[-1]
+        else:
+            row = table.add_row()
+        for column, value in enumerate(values[:columns]):
+            _set_cell_text(row.cells[column], value)
+
+
+def _set_paragraph_text(paragraph, value):
+    if paragraph.runs:
+        paragraph.runs[0].text = _clean(value)
+        for run in paragraph.runs[1:]:
+            run.text = ""
+
+
+def _apply_offshore_revision(document, revision):
+    if not revision:
+        return
+    paragraphs = document.paragraphs
+    lines = revision.get("linhas") or {}
+    introduction = _clean(revision.get("introducao"))
+    procedure_title = _clean(revision.get("procedimentoTitulo"))
+    if introduction and len(paragraphs) > 50:
+        _set_paragraph_text(paragraphs[50], introduction)
+    if procedure_title and len(paragraphs) > 54:
+        _set_paragraph_text(paragraphs[24], f"3.2 {procedure_title}")
+        _set_paragraph_text(paragraphs[54], f"3.2 {procedure_title}")
+    if len(document.tables) >= 5:
+        if lines.get("PROCEDIMENTO"):
+            _fill_table_rows(document.tables[2], [(str(index).zfill(2), line.get("descricao", "")) for index, line in enumerate(lines["PROCEDIMENTO"], start=1)], 2)
+        if lines.get("EQUIPE"):
+            _fill_table_rows(document.tables[3], [(line.get("descricao", ""), line.get("quantidade", "")) for line in lines["EQUIPE"]], 2)
+        if lines.get("EQUIPAMENTO"):
+            _fill_table_rows(document.tables[4], [(str(index).zfill(2), line.get("descricao", ""), line.get("quantidade", "")) for index, line in enumerate(lines["EQUIPAMENTO"], start=1)], 3)
+    for start, content in ((61, lines.get("PREMISSA", [])), (66, lines.get("OBRIGACAO", []))):
+        if content:
+            for offset in range(max(3, len(content))):
+                if start + offset < len(paragraphs):
+                    _set_paragraph_text(paragraphs[start + offset], content[offset].get("descricao", "") if offset < len(content) else "")
+
+
+def load_offshore_template_draft():
+    """Extract editable defaults from the immutable Offshore template."""
+    path = TEMPLATE_DIR / TEMPLATE_FILES["pc_offshore"]
+    document = Document(path)
+    paragraphs = document.paragraphs
+    def rows(table_index, description_col, quantity_col=None):
+        result = []
+        for row in document.tables[table_index].rows[1:]:
+            description = _clean(row.cells[description_col].text)
+            if description:
+                result.append({"descricao": description, "quantidade": _clean(row.cells[quantity_col].text) if quantity_col is not None else ""})
+        return result
+    return {
+        "introducao": _clean(paragraphs[50].text),
+        "procedimentoTitulo": _clean(paragraphs[54].text).replace("3.2 ", "", 1),
+        "linhas": {"PROCEDIMENTO": rows(2, 1), "EQUIPE": rows(3, 0, 1), "EQUIPAMENTO": rows(4, 1, 2), "PREMISSA": [{"descricao": _clean(paragraphs[index].text), "quantidade": ""} for index in (61, 62, 63) if _clean(paragraphs[index].text)], "OBRIGACAO": [{"descricao": _clean(paragraphs[index].text), "quantidade": ""} for index in (66, 67) if _clean(paragraphs[index].text)]},
+    }
 
 
 def _assert_no_placeholders(document):
@@ -228,7 +290,7 @@ def _convert_with_word(docx_path, output_dir):
     return output_path
 
 
-def generate_official_proposal_pdf(proposal, *, serialized, items):
+def generate_official_proposal_pdf(proposal, *, serialized, items, document_revision=None):
     """Fill a private DOCX copy and return the generated PDF bytes and filename."""
     template_key = _proposal_kind(proposal)
     template_path = TEMPLATE_DIR / TEMPLATE_FILES[template_key]
@@ -292,6 +354,7 @@ def generate_official_proposal_pdf(proposal, *, serialized, items):
         document = Document(copied_template)
         _replace_document_text(document, replacements)
         if template_key == "pc_offshore":
+            _apply_offshore_revision(document, document_revision)
             _fill_offshore_financial_table(document, normalized_items)
         _assert_no_placeholders(document)
         document.save(copied_template)
