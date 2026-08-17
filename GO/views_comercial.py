@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import unicodedata
 from functools import wraps
@@ -12,13 +13,16 @@ from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.core.paginator import Paginator
+from django.http import FileResponse, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import AnaliseCriticaOportunidade, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf
+from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
 
 
 logger = logging.getLogger(__name__)
@@ -214,7 +218,12 @@ def _parse_decimal_input(value):
     if value in (None, ""):
         return Decimal("0")
     text = str(value).strip().replace("R$", "").replace(" ", "")
-    text = text.replace(".", "").replace(",", ".")
+    # Accept both the visual Brazilian format (1.600,00) and the decimal
+    # format sent by the JavaScript payload (1600.00).
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif text.count(".") > 1:
+        text = text.replace(".", "")
     try:
         return Decimal(text)
     except (InvalidOperation, TypeError, ValueError):
@@ -704,8 +713,48 @@ def _serialize_financeiro_campos(financeiro):
     return items, total
 
 
+def _serialize_proposta_anexo(anexo):
+    return {
+        "id": anexo.id,
+        "nome": anexo.nome_original,
+        "tamanho": anexo.arquivo.size if anexo.arquivo else 0,
+        "criadoEm": timezone.localtime(anexo.criado_em).strftime("%d/%m/%Y %H:%M") if anexo.criado_em else "",
+        "enviadoPor": _clean_text(getattr(anexo.enviado_por, "get_full_name", lambda: "")()) or _clean_text(getattr(anexo.enviado_por, "username", "")),
+        "visualizarUrl": reverse("comercial_visualizar_anexo_proposta", args=[anexo.id]),
+        "excluirUrl": reverse("comercial_excluir_anexo_proposta", args=[anexo.id]),
+    }
+
+
 CRITICAL_ANALYSIS_FIELDS = AnaliseCriticaOportunidade.RESPONSE_FIELDS
 CRITICAL_ANALYSIS_VALID_RESPONSES = {value for value, _label in AnaliseCriticaOportunidade.RESPOSTAS}
+CRITICAL_ANALYSIS_QUESTIONS = {
+    "capacidade_atender_requisitos": "Nossa empresa possui capacidade para atender integralmente aos requisitos do cliente?",
+    "habilitacao_tecnica_atendida": "Os requisitos de habilitação técnica exigidos para esta oportunidade são atendidos?",
+    "visita_tecnica_necessaria": "É necessária visita técnica?",
+    "escopo_claramente_definido": "O escopo está claramente definido?",
+    "competencia_tecnica_execucao": "Possuímos competência técnica para executar?",
+    "recursos_disponiveis": "Os recursos humanos, materiais e equipamentos necessários para execução do contrato estão disponíveis e atendem aos requisitos do cliente?",
+    "equipe_com_treinamentos": "A equipe possui os treinamentos necessários para a atividade?",
+    "equipe_irata_disponivel": "Quando aplicável, a empresa possui equipe IRATA disponível?",
+    "equipe_resgate_disponivel": "Quando aplicável, a empresa possui equipe de resgate disponível?",
+    "tempo_habil_mobilizacao": "Existe tempo hábil para mobilização na data solicitada pelo cliente?",
+    "tempo_habil_aquisicao": "Existe tempo hábil para aquisição de materiais ou equipamentos específicos, quando aplicável?",
+    "riscos_comerciais_relevantes": "O contrato apresenta riscos comerciais relevantes?",
+    "oportunidade_viavel_rentavel": "A oportunidade é comercialmente viável e rentável para a empresa?",
+    "pendencias_financeiras_cliente": "Existem pendências financeiras do cliente junto à Ambipar?",
+    "iremos_participar": "Iremos participar?",
+}
+
+
+def _proposal_will_not_participate(payload):
+    """Return whether the critical analysis records that the opportunity will not proceed."""
+    raw_analysis = payload.get("analise_critica_oportunidade") or {}
+    if not isinstance(raw_analysis, dict):
+        return False
+    raw_answers = raw_analysis.get("respostas", raw_analysis)
+    if not isinstance(raw_answers, dict):
+        return False
+    return _clean_text(raw_answers.get("iremos_participar")).upper() == AnaliseCriticaOportunidade.RESPOSTA_NAO
 
 
 def _serialize_critical_analysis(financeiro):
@@ -1045,6 +1094,7 @@ def _serialize_financeiro(financeiro):
         "campos": campos,
         "totalCampos": _format_decimal_string(total_campos),
         "totalCamposFormatado": _format_currency_br(total_campos),
+        "anexos": [_serialize_proposta_anexo(anexo) for anexo in financeiro.anexos.all()],
     }
 
 
@@ -1060,10 +1110,13 @@ def _serialize_agenda_followup(financeiro, item, index=0):
         "id": f"{financeiro.proposta}-{index}",
         "proposta_id": financeiro.proposta,
         "numero_proposta": str(financeiro.proposta),
+        "revisao": _clean_text(financeiro.revisao),
         "cliente": cliente_nome,
         "unidade": unidade_nome,
+        "status_proposta": _clean_text(financeiro.status_proposta),
         "responsavel": _clean_text(item.get("responsavel")) or _clean_text(financeiro.responsavel),
         "data": data_iso,
+        "data_formatada": _format_date_br(data_followup),
         "hora": _clean_text(item.get("hora")) or "09:00",
         "status": _clean_text(item.get("status")) or FOLLOWUP_STATUSES[0],
         "titulo": _clean_text(item.get("proximaAcao") or item.get("comentario") or commercial_bundle.get("summary")),
@@ -1213,6 +1266,59 @@ def _agenda_responsavel_options(items):
         seen.add(key)
         ordered.append(responsavel)
     return ["Todos", *ordered]
+
+
+def _user_responsavel_names(user):
+    """Resolve os responsáveis comerciais que pertencem ao usuário autenticado.
+
+    A base atual ainda não possui uma FK direta entre usuário e responsável.
+    Enquanto essa relação não existe, a associação é feita apenas por identidade
+    normalizada do nome completo, login e e-mail, sempre no servidor.
+    """
+    raw_candidates = [
+        user.get_full_name(),
+        user.get_username(),
+        getattr(user, "email", ""),
+    ]
+    candidates = set()
+    for raw_value in raw_candidates:
+        text = _clean_text(raw_value)
+        if not text:
+            continue
+        candidates.add(_normalize_key(text))
+        candidates.add(_normalize_key(text.split("@", 1)[0].replace(".", " ").replace("_", " ").replace("-", " ")))
+
+    names = []
+    for person in ResponsavelCoordenador.objects.filter(ativo=True, responsavel_comercial=True).order_by("nome"):
+        if _normalize_key(person.nome) in candidates:
+            names.append(person.nome)
+    return names
+
+
+def _can_view_all_commercial_followups(user):
+    """Administradores consultam a agenda completa; os demais, apenas a própria."""
+    return bool(
+        getattr(user, "is_superuser", False)
+        or user_can_manage_rdo_permission_users(user)
+        or user_can_manage_responsaveis_coordenadores(user)
+    )
+
+
+def _collect_current_user_followup_items(user):
+    if _can_view_all_commercial_followups(user):
+        return _collect_followup_agenda_items(), []
+
+    responsible_names = _user_responsavel_names(user)
+    if not responsible_names:
+        return [], []
+
+    allowed_keys = {_normalize_key(name) for name in responsible_names}
+    items = [
+        item
+        for item in _collect_followup_agenda_items()
+        if _normalize_key(item.get("responsavel")) in allowed_keys
+    ]
+    return items, responsible_names
 
 
 def _is_proposal_late(financeiro):
@@ -1372,13 +1478,16 @@ def _build_bootstrap_payload():
             "metodo_cadastro",
             "cordenador",
             "analise_critica_oportunidade",
-        ).prefetch_related("campos").order_by("-proposta")
+        ).prefetch_related("campos", "anexos__enviado_por").order_by("-proposta")
     ]
 
     detail_pattern = reverse("comercial_detalhe_proposta", args=[0]).replace("/0/", "/__id__/")
     status_pattern = reverse("comercial_atualizar_status", args=[0]).replace("/0/", "/__id__/")
     update_pattern = reverse("comercial_atualizar_proposta", args=[0]).replace("/0/", "/__id__/")
     pdf_pattern = reverse("comercial_gerar_pdf_proposta", args=[0]).replace("/0/", "/__id__/")
+    critical_analysis_pdf_pattern = reverse("comercial_gerar_pdf_analise_critica", args=[0]).replace("/0/", "/__id__/")
+    attachment_list_pattern = reverse("comercial_listar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
+    attachment_upload_pattern = reverse("comercial_enviar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
 
     return {
         "proposals": propostas,
@@ -1392,6 +1501,9 @@ def _build_bootstrap_payload():
             "statusPattern": status_pattern,
             "updatePattern": update_pattern,
             "pdfPattern": pdf_pattern,
+            "criticalAnalysisPdfPattern": critical_analysis_pdf_pattern,
+            "attachmentListPattern": attachment_list_pattern,
+            "attachmentUploadPattern": attachment_upload_pattern,
             "quickClientCreate": reverse("comercial_criar_cliente"),
             "quickUnitCreate": reverse("comercial_criar_unidade"),
             "quickMethodCreate": reverse("comercial_criar_metodo"),
@@ -1621,10 +1733,14 @@ def _resolve_active_person(raw_value, role):
 
 def _create_financeiro_from_payload(payload):
     proposal_number = _get_next_proposal_number(lock=True)
+    will_not_participate = _proposal_will_not_participate(payload)
 
     revisao_text = _clean_text(payload.get("revisao") or payload.get("rev"))
     if not revisao_text.isdigit():
-        return None, {"revisao": "Informe uma revisão válida."}
+        if will_not_participate and not revisao_text:
+            revisao_text = "0"
+        else:
+            return None, {"revisao": "Informe uma revisão válida."}
 
     resolved_refs, base_os, tank = _resolve_support_references(payload)
     if base_os is None:
@@ -1639,7 +1755,8 @@ def _create_financeiro_from_payload(payload):
     emissao = _parse_date_input(payload.get("data_emissao"))
     data_entrega = _parse_date_input(payload.get("data_entrega_proposta"))
     data_solicitacao = _parse_date_input(payload.get("data_solicitacao_proposta"))
-    previsao_contratacao = _parse_date_input(payload.get("previsao_contratacao")) or data_entrega or data_solicitacao
+    fallback_date = timezone.localdate() if will_not_participate else None
+    previsao_contratacao = _parse_date_input(payload.get("previsao_contratacao")) or data_entrega or data_solicitacao or fallback_date
     data_fechamento = _parse_date_input(payload.get("data_fechamento_proposta"))
 
     responsavel_cadastro = _resolve_active_person(payload.get("responsavel"), "responsavel")
@@ -1649,11 +1766,11 @@ def _create_financeiro_from_payload(payload):
         "proposta": proposal_number,
         "revisao": int(revisao_text),
         "data_emissao": emissao,
-        "data_solicitacao_proposta": data_solicitacao,
+        "data_solicitacao_proposta": data_solicitacao or fallback_date,
         "data_fechamento_proposta": data_fechamento,
         "previsao_contratacao": previsao_contratacao,
         "follow_up": _clean_text(payload.get("follow_up")),
-        "natureza": _clean_text(payload.get("natureza")),
+        "natureza": _clean_text(payload.get("natureza")) or ("Spot" if will_not_participate else ""),
         "heat_map": int(str(payload.get("heat_map") or "0")),
         "motivo_perda": _clean_text(payload.get("motivo_perda")) or "N/A",
         "po": _clean_text(payload.get("po")),
@@ -1671,9 +1788,9 @@ def _create_financeiro_from_payload(payload):
         "data_fim_frente": base_os,
         "data_entrega_proposta": data_entrega,
         "tempo_contrato_dias": int(payload.get("tempo_contrato_dias") or 0) or None,
-        "status_proposta": _clean_text(payload.get("status_proposta")),
+        "status_proposta": _clean_text(payload.get("status_proposta")) or ("Declínio" if will_not_participate else ""),
         "cordenador": resolved_refs["cordenador"] or base_os,
-        "responsavel": _clean_text(payload.get("responsavel")),
+        "responsavel": _clean_text(payload.get("responsavel")) or ("Não informado" if will_not_participate else ""),
         "responsavel_cadastro": responsavel_cadastro,
         "coordenador_cadastro": coordenador_cadastro,
         "servico": _clean_text(payload.get("servico")),
@@ -1695,29 +1812,29 @@ def _create_financeiro_from_payload(payload):
     }
 
     required_messages = {}
-    if not fields["data_emissao"]:
+    if not will_not_participate and not fields["data_emissao"]:
         required_messages["data_emissao"] = "Informe a data de emissão."
-    if not fields["data_solicitacao_proposta"]:
+    if not will_not_participate and not fields["data_solicitacao_proposta"]:
         required_messages["data_solicitacao_proposta"] = "Informe a data de solicitação da proposta."
-    if not fields["data_entrega_proposta"]:
+    if not will_not_participate and not fields["data_entrega_proposta"]:
         required_messages["data_entrega_proposta"] = "Informe a data de entrega da proposta."
-    if not fields["responsavel"]:
+    if not will_not_participate and not fields["responsavel"]:
         required_messages["responsavel"] = "Selecione o responsável comercial."
-    elif responsavel_cadastro is None:
+    elif not will_not_participate and responsavel_cadastro is None:
         required_messages["responsavel"] = "Selecione um responsável comercial ativo."
-    if not fields["natureza"]:
+    if not will_not_participate and not fields["natureza"]:
         required_messages["natureza"] = "Selecione a natureza."
-    if not fields["status_proposta"]:
+    if not will_not_participate and not fields["status_proposta"]:
         required_messages["status_proposta"] = "Selecione o status da proposta."
-    if not _clean_text(payload.get("cliente")):
+    if not will_not_participate and not _clean_text(payload.get("cliente")):
         required_messages["cliente"] = "Selecione um cliente."
-    if not _clean_text(payload.get("unidade")):
+    if not will_not_participate and not _clean_text(payload.get("unidade")):
         required_messages["unidade"] = "Selecione uma unidade."
-    if not _clean_text(payload.get("servico")):
+    if not will_not_participate and not _clean_text(payload.get("servico")):
         required_messages["servico"] = "Selecione um serviço."
-    if _clean_text(payload.get("metodo")) and metodo_cadastro is None:
+    if not will_not_participate and _clean_text(payload.get("metodo")) and metodo_cadastro is None:
         required_messages["metodo"] = "Selecione ou cadastre um método ativo."
-    if fields["estimativo_receita"] <= 0:
+    if not will_not_participate and fields["estimativo_receita"] <= 0:
         required_messages["estimativo_receita"] = "Informe uma estimativa de receita válida."
     if fields["email_solicitante"]:
         try:
@@ -1856,6 +1973,7 @@ def _sync_financeiro_campos(financeiro, campos):
 
 def _update_financeiro_from_payload(financeiro, payload):
     errors = {}
+    will_not_participate = _proposal_will_not_participate(payload)
 
     text_fields = {
         "po": "po",
@@ -1883,6 +2001,11 @@ def _update_financeiro_from_payload(financeiro, payload):
         if payload_key in payload:
             setattr(financeiro, model_field, _clean_text(payload.get(payload_key)))
 
+    if will_not_participate:
+        financeiro.natureza = financeiro.natureza or "Spot"
+        financeiro.status_proposta = financeiro.status_proposta or "Declínio"
+        financeiro.responsavel = financeiro.responsavel or "Não informado"
+
     if "email_solicitante" in payload and financeiro.email_solicitante:
         try:
             validate_email(financeiro.email_solicitante)
@@ -1898,7 +2021,10 @@ def _update_financeiro_from_payload(financeiro, payload):
     }
     for payload_key, model_field in date_fields.items():
         if payload_key in payload:
-            setattr(financeiro, model_field, _parse_date_input(payload.get(payload_key)))
+            parsed_date = _parse_date_input(payload.get(payload_key))
+            if will_not_participate and model_field in {"data_solicitacao_proposta", "previsao_contratacao"}:
+                parsed_date = parsed_date or timezone.localdate()
+            setattr(financeiro, model_field, parsed_date)
 
     if "revisao" in payload:
         revisao_text = _clean_text(payload.get("revisao"))
@@ -1958,7 +2084,10 @@ def _update_financeiro_from_payload(financeiro, payload):
 
     if "responsavel" in payload:
         person = _resolve_active_person(payload.get("responsavel"), "responsavel")
-        if person is None:
+        if person is None and will_not_participate and not _clean_text(payload.get("responsavel")):
+            financeiro.responsavel_cadastro = None
+            financeiro.responsavel = "Não informado"
+        elif person is None:
             errors["responsavel"] = "Selecione um responsável comercial ativo."
         else:
             financeiro.responsavel_cadastro = person
@@ -2059,10 +2188,11 @@ def comercial_exportar_excel(request):
 @transaction.atomic
 def comercial_criar_proposta(request):
     payload = _read_request_json(request)
+    will_not_participate = _proposal_will_not_participate(payload)
     financeiro, errors = _create_financeiro_from_payload(payload)
     campos, campo_errors = _parse_financeiro_campos_payload(payload)
     critical_answers, critical_errors, critical_comment = _parse_critical_analysis_payload(payload)
-    if campo_errors:
+    if campo_errors and not will_not_participate:
         errors = {**errors, **campo_errors} if errors else campo_errors
     if critical_errors:
         errors = {**errors, **critical_errors} if errors else critical_errors
@@ -2292,9 +2422,8 @@ def comercial_criar_segmento(request):
 @commercial_preview_required
 @require_GET
 def comercial_agenda_followups(request):
-    all_items = _collect_followup_agenda_items()
+    all_items, _responsible_names = _collect_current_user_followup_items(request.user)
     search = _clean_text(request.GET.get("q"))
-    responsavel = _clean_text(request.GET.get("responsavel")) or "Todos"
     status = _clean_text(request.GET.get("status")) or "Todos"
     start_date = _parse_iso_query_date(request.GET.get("start_date"))
     end_date = _parse_iso_query_date(request.GET.get("end_date"))
@@ -2302,7 +2431,7 @@ def comercial_agenda_followups(request):
     filtered_items = _filter_agenda_items(
         all_items,
         search=search,
-        responsavel=responsavel,
+        responsavel="Todos",
         status=status,
         start_date=start_date,
         end_date=end_date,
@@ -2311,16 +2440,73 @@ def comercial_agenda_followups(request):
     return JsonResponse(
         {
             "success": True,
+            "can_view_all": _can_view_all_commercial_followups(request.user),
             "summary": _build_followup_agenda_summary(filtered_items, today=timezone.localdate()),
             "items": filtered_items,
             "calendar_days": _build_calendar_days(filtered_items),
-            "responsavel_options": _agenda_responsavel_options(all_items),
+            "responsavel_options": ["Todos"],
             "status_options": _agenda_status_options(all_items),
             "total_all": len(all_items),
             "total_filtered": len(filtered_items),
             "today": timezone.localdate().isoformat(),
         }
     )
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_meus_followups(request):
+    """Renderiza os acompanhamentos atribuídos ao responsável do usuário logado."""
+    all_items, responsible_names = _collect_current_user_followup_items(request.user)
+    search = _clean_text(request.GET.get("q"))
+    status = _clean_text(request.GET.get("status")) or "Todos"
+    start_date = _parse_iso_query_date(request.GET.get("start_date"))
+    end_date = _parse_iso_query_date(request.GET.get("end_date"))
+    ordering = _clean_text(request.GET.get("ordem")) or "proximos"
+
+    filtered_items = _filter_agenda_items(
+        all_items,
+        search=search,
+        responsavel="Todos",
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    filtered_items.sort(
+        key=lambda item: (item.get("data") or "9999-12-31", item.get("hora") or "23:59"),
+        reverse=ordering == "recentes",
+    )
+
+    today = timezone.localdate()
+    tomorrow = today + timedelta(days=1)
+    for item in filtered_items:
+        item_date = _parse_iso_query_date(item.get("data"))
+        if item_date == today:
+            item["group_label"] = f"Hoje - {_format_date_br(today)}"
+        elif item_date == tomorrow:
+            item["group_label"] = f"Amanhã - {_format_date_br(tomorrow)}"
+        else:
+            item["group_label"] = "Próximos dias"
+
+    paginator = Paginator(filtered_items, 12)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    context = {
+        "followups": page_obj.object_list,
+        "page_obj": page_obj,
+        "total_followups": len(filtered_items),
+        "status_options": _agenda_status_options(all_items),
+        "filters": {
+            "q": search,
+            "status": status,
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+            "ordem": ordering,
+        },
+        "responsible_names": responsible_names,
+        "has_responsible_profile": bool(responsible_names),
+    }
+    return render(request, "comercial/meus_followups.html", context)
 
 
 @login_required(login_url="/login/")
@@ -2403,16 +2589,138 @@ def comercial_detalhe_proposta(request, proposta_id):
             "metodo_cadastro",
             "cordenador",
             "analise_critica_oportunidade",
-        ).prefetch_related("campos"),
+        ).prefetch_related("campos", "anexos__enviado_por"),
         proposta=proposta_id,
     )
     return JsonResponse({"success": True, "proposal": _serialize_financeiro(proposta)})
+
+
+PROPOSTA_ANEXO_EXTENSOES_PERMITIDAS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".txt", ".png", ".jpg", ".jpeg",
+}
+PROPOSTA_ANEXO_TAMANHO_MAXIMO = 20 * 1024 * 1024
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_listar_anexos_proposta(request, proposta_id):
+    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    anexos = proposta.anexos.select_related("enviado_por").all()
+    return JsonResponse({
+        "success": True,
+        "anexos": [_serialize_proposta_anexo(anexo) for anexo in anexos],
+    })
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+@transaction.atomic
+def comercial_enviar_anexos_proposta(request, proposta_id):
+    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    arquivos = request.FILES.getlist("arquivos") or ([request.FILES["arquivo"]] if request.FILES.get("arquivo") else [])
+    if not arquivos:
+        return JsonResponse({"success": False, "message": "Selecione ao menos um documento."}, status=400)
+
+    errors = []
+    for arquivo in arquivos:
+        nome_original = os.path.basename(str(getattr(arquivo, "name", "") or ""))
+        extensao = os.path.splitext(nome_original)[1].lower()
+        if extensao not in PROPOSTA_ANEXO_EXTENSOES_PERMITIDAS:
+            errors.append(f"{nome_original or 'Arquivo'} possui um formato não permitido.")
+        elif arquivo.size > PROPOSTA_ANEXO_TAMANHO_MAXIMO:
+            errors.append(f"{nome_original} ultrapassa o limite de 20 MB.")
+
+    if errors:
+        return JsonResponse({"success": False, "message": "Não foi possível enviar os documentos.", "errors": errors}, status=400)
+
+    anexos = []
+    for arquivo in arquivos:
+        anexo = AnexoPropostaComercial.objects.create(
+            financeiro=proposta,
+            arquivo=arquivo,
+            nome_original=os.path.basename(str(getattr(arquivo, "name", "") or "documento")),
+            enviado_por=request.user,
+        )
+        anexos.append(_serialize_proposta_anexo(anexo))
+
+    return JsonResponse({"success": True, "message": "Documento(s) enviado(s) com sucesso.", "anexos": anexos}, status=201)
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_visualizar_anexo_proposta(request, anexo_id):
+    anexo = get_object_or_404(AnexoPropostaComercial, pk=anexo_id)
+    if not anexo.arquivo:
+        return HttpResponse("Arquivo não encontrado.", status=404)
+
+    try:
+        return FileResponse(anexo.arquivo.open("rb"), as_attachment=False, filename=anexo.nome_original)
+    except OSError:
+        return HttpResponse("Arquivo não encontrado.", status=404)
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+def comercial_excluir_anexo_proposta(request, anexo_id):
+    anexo = get_object_or_404(AnexoPropostaComercial, pk=anexo_id)
+    try:
+        anexo.arquivo.delete(save=False)
+    except OSError:
+        logger.warning("Não foi possível remover o arquivo do anexo comercial id=%s", anexo.id)
+    anexo.delete()
+    return JsonResponse({"success": True, "message": "Documento excluído com sucesso."})
+
+
+def _generate_official_proposal_response(proposta_id):
+    """Build the approved proposal document and expose it as a PDF response."""
+    proposta = get_object_or_404(
+        Financeiro.objects.select_related(
+            "cliente__Cliente",
+            "cliente__Unidade",
+            "unidade__Cliente",
+            "unidade__Unidade",
+            "tipo_operacao",
+            "metodo",
+            "metodo_cadastro",
+            "cordenador",
+        ).prefetch_related("campos"),
+        proposta=proposta_id,
+    )
+
+    try:
+        serialized = _serialize_financeiro(proposta)
+        pdf_content, filename = generate_official_proposal_pdf(
+            proposta,
+            serialized=serialized,
+            items=serialized.get("campos") or [],
+        )
+    except OfficialProposalPdfError as error:
+        logger.warning("Unable to generate official proposal %s: %s", proposta_id, error)
+        return HttpResponse(str(error), status=400, content_type="text/plain; charset=utf-8")
+    except Exception:
+        logger.exception("Error generating official proposal %s.", proposta_id)
+        return HttpResponse(
+            "Nao foi possivel gerar a proposta oficial. Tente novamente.",
+            status=500,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf_content, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @login_required(login_url="/login/")
 @commercial_preview_required
 @require_GET
 def comercial_gerar_pdf_proposta(request, proposta_id):
+    return _generate_official_proposal_response(proposta_id)
+
+    """Generate a proposal PDF from the persisted Commercial data."""
     """Generate a proposal PDF from the persisted Commercial data."""
     proposta = get_object_or_404(
         Financeiro.objects.select_related(
@@ -2614,6 +2922,267 @@ def comercial_gerar_pdf_proposta(request, proposta_id):
 
     response = HttpResponse(pdf_content, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="proposta_{proposta.proposta}.pdf"'
+    return response
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_gerar_pdf_analise_critica(request, proposta_id):
+    """Generate a PDF containing only the persisted critical opportunity analysis."""
+    proposta = get_object_or_404(
+        Financeiro.objects.select_related(
+            "cliente__Cliente",
+            "unidade__Unidade",
+            "analise_critica_oportunidade",
+        ),
+        proposta=proposta_id,
+    )
+
+    try:
+        serialized = _serialize_financeiro(proposta)
+        pdf_content, filename = generate_official_proposal_pdf(
+            proposta,
+            serialized=serialized,
+            items=serialized.get("campos") or [],
+        )
+    except OfficialProposalPdfError as error:
+        logger.warning("Não foi possível gerar a proposta oficial %s: %s", proposta_id, error)
+        return HttpResponse(str(error), status=400, content_type="text/plain; charset=utf-8")
+    except Exception:
+        logger.exception("Erro ao gerar a proposta oficial %s.", proposta_id)
+        return HttpResponse(
+            "Não foi possível gerar a proposta oficial. Tente novamente.",
+            status=500,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf_content, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+    try:
+        from html import escape
+
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import Image as ReportLabImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+        serialized = _serialize_financeiro(proposta)
+        analysis = serialized.get("analiseCriticaOportunidade") or {}
+        answers = analysis.get("respostas") or {}
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name="CriticalFormBody",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=7.6,
+            leading=9.1,
+            textColor=colors.black,
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormLabel",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=7.6,
+            leading=9.1,
+            textColor=colors.black,
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormHeader",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=7.6,
+            leading=9.1,
+            alignment=TA_CENTER,
+            textColor=colors.black,
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormTitle",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=8.5,
+            leading=10,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#777777"),
+        ))
+        styles.add(ParagraphStyle(
+            name="CriticalFormLogo",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=16,
+            leading=18,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#888888"),
+        ))
+
+        def paragraph(value, style="CriticalFormBody"):
+            return Paragraph(escape(str(value or "-")).replace(chr(10), "<br/>"), styles[style])
+
+        def field_value(label, value):
+            safe_value = escape(str(value or "")).replace(chr(10), "<br/>")
+            return Paragraph(f"<b>{escape(label)}</b> {safe_value}", styles["CriticalFormBody"])
+
+        def field_label(label):
+            return Paragraph(f"<b>{escape(label)}</b>", styles["CriticalFormBody"])
+
+        def form_table(data, widths, commands=None, row_heights=None):
+            table = Table(data, colWidths=widths, rowHeights=row_heights)
+            table_commands = [
+                ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+            if commands:
+                table_commands.extend(commands)
+            table.setStyle(TableStyle(table_commands))
+            return table
+
+        def answer_value(field_name):
+            return {
+                "SIM": "SIM",
+                "NAO": "NÃO",
+                "NA": "NA",
+            }.get(answers.get(field_name), "")
+
+        def criterion_row(field_name):
+            return [paragraph(CRITICAL_ANALYSIS_QUESTIONS[field_name]), paragraph(answer_value(field_name), "CriticalFormHeader")]
+
+        green = colors.HexColor("#92d050")
+        content_width = 17.6 * cm
+        label_width = 6.2 * cm
+        logo_path = os.path.join(os.path.dirname(__file__), "static", "js", "img", "Logo_Preto.png")
+        logo = (
+            ReportLabImage(logo_path, width=3.05 * cm, height=0.89 * cm)
+            if os.path.exists(logo_path)
+            else Paragraph("ambipar<super>®</super>", styles["CriticalFormLogo"])
+        )
+        pdf_io = BytesIO()
+        document = SimpleDocTemplate(
+            pdf_io,
+            pagesize=A4,
+            leftMargin=1.45 * cm,
+            rightMargin=1.45 * cm,
+            topMargin=0.95 * cm,
+            bottomMargin=0.7 * cm,
+        )
+        story = []
+        story.append(form_table(
+            [[
+                logo,
+                Paragraph("ANÁLISE CRÍTICA DA OPORTUNIDADE", styles["CriticalFormTitle"]),
+                Paragraph("FOR-SGQ-034 - Rev.6", styles["CriticalFormTitle"]),
+            ]],
+            [3.9 * cm, 8.7 * cm, 5.0 * cm],
+            row_heights=[1.45 * cm],
+        ))
+        story.append(Spacer(1, 0.5 * cm))
+
+        story.append(form_table(
+            [
+                [field_value("Número da Proposta:", serialized.get("numeroProposta")), "", ""],
+                [field_value("Fonte do lead:", serialized.get("fonteLead")), "", field_value("Data:", serialized.get("emissao"))],
+            ],
+            [6.2 * cm, 6.0 * cm, 5.4 * cm],
+            commands=[("SPAN", (0, 0), (2, 0))],
+        ))
+        story.append(Spacer(1, 0.42 * cm))
+
+        offshore = str(serialized.get("tipoOperacao") or "").strip().lower() == "offshore"
+        onshore = str(serialized.get("tipoOperacao") or "").strip().lower() == "onshore"
+        story.append(form_table(
+            [
+                [field_label("Cliente:"), paragraph(serialized.get("empresa"))],
+                [field_label("Unidade / Plataforma / Planta"), paragraph(serialized.get("unidade"))],
+                [field_label("Tipo de operação"), paragraph(f"( {'X' if onshore else ' '} ) Onshore    ( {'X' if offshore else ' '} ) Offshore")],
+                [field_label("Serviço:"), paragraph(serialized.get("escopo") or serialized.get("servico"))],
+                [field_label("Local de embarque / local da operação:"), paragraph(serialized.get("embarcacaoLocal"))],
+                [field_label("Data prevista da operação:"), paragraph(serialized.get("dataEntregaProposta"))],
+            ],
+            [label_width, content_width - label_width],
+        ))
+        story.append(Spacer(1, 0.55 * cm))
+
+        criteria_rows = [
+            [paragraph("CRITÉRIO", "CriticalFormHeader"), paragraph("AVALIAÇÃO", "CriticalFormHeader")],
+            [paragraph("Requisitos do cliente", "CriticalFormLabel"), ""],
+            criterion_row("capacidade_atender_requisitos"),
+            criterion_row("habilitacao_tecnica_atendida"),
+            [paragraph("Requisitos técnicos", "CriticalFormLabel"), ""],
+            criterion_row("visita_tecnica_necessaria"),
+            criterion_row("escopo_claramente_definido"),
+            criterion_row("competencia_tecnica_execucao"),
+            [paragraph("Recursos operacionais", "CriticalFormLabel"), ""],
+            criterion_row("recursos_disponiveis"),
+            criterion_row("equipe_com_treinamentos"),
+            criterion_row("equipe_irata_disponivel"),
+            criterion_row("equipe_resgate_disponivel"),
+            [paragraph("Logística", "CriticalFormLabel"), ""],
+            criterion_row("tempo_habil_mobilizacao"),
+            criterion_row("tempo_habil_aquisicao"),
+            [paragraph("Viabilidade comercial", "CriticalFormLabel"), ""],
+            criterion_row("riscos_comerciais_relevantes"),
+            criterion_row("oportunidade_viavel_rentavel"),
+            criterion_row("pendencias_financeiras_cliente"),
+            [paragraph("OBSERVAÇÕES GERAIS", "CriticalFormLabel"), ""],
+            [paragraph(analysis.get("comentario") or ""), ""],
+        ]
+        group_rows = [1, 4, 8, 13, 16, 20]
+        criteria_table = form_table(
+            criteria_rows,
+            [14.6 * cm, 3.0 * cm],
+            commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), green),
+                *[("BACKGROUND", (0, row), (-1, row), green) for row in group_rows],
+                ("SPAN", (0, 1), (1, 1)),
+                ("SPAN", (0, 4), (1, 4)),
+                ("SPAN", (0, 8), (1, 8)),
+                ("SPAN", (0, 13), (1, 13)),
+                ("SPAN", (0, 16), (1, 16)),
+                ("SPAN", (0, 20), (1, 20)),
+                ("SPAN", (0, 21), (1, 21)),
+                ("ALIGN", (1, 0), (1, -1), "CENTER"),
+            ],
+        )
+        story.append(criteria_table)
+        story.append(Spacer(1, 0.45 * cm))
+
+        participate = answers.get("iremos_participar")
+        participation_rows = [
+            [field_value("Participaremos da oportunidade?", f"( {'X' if participate == 'SIM' else ' '} ) Sim    ( {'X' if participate == 'NAO' else ' '} ) Não")],
+            [field_value("Motivo:", serialized.get("motivoDeclinioPerda") if participate == "NAO" else "")],
+        ]
+        story.append(form_table(participation_rows, [content_width], row_heights=[0.7 * cm, 0.7 * cm]))
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(form_table(
+            [[
+                paragraph("Nome", "CriticalFormHeader"),
+                paragraph("Setor", "CriticalFormHeader"),
+                paragraph("Assinatura", "CriticalFormHeader"),
+            ], ["", "", ""]],
+            [5.7 * cm, 5.7 * cm, 6.2 * cm],
+            commands=[("BACKGROUND", (0, 0), (-1, 0), green)],
+            row_heights=[0.55 * cm, 1.15 * cm],
+        ))
+
+        document.build(story)
+        pdf_content = pdf_io.getvalue()
+    except Exception:
+        logger.exception("Erro ao gerar PDF da análise crítica da proposta %s.", proposta_id)
+        return HttpResponse(
+            "Não foi possível gerar o PDF da análise crítica. Tente novamente.",
+            status=500,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf_content, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="analise_critica_proposta_{proposta.proposta}.pdf"'
     return response
 
 

@@ -27,6 +27,7 @@
   }
 
   var RDO_EDIT_ACCESS_MESSAGE = 'Seu usuario nao possui permissao para abrir ou editar RDO.';
+  var RDO_READ_ONLY_MESSAGE = 'Modo somente leitura: voce pode consultar todos os dados, mas nao pode altera-los.';
 
   function canOpenOrEditRdo(){
     try {
@@ -38,6 +39,32 @@
     }
   }
 
+  function canOpenRdo(){
+    try {
+      var site = document.getElementById('site-wrapper');
+      if (!site || !site.dataset) return true;
+      var value = site.dataset.canOpenRdo;
+      if (value == null || value === '') return canOpenOrEditRdo();
+      return String(value).toLowerCase() !== 'false';
+    } catch(_){ return true; }
+  }
+
+  function canEditRdo(){
+    try {
+      var site = document.getElementById('site-wrapper');
+      if (!site || !site.dataset) return true;
+      var value = site.dataset.canEditRdo;
+      if (value == null || value === '') return canOpenOrEditRdo();
+      return String(value).toLowerCase() !== 'false';
+    } catch(_){ return true; }
+  }
+
+  function blockRdoOpenAccess(){
+    if (canOpenRdo()) return false;
+    try { showToast(RDO_EDIT_ACCESS_MESSAGE, 'info'); } catch(_){ }
+    return true;
+  }
+
   function blockRdoEditAccess(){
     if (canOpenOrEditRdo()) return false;
     try { showToast(RDO_EDIT_ACCESS_MESSAGE, 'info'); } catch(_){ }
@@ -45,9 +72,8 @@
   }
 
   onReady(function(){
-    if (canOpenOrEditRdo()) return;
     try {
-      qsa('[data-open="supervisor"]').forEach(function(node){
+      if (!canEditRdo()) qsa('[data-open="supervisor"]').forEach(function(node){
         try { node.removeAttribute('data-open'); } catch(_){ }
         try { node.removeAttribute('tabindex'); } catch(_){ }
         try { node.removeAttribute('role'); } catch(_){ }
@@ -56,14 +82,14 @@
           if (!node.getAttribute('title')) node.setAttribute('title', RDO_EDIT_ACCESS_MESSAGE);
         } catch(_){ }
       });
-      qsa('.open-supervisor, .btn-rdo.open-supervisor, .action-btn.open-supervisor').forEach(function(node){
+      if (!canEditRdo()) qsa('.open-supervisor, .btn-rdo.open-supervisor, .action-btn.open-supervisor').forEach(function(node){
         try { node.disabled = true; } catch(_){ }
         try { node.setAttribute('aria-disabled', 'true'); } catch(_){ }
         try {
           if (!node.getAttribute('title')) node.setAttribute('title', RDO_EDIT_ACCESS_MESSAGE);
         } catch(_){ }
       });
-      qsa('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"], .btn-rdo.open-editor').forEach(function(node){
+      if (!canOpenRdo()) qsa('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"], .btn-rdo.open-editor').forEach(function(node){
         try { node.disabled = true; } catch(_){ }
         try { node.setAttribute('aria-disabled', 'true'); } catch(_){ }
         try { node.setAttribute('tabindex', '-1'); } catch(_){ }
@@ -2801,8 +2827,6 @@
       }
     }
   } catch(_){ }
-  try { window.__rdo_core_handles_view = true; } catch(_){}
-
   try { window.rdo_previous_compartimentos = ctx.previous_compartimentos || window.rdo_previous_compartimentos || []; } catch(_){ }
       try { _syncActiveTankIndicator(ctx || {}); } catch(_){ }
       var setText = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = (v == null ? '-' : String(v)); };
@@ -6042,6 +6066,10 @@
 
   async function submitEditorForm(ev){
     if (ev && ev.preventDefault) ev.preventDefault();
+    if (!canEditRdo()) {
+      try { showToast(RDO_READ_ONLY_MESSAGE, 'info'); } catch(_){ }
+      return;
+    }
     var form = qs('#form-editor');
     if (!form) return;
     try { if (typeof computeAndSetTopLevelSummaries === 'function') computeAndSetTopLevelSummaries(form); } catch(_){ }
@@ -6644,8 +6672,122 @@
   }
   try { window.rdoOpenSupervisorModal = openSupervisorModal; } catch(_){ }
   try { onReady(_initEditorActivityDragReorder); } catch(_){ }
+
+  async function _confirmLatestRdoBeforeCreate(context, sourceEl){
+    try {
+      if (sourceEl && sourceEl.getAttribute('data-is-latest-for-os') === '0') {
+        showToast('Somente o último RDO da OS pode originar um novo RDO.', 'info');
+        return false;
+      }
+
+      var osId = String((context && context.os_id) || '').trim();
+      var currentRdoId = String((context && context.rdo_id) || '').trim();
+      if (!osId || !currentRdoId) return true;
+
+      var response = await fetch('/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/', {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      var payload = null;
+      try { payload = await response.json(); } catch(_){ payload = null; }
+      if (!response.ok || !payload || !payload.success) {
+        showToast('Não foi possível confirmar o último RDO da OS. Atualize a página e tente novamente.', 'error');
+        return false;
+      }
+
+      var rdos = Array.isArray(payload.rdos) ? payload.rdos : [];
+      var latest = rdos.length ? rdos[rdos.length - 1] : null;
+      if (latest && String(latest.id || '') !== currentRdoId) {
+        showToast('Este não é mais o último RDO. O RDO atual da OS é o ' + String(latest.rdo || latest.id || '') + '.', 'info');
+        return false;
+      }
+      return true;
+    } catch(_){
+      showToast('Não foi possível confirmar o último RDO da OS. Atualize a página e tente novamente.', 'error');
+      return false;
+    }
+  }
+
+  function _setNewRdoButtonAvailability(container, enabled, latestRdoLabel){
+    try {
+      if (!container) return;
+      var buttons = container.querySelectorAll('.open-supervisor');
+      Array.prototype.forEach.call(buttons, function(button){
+        try {
+          button.disabled = !enabled;
+          button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+          button.classList.toggle('rdo-new-rdo-disabled', !enabled);
+          if (!enabled) {
+            var suffix = latestRdoLabel ? (' O último é o RDO ' + latestRdoLabel + '.') : '';
+            button.title = 'Somente o último RDO da OS pode originar um novo RDO.' + suffix;
+          } else {
+            button.removeAttribute('title');
+          }
+        } catch(_){ }
+      });
+      container.setAttribute('data-is-latest-for-os', enabled ? '1' : '0');
+    } catch(_){ }
+  }
+
+  async function _refreshNewRdoAvailability(){
+    var containers = [];
+    try {
+      containers = Array.prototype.slice.call(document.querySelectorAll(
+        '.rdo-admin-table tbody tr[data-rdo-id], .rdo-mobile-card[data-rdo-id], .rdo-mobile-item[data-rdo-id]'
+      ));
+    } catch(_){ containers = []; }
+
+    var groups = Object.create(null);
+    containers.forEach(function(container){
+      try {
+        var rdoId = String(container.getAttribute('data-rdo-id') || '').trim();
+        if (!rdoId) return;
+        var osNumber = String(
+          container.getAttribute('data-numero-os') || container.getAttribute('data-os') || ''
+        ).trim();
+        var osId = String(container.getAttribute('data-os-id') || '').trim();
+        var key = osNumber ? ('number:' + osNumber) : ('id:' + osId);
+        if (!groups[key]) groups[key] = { osId: osId, containers: [] };
+        if (!groups[key].osId && osId) groups[key].osId = osId;
+        groups[key].containers.push(container);
+
+        // Estado seguro enquanto a sequencia completa e consultada.
+        _setNewRdoButtonAvailability(container, false, '');
+      } catch(_){ }
+    });
+
+    var tasks = Object.keys(groups).map(async function(key){
+      var group = groups[key];
+      if (!group || !group.osId) return;
+      try {
+        var response = await fetch('/api/rdo/os/' + encodeURIComponent(group.osId) + '/rdos/', {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        var payload = null;
+        try { payload = await response.json(); } catch(_){ payload = null; }
+        if (!response.ok || !payload || !payload.success) return;
+        var rdos = Array.isArray(payload.rdos) ? payload.rdos : [];
+        var latest = rdos.length ? rdos[rdos.length - 1] : null;
+        if (!latest || !latest.id) return;
+        group.containers.forEach(function(container){
+          var currentId = String(container.getAttribute('data-rdo-id') || '').trim();
+          _setNewRdoButtonAvailability(
+            container,
+            currentId === String(latest.id),
+            String(latest.rdo || latest.id || '')
+          );
+        });
+      } catch(_){
+        // Em caso de falha, permanece bloqueado para nunca partir de RDO antigo.
+      }
+    });
+    await Promise.all(tasks);
+  }
+
   onReady(function(){
-    document.addEventListener('click', function(ev){
+    try { _refreshNewRdoAvailability(); } catch(_){ }
+    document.addEventListener('click', async function(ev){
       try {
         var editorIntent = ev.target && ev.target.closest && ev.target.closest('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"]');
         if (editorIntent) return;
@@ -6693,6 +6835,7 @@
               } catch(_){ }
               console.log && console.log('rdo: supTrigger (table) opening modal, ctx', ctx);
             } catch(_){ }
+            if (!(await _confirmLatestRdoBeforeCreate(ctx, tr))) return;
             try { window.rdoOpenSupervisorModal(ctx); } catch(e){ openSupervisorModal(ctx); }
             return;
           }
@@ -6717,6 +6860,7 @@
               max_tanques_servicos: cardFromTrigger.getAttribute('data-max-tanques-servicos') || cardFromTrigger.dataset && (cardFromTrigger.dataset.maxTanquesServicos || cardFromTrigger.dataset.servicosCount) || '',
               current_tanques: cardFromTrigger.getAttribute('data-current-tanques-os') || cardFromTrigger.dataset && (cardFromTrigger.dataset.currentTanquesOs || cardFromTrigger.dataset.totalTanquesOs) || ''
             };
+            if (!(await _confirmLatestRdoBeforeCreate(ctxCard, cardFromTrigger))) return;
             try { window.rdoOpenSupervisorModal(ctxCard); } catch(e){ openSupervisorModal(ctxCard); }
             return;
           }
@@ -6745,6 +6889,7 @@
             current_tanques: card.getAttribute('data-current-tanques-os') || card.dataset && (card.dataset.currentTanquesOs || card.dataset.totalTanquesOs) || ''
           };
           try { console.log && console.log('rdo: open-supervisor (card) clicked, card ctx', ctx2); } catch(_){}
+          if (!(await _confirmLatestRdoBeforeCreate(ctx2, card))) return;
           try { window.rdoOpenSupervisorModal(ctx2); } catch(e){ openSupervisorModal(ctx2); }
           return;
         }
@@ -7156,6 +7301,75 @@
     return false;
   }
 
+  function _isEditorReadOnlyMode(){
+    try {
+      var overlay = document.getElementById('modal-editor-overlay');
+      return !!(overlay && overlay.getAttribute('data-read-only') === 'true');
+    } catch(_){ }
+    return false;
+  }
+
+  function _editorApplyReadOnlyMode(){
+    try {
+      var overlay = document.getElementById('modal-editor-overlay');
+      if (!overlay || overlay.getAttribute('data-read-only') !== 'true') return;
+      overlay.classList.add('rdo-editor-read-only');
+      var title = document.getElementById('editor-title');
+      if (title) {
+        if (!title.dataset.defaultTitle) title.dataset.defaultTitle = title.textContent || 'Editar RDO';
+        title.textContent = 'Visualizar RDO';
+      }
+      var note = document.getElementById('edit-supervisor-mode-note');
+      if (note) {
+        note.textContent = RDO_READ_ONLY_MESSAGE;
+        note.hidden = false;
+      }
+      Array.prototype.forEach.call(overlay.querySelectorAll('#form-editor input, #form-editor select, #form-editor textarea, #form-editor button, .editor-toolbar input, .editor-toolbar select, .editor-toolbar button'), function(el){
+        try {
+          if (String(el.type || '').toLowerCase() === 'hidden') return;
+          if (el.matches && el.matches('.editor-cancel')) return;
+          el.disabled = true;
+          el.setAttribute('aria-disabled', 'true');
+          if ('readOnly' in el) {
+            el.readOnly = true;
+            el.setAttribute('aria-readonly', 'true');
+          }
+        } catch(_){ }
+      });
+      Array.prototype.forEach.call(overlay.querySelectorAll('#edit-save-btn, #edit-save-btn-header'), function(el){
+        try {
+          el.disabled = true;
+          el.hidden = true;
+          el.style.display = 'none';
+          el.setAttribute('aria-disabled', 'true');
+        } catch(_){ }
+      });
+      Array.prototype.forEach.call(overlay.querySelectorAll('[contenteditable="true"]'), function(el){
+        try { el.setAttribute('contenteditable', 'false'); } catch(_){ }
+      });
+      var content = document.getElementById('rdo-edit-content');
+      if (content) content.setAttribute('aria-readonly', 'true');
+      if (!overlay.__rdoReadOnlyGuardBound) {
+        var guardReadOnlyInteraction = function(ev){
+          try {
+            if (!_isEditorReadOnlyMode()) return;
+            var target = ev && ev.target;
+            if (!target || !target.closest) return;
+            var interactive = target.closest('#form-editor input, #form-editor select, #form-editor textarea, #form-editor button, #form-editor [contenteditable], #form-editor [role="switch"], #form-editor [role="button"]');
+            if (!interactive || (interactive.matches && interactive.matches('.editor-cancel'))) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+          } catch(_){ }
+        };
+        overlay.addEventListener('click', guardReadOnlyInteraction, true);
+        overlay.addEventListener('beforeinput', guardReadOnlyInteraction, true);
+        overlay.addEventListener('change', guardReadOnlyInteraction, true);
+        overlay.__rdoReadOnlyGuardBound = true;
+      }
+    } catch(_){ }
+  }
+
   function _lockSupervisorLimitedCustomControls(overlay){
     try {
       if (!overlay) return;
@@ -7463,11 +7677,15 @@
   }
 
   function openEditorModal(context){
-    if (blockRdoEditAccess()) return false;
+    if (blockRdoOpenAccess()) return false;
     try {
       var overlay = document.getElementById('modal-editor-overlay');
       if (!overlay) return false;
       _editorRestoreLimitedMode();
+      try {
+        if (canEditRdo()) overlay.removeAttribute('data-read-only');
+        else overlay.setAttribute('data-read-only', 'true');
+      } catch(_){ }
       var rememberedCtx = _getRememberedEditorContext();
       var effectiveContext = context || {};
       if (!effectiveContext.rdo_id && rememberedCtx.rdo_id) effectiveContext.rdo_id = rememberedCtx.rdo_id;
@@ -7527,13 +7745,14 @@
             }
           } catch(_){ }
         if (typeof showToast === 'function') {
-          showToast('Editando RDO ' + (_editRdoLabel || '') + (_editRdoLabel && _editOsLabel ? ' da OS ' : _editOsLabel ? ' da OS ' : '') + (_editOsLabel || ''), 'info');
+          showToast((canEditRdo() ? 'Editando RDO ' : 'Visualizando RDO ') + (_editRdoLabel || '') + (_editRdoLabel && _editOsLabel ? ' da OS ' : _editOsLabel ? ' da OS ' : '') + (_editOsLabel || ''), 'info');
         }
       } catch(_){ }
       overlay.classList.add('open');
       overlay.classList.remove('is-hidden');
       overlay.setAttribute('aria-hidden','false');
       if (limitedSupervisorEdit) _editorApplyLimitedMode();
+      if (_isEditorReadOnlyMode()) _editorApplyReadOnlyMode();
       try { document.documentElement.classList.add('modal-open'); } catch(_){}
       try { document.body.classList.add('modal-open'); } catch(_){}
       setTimeout(function(){
@@ -9299,7 +9518,7 @@
   try { if (window) window.syncEditorToolbarActiveTank = syncEditorToolbarActiveTank; } catch(_){ }
 
   async function loadEditorDetails(){
-    if (blockRdoEditAccess()) return false;
+    if (blockRdoOpenAccess()) return false;
     try {
       var btn = document.getElementById('edit-btn-load-details');
       var isLimitedEditor = _isEditorSupervisorLimitedMode();
@@ -9495,6 +9714,10 @@
               }
             } catch(_){ }
             try { _editorApplyLimitedMode(); } catch(_){ }
+            try { _editorApplyReadOnlyMode(); } catch(_){ }
+            try {
+              if (_isEditorReadOnlyMode()) window.setTimeout(_editorApplyReadOnlyMode, 180);
+            } catch(_){ }
 
             if (!isLimitedEditor) showToast('Detalhes carregados (render)', 'success');
             return;
@@ -9907,7 +10130,7 @@
         try { if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation(); } catch(_){ }
         var ctx = _extractEditorContextFromTrigger(btn);
         _rememberEditorContext(ctx);
-        if (blockRdoEditAccess()) return;
+        if (blockRdoOpenAccess()) return;
         try {
           try { window.__last_rdo_row_id = ctx.rdo_id || ''; } catch(_){ }
           try { window.__last_rdo_tanque_id = ctx.tanque_id || ''; } catch(_){ }
@@ -10766,44 +10989,6 @@
     }catch(e){ console.warn('btn-add-tanque handler failed', e); }
   }, false);
 
-  // Delegated handler: abrir RDO em nova aba quando clicar no botão de visualização
-  try {
-    document.addEventListener('click', function(ev){
-      try {
-        var target = ev.target || ev.srcElement;
-        if (!target || !target.closest) return;
-        var btn = target.closest('.action-btn.view');
-        if (!btn) return;
-        ev.preventDefault();
-        var tr = btn.closest('tr');
-        var rdoId = '';
-        try { if (tr) rdoId = tr.getAttribute('data-rdo-id') || (tr.dataset && (tr.dataset.rdoId || tr.dataset.rdo_id)) || ''; } catch(_){ rdoId = ''; }
-        if (rdoId) {
-          try { window.open('/rdo/' + encodeURIComponent(rdoId) + '/page/', '_blank'); } catch(_){ window.location = '/rdo/' + encodeURIComponent(rdoId) + '/page/'; }
-          return;
-        }
-        // fallback: check mobile card structure
-        var card = btn.closest('.rdo-mobile-card, .rdo-mobile-item');
-        if (card) {
-          try { rdoId = card.getAttribute('data-rdo-id') || (card.dataset && (card.dataset.rdoId || card.dataset.rdo_id)) || ''; } catch(_){ rdoId = ''; }
-          if (rdoId) {
-            try { window.open('/rdo/' + encodeURIComponent(rdoId) + '/page/', '_blank'); } catch(_){ window.location = '/rdo/' + encodeURIComponent(rdoId) + '/page/'; }
-            return;
-          }
-        }
-        // If no rdoId found, try to open by RDO number in cell
-        try {
-          if (tr) {
-            var rdoNum = tr.getAttribute('data-rdo-count') || (tr.dataset && (tr.dataset.rdoCount || tr.dataset.rdo)) || '';
-            if (rdoNum) {
-              try { window.open('/rdo/find/?rdo=' + encodeURIComponent(rdoNum), '_blank'); } catch(_){ window.location = '/rdo/find/?rdo=' + encodeURIComponent(rdoNum); }
-            }
-          }
-        } catch(_){ }
-      } catch(_){ }
-    }, false);
-  } catch(_){ }
-
   // Delegated handler: baixar PDF com todos os RDOs da OS (client-side)
   function _loadScriptOnce(src){
     return new Promise(function(resolve, reject){
@@ -10824,10 +11009,10 @@
   function _ensurePdfLibs(){
     var tasks = [];
     if (!window.html2canvas){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/html2canvas.min.js'));
     }
     if (!((window.jspdf && window.jspdf.jsPDF) || window.jsPDF)){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/jspdf.umd.min.js'));
     }
     return Promise.all(tasks);
   }
@@ -10983,12 +11168,6 @@
   function _sortRdosForPdfExport(list){
     var arr = Array.isArray(list) ? list.slice() : [];
     arr.sort(function(a, b){
-      var da = _safeParseRdoDate(a && a.data);
-      var db = _safeParseRdoDate(b && b.data);
-      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
-      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
-      if (ta !== tb) return ta - tb;
-
       var na = _safeParseRdoNumber(a && a.rdo);
       var nb = _safeParseRdoNumber(b && b.rdo);
       if (na !== null || nb !== null){
@@ -10996,6 +11175,12 @@
         if (nb === null) return -1;
         if (na !== nb) return na - nb;
       }
+
+      var da = _safeParseRdoDate(a && a.data);
+      var db = _safeParseRdoDate(b && b.data);
+      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
+      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
 
       var ia = _safeParseRdoNumber(a && a.id);
       var ib = _safeParseRdoNumber(b && b.id);
@@ -11385,6 +11570,8 @@
         if (!target || !target.closest) return;
         var btn = target.closest('.action-btn.pdf-all');
         if (!btn) return;
+        if (ev.__rdoPdfAllHandled) return;
+        ev.__rdoPdfAllHandled = true;
         ev.preventDefault();
         if (btn.disabled) return;
         var tr = btn.closest('tr');
@@ -11851,44 +12038,6 @@
     }, false);
   } catch(e){ /* ignore */ }
 
-  // Delegated handler: abrir RDO em nova aba quando clicar no botão de visualização
-  try {
-    document.addEventListener('click', function(ev){
-      try {
-        var target = ev.target || ev.srcElement;
-        if (!target || !target.closest) return;
-        var btn = target.closest('.action-btn.view');
-        if (!btn) return;
-        ev.preventDefault();
-        var tr = btn.closest('tr');
-        var rdoId = '';
-        try { if (tr) rdoId = tr.getAttribute('data-rdo-id') || (tr.dataset && (tr.dataset.rdoId || tr.dataset.rdo_id)) || ''; } catch(_){ rdoId = ''; }
-        if (rdoId) {
-          try { window.open('/rdo/' + encodeURIComponent(rdoId) + '/page/', '_blank'); } catch(_){ window.location = '/rdo/' + encodeURIComponent(rdoId) + '/page/'; }
-          return;
-        }
-        // fallback: check mobile card structure
-        var card = btn.closest('.rdo-mobile-card, .rdo-mobile-item');
-        if (card) {
-          try { rdoId = card.getAttribute('data-rdo-id') || (card.dataset && (card.dataset.rdoId || card.dataset.rdo_id)) || ''; } catch(_){ rdoId = ''; }
-          if (rdoId) {
-            try { window.open('/rdo/' + encodeURIComponent(rdoId) + '/page/', '_blank'); } catch(_){ window.location = '/rdo/' + encodeURIComponent(rdoId) + '/page/'; }
-            return;
-          }
-        }
-        // If no rdoId found, try to open by RDO number in cell
-        try {
-          if (tr) {
-            var rdoNum = tr.getAttribute('data-rdo-count') || (tr.dataset && (tr.dataset.rdoCount || tr.dataset.rdo)) || '';
-            if (rdoNum) {
-              try { window.open('/rdo/find/?rdo=' + encodeURIComponent(rdoNum), '_blank'); } catch(_){ window.location = '/rdo/find/?rdo=' + encodeURIComponent(rdoNum); }
-            }
-          }
-        } catch(_){ }
-      } catch(_){ }
-    }, false);
-  } catch(_){ }
-
   // Delegated handler: baixar PDF com todos os RDOs da OS (client-side)
   function _loadScriptOnce(src){
     return new Promise(function(resolve, reject){
@@ -11909,10 +12058,10 @@
   function _ensurePdfLibs(){
     var tasks = [];
     if (!window.html2canvas){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/html2canvas.min.js'));
     }
     if (!((window.jspdf && window.jspdf.jsPDF) || window.jsPDF)){
-      tasks.push(_loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'));
+      tasks.push(_loadScriptOnce('/static/vendor/rdo-pdf/jspdf.umd.min.js'));
     }
     return Promise.all(tasks);
   }
@@ -12068,12 +12217,6 @@
   function _sortRdosForPdfExport(list){
     var arr = Array.isArray(list) ? list.slice() : [];
     arr.sort(function(a, b){
-      var da = _safeParseRdoDate(a && a.data);
-      var db = _safeParseRdoDate(b && b.data);
-      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
-      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
-      if (ta !== tb) return ta - tb;
-
       var na = _safeParseRdoNumber(a && a.rdo);
       var nb = _safeParseRdoNumber(b && b.rdo);
       if (na !== null || nb !== null){
@@ -12081,6 +12224,12 @@
         if (nb === null) return -1;
         if (na !== nb) return na - nb;
       }
+
+      var da = _safeParseRdoDate(a && a.data);
+      var db = _safeParseRdoDate(b && b.data);
+      var ta = da ? da.getTime() : Number.POSITIVE_INFINITY;
+      var tb = db ? db.getTime() : Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
 
       var ia = _safeParseRdoNumber(a && a.id);
       var ib = _safeParseRdoNumber(b && b.id);
@@ -12470,6 +12619,8 @@
         if (!target || !target.closest) return;
         var btn = target.closest('.action-btn.pdf-all');
         if (!btn) return;
+        if (ev.__rdoPdfAllHandled) return;
+        ev.__rdoPdfAllHandled = true;
         ev.preventDefault();
         if (btn.disabled) return;
         var tr = btn.closest('tr');

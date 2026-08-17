@@ -15,6 +15,33 @@ import unicodedata
 import os
 
 
+def assinatura_usuario_upload_to(instance, filename):
+    extension = os.path.splitext(filename or '')[1].lower()
+    return f'assinaturas_usuarios/{instance.usuario_id}/original{extension}'
+
+
+def assinatura_usuario_imagem_upload_to(instance, filename):
+    return f'assinaturas_usuarios/{instance.usuario_id}/assinatura.png'
+
+
+class AssinaturaUsuario(models.Model):
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='assinatura_rdo',
+    )
+    arquivo_original = models.FileField(upload_to=assinatura_usuario_upload_to)
+    imagem_processada = models.ImageField(upload_to=assinatura_usuario_imagem_upload_to)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Assinatura de usuário'
+        verbose_name_plural = 'Assinaturas de usuários'
+
+    def __str__(self):
+        return f'Assinatura RDO - {self.usuario}'
+
+
 def _canonical_tank_alias_for_os(os_num, raw_value):
     """
     Canonicaliza aliases específicos de tanque por OS para manter KPIs acumulativos consistentes.
@@ -423,6 +450,7 @@ class OrdemServico(models.Model):
         ("LIMPEZA DE TANQUE DE ÁGUA PRODUZIDA", "LIMPEZA DE TANQUE DE ÁGUA PRODUZIDA"),
         ("LIMPEZA DE TANQUE BILGE", "LIMPEZA DE TANQUE BILGE"),
         ("LIMPEZA DE TANQUE DE CARGA", "LIMPEZA DE TANQUE DE CARGA"),
+        ("LIMPEZA DE CONVÉS", "LIMPEZA DE CONVÉS"),
         ("LIMPEZA DE TANQUE DE DIESEL", "LIMPEZA DE TANQUE DE DIESEL"),
         ("LIMPEZA DE TANQUE DE DRENO", "LIMPEZA DE TANQUE DE DRENO"),
         ("LIMPEZA DE TANQUE DE ÓLEO", "LIMPEZA DE TANQUE DE ÓLEO"),
@@ -2051,6 +2079,52 @@ class RDO(models.Model):
         return tank
 
     def save(self, *args, **kwargs):
+        # A tela historicamente representa um turno como marcado quando o
+        # respectivo numero de PT esta preenchido. Mantenha select_turnos com
+        # a mesma semantica para que interface, banco e validadores concordem.
+        try:
+            raw_turnos = getattr(self, 'select_turnos', None) or []
+            if isinstance(raw_turnos, str):
+                raw_turnos = [item.strip() for item in raw_turnos.split(',') if item.strip()]
+
+            turnos = []
+            turnos_normalizados = set()
+            for raw_turno in raw_turnos:
+                turno = str(raw_turno or '').strip()
+                normalized = ''.join(
+                    char for char in unicodedata.normalize('NFKD', turno.lower())
+                    if not unicodedata.combining(char)
+                )
+                canonical = {
+                    'manha': 'ManhÃ£',
+                    'tarde': 'Tarde',
+                    'noite': 'Noite',
+                }.get(normalized, turno)
+                canonical_key = canonical.lower()
+                if canonical and canonical_key not in turnos_normalizados:
+                    turnos.append(canonical)
+                    turnos_normalizados.add(canonical_key)
+
+            for field_name, canonical in (
+                ('pt_manha', 'ManhÃ£'),
+                ('pt_tarde', 'Tarde'),
+                ('pt_noite', 'Noite'),
+            ):
+                if str(getattr(self, field_name, None) or '').strip():
+                    canonical_key = canonical.lower()
+                    if canonical_key not in turnos_normalizados:
+                        turnos.append(canonical)
+                        turnos_normalizados.add(canonical_key)
+
+            previous_turnos = list(raw_turnos)
+            if turnos != previous_turnos:
+                self.select_turnos = turnos
+                update_fields = kwargs.get('update_fields')
+                if update_fields is not None:
+                    kwargs['update_fields'] = set(update_fields) | {'select_turnos'}
+        except Exception:
+            pass
+
         try:
             if getattr(self, 'data', None) and not getattr(self, 'data_inicio', None):
                 self.data_inicio = self.data
@@ -4824,6 +4898,7 @@ class AnaliseCriticaOportunidade(models.Model):
         "riscos_comerciais_relevantes",
         "oportunidade_viavel_rentavel",
         "pendencias_financeiras_cliente",
+        "iremos_participar",
     )
 
     proposta = models.OneToOneField(
@@ -4845,6 +4920,7 @@ class AnaliseCriticaOportunidade(models.Model):
     riscos_comerciais_relevantes = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
     oportunidade_viavel_rentavel = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
     pendencias_financeiras_cliente = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
+    iremos_participar = models.CharField(max_length=3, choices=RESPOSTAS, blank=True, null=True)
     comentario = models.TextField(blank=True, default="")
     # Preserva o indicador anterior em propostas legadas sem inventar respostas.
     status_legado_realizada = models.BooleanField(null=True, blank=True, editable=False)
@@ -4940,6 +5016,39 @@ class FinanceiroCampo(models.Model):
 
     def __str__(self):
         return f'{self.get_nome_display()}: {self.subtotal}'
+
+
+def anexo_proposta_comercial_upload_to(instance, filename):
+    base, ext = os.path.splitext(str(filename or ''))
+    ext = (ext or '').lower()
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', '_', base).strip('._') or 'documento'
+    return f'comercial/proposta_{instance.financeiro_id}/{safe_name}{ext}'
+
+
+class AnexoPropostaComercial(models.Model):
+    financeiro = models.ForeignKey(
+        Financeiro,
+        on_delete=models.CASCADE,
+        related_name='anexos',
+    )
+    arquivo = models.FileField(upload_to=anexo_proposta_comercial_upload_to)
+    nome_original = models.CharField(max_length=255)
+    enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='anexos_propostas_comerciais_enviados',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-criado_em', '-id']
+        verbose_name = 'anexo de proposta comercial'
+        verbose_name_plural = 'anexos de propostas comerciais'
+
+    def __str__(self):
+        return f'Proposta {self.financeiro_id} - {self.nome_original}'
 
 
 class RdoEquipamentoRetornoPrevisto(models.Model):

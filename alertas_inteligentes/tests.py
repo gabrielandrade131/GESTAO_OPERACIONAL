@@ -25,6 +25,7 @@ from alertas_inteligentes.services.alertas_rdo_consolidados import (
 from alertas_inteligentes.services.anomaly_detector import (
     detectar_anomalia_rdo,
     montar_mensagem_anomalia,
+    validate_date_order,
 )
 from alertas_inteligentes.services.assistente_livre import (
     responder_alertas_pendentes,
@@ -43,10 +44,13 @@ from alertas_inteligentes.services.rdos_tanque_incompleto import (
 )
 from alertas_inteligentes.services.rdo_validator import (
     criar_alerta,
+    sincronizar_alertas_anomalia_da_os,
     validar_campos_basicos,
     validar_dados_operacionais,
     validar_fotos,
     validar_observacoes,
+    validar_pt,
+    validar_rdo_duplicado,
     validar_tanque_incompleto_rdo,
 )
 from alertas_inteligentes.management.command_lock import (
@@ -1137,9 +1141,14 @@ class AssistenteLivreTanqueTests(TestCase):
         self.assertIn("4 registros anteriores", alerta.anomalia_base_comparacao)
 
     def test_alerta_por_data_fora_de_ordem_explica_a_data_como_motivo_principal(self):
+        RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="16",
+            data=date(2026, 6, 21),
+        )
         rdo = RDO.objects.create(
             ordem_servico=self.os_obj,
-            rdo="509",
+            rdo="17",
             data=date(2026, 6, 19),
         )
         alerta = AlertaInteligente.objects.create(
@@ -1189,16 +1198,14 @@ class AssistenteLivreTanqueTests(TestCase):
         self.assertIn("Por que este alerta foi gerado", descricao)
         self.assertIn("19/06/2026", descricao)
         self.assertIn("21/06/2026", descricao)
-        self.assertIn("fora da ordem cronológica", descricao)
-        self.assertIn("Dados conferidos que não causaram este alerta", descricao)
-        self.assertIn("Compartimento 7 / limpeza fina", descricao)
-        self.assertIn("dentro da faixa histórica", descricao)
-        self.assertIn("RDOs 4, 5, 6, 7, 8", descricao)
-        self.assertLess(
-            descricao.index("fora da ordem cronológica"),
-            descricao.index("Compartimento 7 / limpeza fina"),
-        )
+        self.assertIn("O RDO 17", descricao)
+        self.assertIn("o RDO 16", descricao)
+        self.assertIn("não coincide com a ordem das datas", descricao)
+        self.assertNotIn("Compartimento 7 / limpeza fina", descricao)
+        self.assertNotIn("Tanque analisado", descricao)
+        self.assertNotIn("Comparação utilizada", descricao)
         self.assertEqual(notificacao["message"], descricao)
+        self.assertIn("lançado retroativamente", notificacao["recommendation"])
 
     def test_tela_do_assistente_expoe_hooks_de_audio_no_composer(self):
         admin = User.objects.create_user(
@@ -1696,6 +1703,79 @@ class RdoValidatorConsolidacaoTests(TestCase):
             status_planejamento="Pendente",
         )
 
+    @patch(
+        "alertas_inteligentes.services.rdo_validator.detectar_anomalia_rdo",
+        return_value={"nivel": "normal", "score": 0.0, "flags": {}},
+    )
+    def test_resolve_anomalia_que_deixou_de_existir_no_historico(self, detector_mock):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="500",
+            data=date(2026, 6, 1),
+        )
+        alerta = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo="RDO_OUTLIER",
+            referencia="anomalia_estatistica",
+            mensagem="Anomalia calculada com base antiga.",
+            prioridade="alta",
+            status="pendente",
+        )
+
+        resultado = sincronizar_alertas_anomalia_da_os(self.os_obj)
+
+        alerta.refresh_from_db()
+        self.assertEqual(alerta.status, "resolvido")
+        self.assertIsNotNone(alerta.resolvido_em)
+        self.assertIn("nao foi confirmada", alerta.justificativa)
+        self.assertEqual(resultado["resolvidos"], 1)
+        detector_mock.assert_called_once_with(rdo)
+
+    def test_pt_com_numero_preenchido_infere_turno_ausente_na_lista_auxiliar(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="502",
+            data=date(2026, 6, 2),
+            exist_pt=True,
+            select_turnos=[],
+            pt_manha="6289/2026",
+        )
+        # Simula um registro legado, anterior a sincronizacao no model.
+        RDO.objects.filter(pk=rdo.pk).update(select_turnos=[])
+        rdo.refresh_from_db()
+
+        alertas = validar_pt(rdo)
+
+        self.assertNotIn("PT_SEM_TURNO", [alerta.tipo for alerta in alertas])
+        self.assertNotIn("PT_SEM_NUMERO", [alerta.tipo for alerta in alertas])
+
+    def test_salvar_rdo_sincroniza_turno_com_numero_da_pt(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="504",
+            data=date(2026, 6, 4),
+            exist_pt=True,
+            select_turnos=[],
+            pt_manha="6289/2026",
+        )
+
+        rdo.refresh_from_db()
+
+        self.assertIn("Manh", str(rdo.select_turnos))
+
+    def test_pt_sem_turno_e_sem_numero_continua_gerando_alerta(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="503",
+            data=date(2026, 6, 3),
+            exist_pt=True,
+            select_turnos=[],
+        )
+
+        alertas = validar_pt(rdo)
+
+        self.assertEqual([alerta.tipo for alerta in alertas], ["PT_SEM_TURNO"])
+
     def test_validar_dados_operacionais_considera_campos_diretos_do_rdo(self):
         rdo = RDO.objects.create(
             ordem_servico=self.os_obj,
@@ -1708,6 +1788,108 @@ class RdoValidatorConsolidacaoTests(TestCase):
         alertas = validar_dados_operacionais(rdo)
 
         self.assertIn("VALOR_DIARIO_MAIOR_PREVISAO", [alerta.tipo for alerta in alertas])
+
+    def test_ordem_de_datas_ignora_rdos_numericamente_posteriores(self):
+        rdo_16 = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="16",
+            data=date(2026, 7, 30),
+        )
+        rdo_17 = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="17",
+            data=date(2026, 7, 31),
+        )
+        rdo_21 = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="21",
+            data=date(2026, 8, 4),
+        )
+
+        resultado = validate_date_order(rdo_17, [rdo_16, rdo_17, rdo_21])
+
+        self.assertFalse(resultado["out_of_order"])
+        self.assertEqual(resultado["last_rdo"], "16")
+        self.assertEqual(resultado["last_date"], date(2026, 7, 30))
+
+    def test_ordem_de_datas_identifica_inversao_com_rdo_anterior(self):
+        rdo_16 = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="16",
+            data=date(2026, 8, 4),
+        )
+        rdo_17 = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="17",
+            data=date(2026, 7, 31),
+        )
+
+        resultado = validate_date_order(rdo_17, [rdo_16, rdo_17])
+
+        self.assertTrue(resultado["out_of_order"])
+        self.assertEqual(resultado["current_rdo"], "17")
+        self.assertEqual(resultado["last_rdo"], "16")
+
+    def test_identifica_rdo_incompleto_como_provavel_duplicado(self):
+        observacao = "Continuidade da limpeza nos compartimentos 4 e 5."
+        rdo_incompleto = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="20",
+            data=date(2026, 8, 6),
+            turno="Diurno",
+            observacoes_rdo_pt=observacao,
+            exist_pt=True,
+            pob=0,
+        )
+        rdo_completo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="21",
+            data=date(2026, 8, 6),
+            turno="Diurno",
+            observacoes_rdo_pt=observacao,
+            exist_pt=True,
+            pob=6,
+        )
+        RDOAtividade.objects.create(
+            rdo=rdo_completo,
+            ordem=0,
+            atividade=RDO.ATIVIDADES_CHOICES[0][0],
+        )
+        RdoTanque.objects.create(
+            rdo=rdo_completo,
+            tanque_codigo="4C-COT",
+            nome_tanque="4C-COT",
+        )
+
+        alertas = validar_rdo_duplicado(rdo_completo)
+
+        self.assertEqual(len(alertas), 1)
+        alerta = alertas[0]
+        self.assertEqual(alerta.tipo, "RDO_DUPLICADO")
+        self.assertEqual(alerta.rdo, rdo_incompleto)
+        self.assertEqual(alerta.prioridade, "alta")
+        self.assertIn("RDOs 20 e 21", alerta.mensagem)
+        self.assertIn("06/08/2026", alerta.mensagem)
+        self.assertIn("mesma observação", alerta.mensagem)
+        self.assertIn("sem atividades, equipe, tanque, fotos, POB", alerta.mensagem)
+        self.assertIn("Nenhum RDO foi excluído automaticamente", alerta.mensagem)
+
+    def test_nao_considera_turnos_diferentes_como_rdos_duplicados(self):
+        rdo_diurno = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="22",
+            data=date(2026, 8, 7),
+            turno="Diurno",
+        )
+        rdo_noturno = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="23",
+            data=date(2026, 8, 7),
+            turno="Noturno",
+        )
+
+        self.assertEqual(validar_rdo_duplicado(rdo_diurno), [])
+        self.assertEqual(validar_rdo_duplicado(rdo_noturno), [])
 
     def test_turno_preenchido_nao_gera_alerta_de_turno_ausente(self):
         for index, turno in enumerate(("Diurno", "Noturno"), start=1):

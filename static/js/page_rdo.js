@@ -156,25 +156,6 @@
         if (e.key === 'Escape') closePage();
     }
 
-    /* ================= LISTAGEM ================= */
-
-    // Só registra o handler se outro core já não tiver tratado (evita abrir duas vezes)
-    if (!window.__rdo_core_handles_view) {
-        document.addEventListener('click', function (e) {
-            const btn = e.target.closest('.action-btn.view');
-            if (!btn) return;
-            e.preventDefault();
-
-            const tr = btn.closest('tr');
-            const rid = tr?.dataset?.rdoId;
-            if (!rid) return;
-
-            const url = `/rdo/${encodeURIComponent(rid)}/page/`;
-            const w = window.open(url, '_blank');
-            if (!w) window.location.href = url;
-        }, true);
-    }
-
     window.pageRdo = { open: openPage, close: closePage };
 
 })();

@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase
 
 from GO.models import AnaliseCriticaOportunidade
-from GO.views_comercial import _parse_critical_analysis_payload
+from GO.views_comercial import _parse_critical_analysis_payload, _proposal_will_not_participate
 
 
 class AnaliseCriticaOportunidadeTests(SimpleTestCase):
@@ -23,14 +23,14 @@ class AnaliseCriticaOportunidadeTests(SimpleTestCase):
         analysis = self._analysis_with("NA")
         analysis.riscos_comerciais_relevantes = "NAO"
 
-        self.assertEqual(analysis.quantidade_respondida, 14)
+        self.assertEqual(analysis.quantidade_respondida, 15)
         self.assertTrue(analysis.realizada)
 
     def test_removing_one_answer_returns_analysis_to_pending(self):
         analysis = self._analysis_with("SIM")
         analysis.escopo_claramente_definido = None
 
-        self.assertEqual(analysis.quantidade_respondida, 13)
+        self.assertEqual(analysis.quantidade_respondida, 14)
         self.assertFalse(analysis.realizada)
 
     def test_invalid_payload_response_is_rejected(self):
@@ -47,3 +47,21 @@ class AnaliseCriticaOportunidadeTests(SimpleTestCase):
 
         with self.assertRaises(ValidationError):
             analysis.clean()
+
+    def test_negative_participation_is_detected_from_critical_analysis(self):
+        payload = {
+            "analise_critica_oportunidade": {
+                "respostas": {"iremos_participar": "NAO"}
+            }
+        }
+
+        self.assertTrue(_proposal_will_not_participate(payload))
+
+    def test_other_participation_answers_do_not_disable_required_fields(self):
+        payload = {
+            "analise_critica_oportunidade": {
+                "respostas": {"iremos_participar": "SIM"}
+            }
+        }
+
+        self.assertFalse(_proposal_will_not_participate(payload))

@@ -2,6 +2,7 @@ import re
 import os
 
 from .rdo_access import (
+    user_can_open_rdo,
     user_can_open_or_edit_rdo,
     user_can_edit_system,
     user_can_manage_rdo_permission_users,
@@ -48,6 +49,7 @@ def rdo_permission_flags(request):
     user = getattr(request, 'user', None)
     return {
         'can_edit_system': user_can_edit_system(user),
+        'can_open_rdo': user_can_open_rdo(user),
         'can_open_or_edit_rdo': user_can_open_or_edit_rdo(user),
         'can_manage_rdo_permission_users': user_can_manage_rdo_permission_users(user),
         'can_manage_responsaveis_coordenadores': user_can_manage_responsaveis_coordenadores(user),

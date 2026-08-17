@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "escopo_claramente_definido", "competencia_tecnica_execucao", "recursos_disponiveis",
         "equipe_com_treinamentos", "equipe_irata_disponivel", "equipe_resgate_disponivel",
         "tempo_habil_mobilizacao", "tempo_habil_aquisicao", "riscos_comerciais_relevantes",
-        "oportunidade_viavel_rentavel", "pendencias_financeiras_cliente"
+        "oportunidade_viavel_rentavel", "pendencias_financeiras_cliente", "iremos_participar"
     ];
     const CRITICAL_ANALYSIS_OPTIONS = [
         { value: "SIM", label: "Sim" },
@@ -129,6 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
         agendaDayFocus: "",
         agendaLoading: false,
         agendaLoaded: false,
+        agendaCanViewAll: false,
         agendaCreateOpen: false,
         agendaTotalAll: 0,
         agendaSummary: null,
@@ -149,6 +150,8 @@ document.addEventListener("DOMContentLoaded", () => {
         proposalItems: [],
         proposalDraftServices: [""],
         scopeDraftServices: [],
+        scopeDraftItems: [],
+        scopeQuickItemOpen: false,
         proposalItemCounter: 1,
         lastCreatedProposalPayload: null,
         toastTimer: null,
@@ -683,6 +686,7 @@ document.addEventListener("DOMContentLoaded", () => {
         kpiFilterNotice: document.getElementById("kpiFilterNotice"),
         pipelineBoard: document.getElementById("pipelineBoard"),
         revenueBars: document.getElementById("revenueBars"),
+        upcomingFollowupsList: document.getElementById("upcomingFollowupsList"),
         contentGrid: document.getElementById("contentGrid"),
         sidebarStack: document.getElementById("sidebarStack"),
         quickActionsList: document.getElementById("quickActionsList"),
@@ -691,6 +695,7 @@ document.addEventListener("DOMContentLoaded", () => {
         overlayBackdrop: document.getElementById("overlayBackdrop"),
         proposalDrawer: document.getElementById("proposalDrawer"),
         newProposalModal: document.getElementById("newProposalModal"),
+        fullFollowupAgendaModal: document.getElementById("fullFollowupAgendaModal"),
         openNewProposalModal: document.getElementById("openNewProposalModal"),
         proposalStepper: document.getElementById("proposalStepper"),
         proposalPrevButton: document.getElementById("proposalPrevButton"),
@@ -742,10 +747,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const commercialBootstrap = readCommercialBootstrap();
 
     const modalFieldsByStep = {
-        1: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
-        2: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"],
-        3: ["proposalServico", "proposalReceita"],
-        4: [],
+        1: [],
+        2: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
+        3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"],
+        4: ["proposalServico", "proposalReceita"],
         5: ["proposalStatus"]
     };
 
@@ -755,6 +760,7 @@ document.addEventListener("DOMContentLoaded", () => {
     resetProposalItemsState();
     bindEvents();
     renderAll();
+    loadFollowups().then(renderUpcomingFollowups);
     renderProposalItemsSection();
     updateModalStep();
     simulateComercialLoading();
@@ -1011,9 +1017,14 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        if (action === "followups") {
+            openFullFollowupAgenda();
+            return;
+        }
+
         if (action === "client") {
             openProposalModal();
-            state.modalStep = 2;
+            state.modalStep = 3;
             updateModalStep();
             openQuickClientForm();
             return;
@@ -1021,7 +1032,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (action === "unit") {
             openProposalModal();
-            state.modalStep = 2;
+            state.modalStep = 3;
             updateModalStep();
             openQuickUnitForm();
         }
@@ -1101,12 +1112,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download);
+            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            return;
+        }
+
+        const proposalPdfMenuTrigger = event.target.closest("[data-proposal-pdf-menu]");
+        if (proposalPdfMenuTrigger) {
+            event.preventDefault();
+            const menu = proposalPdfMenuTrigger.closest(".proposal-card__pdf-menu");
+            const isOpen = menu?.classList.toggle("is-open");
+            proposalPdfMenuTrigger.setAttribute("aria-expanded", String(Boolean(isOpen)));
             return;
         }
 
         const proposalTrigger = event.target.closest("[data-proposal-id]");
-        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf]")) {
+        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf], [data-proposal-pdf-menu]")) {
             openProposalPanel(Number(proposalTrigger.dataset.proposalId));
             return;
         }
@@ -1222,6 +1242,15 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        if (actionTrigger.dataset.panelAction === "upload-documents") {
+            refs.proposalDrawer.querySelector("[data-proposal-attachments-input]")?.click();
+            return;
+        }
+        if (actionTrigger.dataset.panelAction === "delete-document") {
+            deleteProposalDocument(actionTrigger.dataset.documentUrl, actionTrigger.dataset.documentId);
+            return;
+        }
+
         const action = actionTrigger.dataset.panelAction;
         if (action === "close-panel") {
             closeProposalPanel();
@@ -1262,6 +1291,10 @@ document.addEventListener("DOMContentLoaded", () => {
             renderProposalPanel();
         } else if (action === "save-followup") {
             saveFollowup();
+        } else if (action === "upload-documents") {
+            refs.proposalDrawer.querySelector("[data-proposal-attachments-input]")?.click();
+        } else if (action === "delete-document") {
+            deleteProposalDocument(actionTrigger.dataset.documentUrl, actionTrigger.dataset.documentId);
         } else if (action === "new-rev") {
             createNewRevision();
         } else if (action === "generate-pdf") {
@@ -1302,6 +1335,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function handleDelegatedChange(event) {
         const field = event.target;
+        if (field.matches("[data-proposal-attachments-input]")) {
+            uploadProposalDocuments(Array.from(field.files || []));
+            return;
+        }
         if (field.matches("[data-critical-analysis-field]")) {
             state.criticalAnalysisAnswers[field.dataset.criticalAnalysisField] = field.value;
             renderCriticalAnalysisControls();
@@ -1343,6 +1380,20 @@ document.addEventListener("DOMContentLoaded", () => {
             updateScopeDraftService(Number(field.dataset.scopeServiceIndex), field.value);
         }
 
+        if (field.matches("[data-scope-item-field]")) {
+            updateScopeDraftItem(
+                Number(field.dataset.scopeItemIndex),
+                field.dataset.scopeItemField,
+                field.value
+            );
+            if (field.dataset.scopeItemField === "unitPrice") {
+                field.value = formatCurrencyInputValue(parseCurrencyValue(field.value));
+            }
+            if (field.dataset.scopeItemField === "quantity") {
+                field.value = String(Math.max(1, Number(field.value) || 1));
+            }
+        }
+
         if (field.matches("[data-proposal-item-field='item']")) {
             updateProposalItem(Number(field.dataset.itemId), "item", field.value);
         }
@@ -1378,6 +1429,14 @@ document.addEventListener("DOMContentLoaded", () => {
             updateProposalItem(Number(field.dataset.itemId), "unitPrice", field.value);
         }
 
+        if (field.matches("[data-scope-item-field='unitPrice']")) {
+            updateScopeDraftItem(Number(field.dataset.scopeItemIndex), "unitPrice", field.value);
+        }
+
+        if (field.matches("[data-scope-item-field='quantity']")) {
+            updateScopeDraftItem(Number(field.dataset.scopeItemIndex), "quantity", field.value);
+        }
+
         if (field.matches("[data-proposal-item-field='quantity']")) {
             updateProposalItem(Number(field.dataset.itemId), "quantity", field.value);
         }
@@ -1400,7 +1459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download);
+            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
             return;
         }
 
@@ -1772,6 +1831,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderProposalCard(proposal) {
         const statusTone = getStatusTone(proposal.statusProposta);
         const pdfEndpoint = buildEndpoint(state.endpoints.pdfPattern, proposal.id);
+        const criticalAnalysisPdfEndpoint = buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id);
 
         return `
             <article class="proposal-card" data-proposal-id="${proposal.id}" role="button" tabindex="0" aria-label="Abrir detalhes de ${escapeHtml(proposal.numeroProposta)}">
@@ -1794,10 +1854,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="proposal-footer">
                     ${pdfEndpoint ? `
-                        <a class="proposal-card__pdf" data-proposal-pdf href="${escapeHtml(pdfEndpoint)}" download="proposta_${escapeHtml(proposal.numeroProposta || proposal.id)}.pdf">
-                            <span class="material-icons" aria-hidden="true">picture_as_pdf</span>
-                            Gerar PDF
-                        </a>
+                        <div class="proposal-card__pdf-menu">
+                            <button class="proposal-card__pdf" data-proposal-pdf-menu type="button" aria-expanded="false">
+                                <span class="material-icons" aria-hidden="true">picture_as_pdf</span>
+                                PDFs
+                                <span class="material-icons proposal-card__pdf-chevron" aria-hidden="true">expand_more</span>
+                            </button>
+                            <div class="proposal-card__pdf-options" role="menu">
+                                <a data-proposal-pdf data-pdf-label="Proposta" href="${escapeHtml(pdfEndpoint)}" download="proposta_${escapeHtml(proposal.numeroProposta || proposal.id)}.pdf" role="menuitem">PDF da proposta</a>
+                                ${criticalAnalysisPdfEndpoint ? `<a data-proposal-pdf data-pdf-label="Análise crítica" href="${escapeHtml(criticalAnalysisPdfEndpoint)}" download="analise_critica_proposta_${escapeHtml(proposal.numeroProposta || proposal.id)}.pdf" role="menuitem">PDF da análise crítica</a>` : ""}
+                            </div>
+                        </div>
                     ` : ""}
                     <strong class="proposal-value">${escapeHtml(proposal.estimativaReceita)}</strong>
                 </div>
@@ -2298,12 +2365,21 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="material-icons" aria-hidden="true">chat</span>
                             Registrar acompanhamento
                         </button>
+                        <button class="panel-action panel-action--pdf" data-panel-action="generate-pdf" type="button">
+                            <span class="material-icons" aria-hidden="true">picture_as_pdf</span>
+                            PDF proposta
+                        </button>
+                        <button class="panel-action panel-action--pdf" data-panel-action="generate-critical-analysis-pdf" type="button">
+                            <span class="material-icons" aria-hidden="true">fact_check</span>
+                            PDF análise crítica
+                        </button>
                     </div>
                 </div>
                 <div class="proposal-panel__tabs proposal-details-tabs">
                     ${renderPanelTab("resumo", "Resumo")}
                     ${renderPanelTab("dados", "Dados Comerciais")}
                     ${renderPanelTab("escopo", "Escopo")}
+                    ${renderPanelTab("documentos", "Documentos")}
                     ${renderPanelTab("followups", "Follow-ups")}
                     ${renderPanelTab("historico", "Histórico")}
                 </div>
@@ -2331,6 +2407,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (state.activeDetailTab === "escopo") {
             return renderEscopoTab(proposal);
+        }
+        if (state.activeDetailTab === "documentos") {
+            return renderDocumentosTab(proposal);
         }
         if (state.activeDetailTab === "followups") {
             return renderFollowupsTabClean(proposal);
@@ -2498,7 +2577,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             ${renderCompactItem("Segmento Cliente", proposal.segmentoCliente || "Não informado")}
                             ${renderCompactItem("PT", proposal.pt || "Não informado")}
                             ${renderCompactItem("PC / PTC", proposal.pcPtc || "Não informado")}
-                            ${renderCompactItem("Análise Crítica", proposal.analiseCriticaResumo || proposal.analiseCriticaRealizada || "Pendente - 0 de 14 respondidas")}
+                            ${renderCompactItem("Análise Crítica", proposal.analiseCriticaResumo || proposal.analiseCriticaRealizada || "Pendente - 0 de 15 respondidas")}
                             ${renderCompactItem("Comentário", proposal.comentario || "Sem comentário")}
                         </div>
                     </section>
@@ -2571,7 +2650,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("Emissão Mês", "emissaoMes", proposal.emissaoMes, false),
                         editableField("Responsável", "responsavel", proposal.responsavel, true, RESPONSAVEIS),
                         editableField("Natureza", "natureza", proposal.natureza, true, NATUREZAS),
-                        editableField("Unidade", "unidade", proposal.unidade, true),
+                        editableField("Unidade", "unidade", proposal.unidade, true, getDetailSelectOptions("unidades", proposal.unidade)),
                         editableField("Heat Map", "heatMap", proposal.heatMap, true, HEATMAPS),
                         editableField("Status da Proposta", "statusProposta", proposal.statusProposta, true, STATUS_OPTIONS)
                     ])}
@@ -2583,7 +2662,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("Follow Up", "followUp", proposal.followUp, true)
                     ])}
                     ${renderDataGroup("Cliente", [
-                        editableField("Empresa", "empresa", proposal.empresa, true),
+                        editableField("Empresa / Cliente", "empresa", proposal.empresa, true, getDetailSelectOptions("clientes", proposal.empresa)),
                         editableField("UF", "uf", proposal.uf, true, UFS),
                         editableField("Embarcação / Local", "embarcacaoLocal", proposal.embarcacaoLocal, true),
                         editableField("Fonte do Lead", "fonteLead", proposal.fonteLead, true, FONTE_LEAD),
@@ -2652,6 +2731,38 @@ document.addEventListener("DOMContentLoaded", () => {
                                 <input id="scopeTempo" type="text" value="${escapeHtml(proposal.tempoContratoDias)}">
                             </div>
                         </div>
+                        <section class="scope-items-editor">
+                            <div class="scope-items-editor__heading">
+                                <div>
+                                    <h4>Equipamentos / Itens da Proposta</h4>
+                                    <p>Inclua, altere ou remova os itens vinculados a esta proposta.</p>
+                                </div>
+                                <strong data-scope-items-total>${escapeHtml(formatCurrencyDisplay(getScopeDraftItemsTotal()))}</strong>
+                            </div>
+                            <div class="scope-items-editor__list">
+                                ${state.scopeDraftItems.map((item, index) => renderScopeDraftItemRow(item, index)).join("")}
+                            </div>
+                            <div class="scope-items-editor__footer">
+                                <button class="panel-button panel-button--soft" data-panel-action="add-scope-item" type="button">
+                                    <span class="material-icons" aria-hidden="true">add</span>
+                                    Adicionar item
+                                </button>
+                                <button class="proposal-inline-link" data-panel-action="open-scope-quick-item" type="button">Cadastrar item/equipamento</button>
+                            </div>
+                            ${state.scopeQuickItemOpen ? `
+                                <div class="proposal-inline-card scope-items-editor__quick-create">
+                                    <strong>Novo item / equipamento</strong>
+                                    <label class="proposal-field proposal-field--inline">
+                                        <span>Nome do item <em>*</em></span>
+                                        <input id="scopeQuickItemName" type="text" placeholder="Digite o nome do item ou equipamento">
+                                    </label>
+                                    <div class="proposal-inline-card__actions">
+                                        <button class="proposal-button proposal-button--secondary" data-panel-action="cancel-scope-quick-item" type="button">Cancelar</button>
+                                        <button class="proposal-button proposal-button--primary" data-panel-action="save-scope-quick-item" type="button">Salvar item</button>
+                                    </div>
+                                </div>
+                            ` : ""}
+                        </section>
                         <div class="detail-actions-row">
                             <button class="panel-button panel-button--soft" data-panel-action="cancel-scope" type="button">Cancelar</button>
                             <button class="panel-button panel-button--primary" data-panel-action="save-scope" type="button">Salvar escopo</button>
@@ -2701,6 +2812,147 @@ document.addEventListener("DOMContentLoaded", () => {
     function syncScopeDraftServicesFromProposal(proposal) {
         const services = getProposalScopeServices(proposal);
         state.scopeDraftServices = services.length ? [...services] : [""];
+    }
+
+    function syncScopeDraftItemsFromProposal(proposal) {
+        state.scopeDraftItems = Array.isArray(proposal?.campos) && proposal.campos.length
+            ? proposal.campos.map((item) => ({
+                item: String(item.nome || ""),
+                unitPrice: Number(item.preco_unitario || 0) || 0,
+                quantity: Number(item.quantidade || 1) || 1
+            }))
+            : [];
+        state.scopeQuickItemOpen = false;
+    }
+
+    function createEmptyScopeDraftItem() {
+        return { item: "", unitPrice: 0, quantity: 1 };
+    }
+
+    function getScopeDraftItemsTotal() {
+        return (state.scopeDraftItems || []).reduce(
+            (total, item) => total + ((Number(item.unitPrice) || 0) * (Number(item.quantity) || 0)),
+            0
+        );
+    }
+
+    function renderScopeDraftItemRow(item, index) {
+        const subtotal = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+        return `
+            <div class="proposal-item-row scope-items-editor__row" data-scope-item-row="${index}">
+                <div class="proposal-item-field">
+                    <label>Item / Equipamento</label>
+                    <select data-scope-item-field="item" data-scope-item-index="${index}">
+                        <option value="">Selecione o item</option>
+                        ${renderProposalItemOptions(item.item)}
+                    </select>
+                </div>
+                <div class="proposal-item-field">
+                    <label>Preço unitário</label>
+                    <div class="proposal-item-price">
+                        <span>R$</span>
+                        <input type="text" value="${escapeHtml(formatCurrencyInputValue(item.unitPrice))}" data-scope-item-field="unitPrice" data-scope-item-index="${index}" inputmode="decimal" placeholder="0,00">
+                    </div>
+                </div>
+                <div class="proposal-item-field">
+                    <label>Quantidade</label>
+                    <input type="number" min="1" step="1" value="${escapeHtml(String(item.quantity || 1))}" data-scope-item-field="quantity" data-scope-item-index="${index}">
+                </div>
+                <div class="proposal-item-field">
+                    <label>Subtotal</label>
+                    <div class="proposal-item-subtotal" data-scope-item-subtotal="${index}">${escapeHtml(formatCurrencyDisplay(subtotal))}</div>
+                </div>
+                <button class="proposal-item-remove" data-panel-action="remove-scope-item" data-scope-item-index="${index}" type="button" aria-label="Remover item">
+                    <span class="material-icons" aria-hidden="true">delete</span>
+                </button>
+            </div>
+        `;
+    }
+
+    function addScopeDraftItem() {
+        state.scopeDraftItems.push(createEmptyScopeDraftItem());
+        renderProposalPanel();
+    }
+
+    function removeScopeDraftItem(index) {
+        state.scopeDraftItems.splice(index, 1);
+        renderProposalPanel();
+    }
+
+    function updateScopeDraftItem(index, field, value) {
+        const item = state.scopeDraftItems[index];
+        if (!item) return;
+        if (field === "item") item.item = value;
+        if (field === "unitPrice") item.unitPrice = parseCurrencyValue(value);
+        if (field === "quantity") item.quantity = Math.max(1, Number(value) || 1);
+
+        const subtotal = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+        const subtotalField = refs.proposalDrawer.querySelector(`[data-scope-item-subtotal="${index}"]`);
+        if (subtotalField) subtotalField.textContent = formatCurrencyDisplay(subtotal);
+        const total = refs.proposalDrawer.querySelector("[data-scope-items-total]");
+        if (total) total.textContent = formatCurrencyDisplay(getScopeDraftItemsTotal());
+    }
+
+    function buildScopeDraftItemsPayload() {
+        return (state.scopeDraftItems || [])
+            .filter((item) => item.item || Number(item.unitPrice) > 0)
+            .map((item) => ({
+                nome: item.item,
+                preco_unitario: Number(item.unitPrice || 0).toFixed(2),
+                quantidade: String(Math.max(1, Number(item.quantity) || 1))
+            }));
+    }
+
+    async function saveScopeQuickItem() {
+        const input = refs.proposalDrawer.querySelector("#scopeQuickItemName");
+        const nome = input?.value.trim() || "";
+        if (!nome) {
+            showNotification({
+                type: "warning",
+                title: "Informe o item",
+                message: "Digite o nome do item ou equipamento para cadastrá-lo."
+            });
+            input?.focus();
+            return;
+        }
+
+        try {
+            const response = await fetchJson(state.endpoints.quickItemCreate, {
+                method: "POST",
+                body: JSON.stringify({ nome })
+            });
+            const item = response?.item || {};
+            const choices = Array.isArray(commercialBootstrap?.metadata?.financeiroCampoChoices)
+                ? commercialBootstrap.metadata.financeiroCampoChoices
+                : [];
+            if (!choices.some((choice) => choice.value === item.value)) {
+                choices.push({
+                    value: item.value,
+                    label: item.label || item.value,
+                    group: item.group || "Itens cadastrados"
+                });
+            }
+            commercialBootstrap.metadata.financeiroCampoChoices = choices;
+            applyFinanceiroCampoChoices(choices);
+            state.scopeDraftItems.push({
+                item: item.value,
+                unitPrice: 0,
+                quantity: 1
+            });
+            state.scopeQuickItemOpen = false;
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Item cadastrado com sucesso",
+                message: "${item.label || item.value} foi adicionado à edição da proposta."
+            });
+        } catch (error) {
+            showNotification({
+                type: "warning",
+                title: "Não foi possível cadastrar o item",
+                message: error?.details?.nome || error.message || "Tente novamente."
+            });
+        }
     }
 
     function addScopeDraftService() {
@@ -2804,6 +3056,65 @@ document.addEventListener("DOMContentLoaded", () => {
                 </section>
             </div>
         `;
+    }
+
+    function renderDocumentosTab(proposal) {
+        const attachments = Array.isArray(proposal.anexos) ? proposal.anexos : [];
+
+        return `
+            <div class="detail-main detail-main--full">
+                <section class="detail-card proposal-documents-card">
+                    <div class="detail-card__heading">
+                        <div>
+                            <h3>Documentos da proposta</h3>
+                            <p>Anexe arquivos comerciais, técnicos e documentos de apoio.</p>
+                        </div>
+                        <button class="panel-button panel-button--primary" data-panel-action="upload-documents" type="button">
+                            <span class="material-icons" aria-hidden="true">upload_file</span>
+                            Anexar documentos
+                        </button>
+                        <input class="proposal-documents-input" data-proposal-attachments-input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.png,.jpg,.jpeg" hidden>
+                    </div>
+                    <p class="proposal-documents-card__hint">Formatos aceitos: PDF, Office, CSV, TXT e imagens. Limite de 20 MB por arquivo.</p>
+                    ${attachments.length ? `
+                        <div class="proposal-documents-list">
+                            ${attachments.map((attachment) => `
+                                <article class="proposal-document-row">
+                                    <span class="material-icons proposal-document-row__icon" aria-hidden="true">description</span>
+                                    <div class="proposal-document-row__details">
+                                        <strong>${escapeHtml(attachment.nome || "Documento")}</strong>
+                                        <span>${escapeHtml(formatAttachmentSize(attachment.tamanho))} · ${escapeHtml(attachment.criadoEm || "")}${attachment.enviadoPor ? ` · ${escapeHtml(attachment.enviadoPor)}` : ""}</span>
+                                    </div>
+                                    <div class="proposal-document-row__actions">
+                                        <a class="panel-button panel-button--soft panel-button--compact" href="${escapeHtml(attachment.visualizarUrl)}" target="_blank" rel="noopener">
+                                            <span class="material-icons" aria-hidden="true">visibility</span>
+                                            Visualizar
+                                        </a>
+                                        <button class="panel-button panel-button--danger panel-button--compact" data-panel-action="delete-document" data-document-id="${attachment.id}" data-document-url="${escapeHtml(attachment.excluirUrl)}" type="button">
+                                            <span class="material-icons" aria-hidden="true">delete_outline</span>
+                                            Excluir
+                                        </button>
+                                    </div>
+                                </article>
+                            `).join("")}
+                        </div>
+                    ` : `
+                        <div class="proposal-documents-empty">
+                            <span class="material-icons" aria-hidden="true">folder_open</span>
+                            <strong>Nenhum documento anexado</strong>
+                            <p>Use “Anexar documentos” para incluir arquivos nesta proposta.</p>
+                        </div>
+                    `}
+                </section>
+            </div>
+        `;
+    }
+
+    function formatAttachmentSize(size) {
+        const bytes = Number(size) || 0;
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(".", ",")} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
     }
 
     function renderFollowupsTabClean(proposal) {
@@ -3154,8 +3465,8 @@ document.addEventListener("DOMContentLoaded", () => {
         lockProposalNumberField();
 
         state.todayIso = bootstrap?.today || "2026-07-17";
-        state.agendaDefaultPeriod = buildDefaultAgendaPeriod(state.todayIso);
-        state.agendaPeriod = state.agendaDefaultPeriod;
+        state.agendaDefaultPeriod = "";
+        state.agendaPeriod = "";
         state.agendaSelectedDate = state.todayIso;
         state.endpoints = {
             create: bootstrap?.endpoints?.create || "",
@@ -3163,6 +3474,9 @@ document.addEventListener("DOMContentLoaded", () => {
             statusPattern: bootstrap?.endpoints?.statusPattern || "",
             updatePattern: bootstrap?.endpoints?.updatePattern || "",
             pdfPattern: bootstrap?.endpoints?.pdfPattern || "",
+            criticalAnalysisPdfPattern: bootstrap?.endpoints?.criticalAnalysisPdfPattern || "",
+            attachmentListPattern: bootstrap?.endpoints?.attachmentListPattern || "",
+            attachmentUploadPattern: bootstrap?.endpoints?.attachmentUploadPattern || "",
             quickClientCreate: bootstrap?.endpoints?.quickClientCreate || "",
             quickUnitCreate: bootstrap?.endpoints?.quickUnitCreate || "",
             quickMethodCreate: bootstrap?.endpoints?.quickMethodCreate || "",
@@ -3341,6 +3655,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function updateCriticalAnalysisProgress() {
+        const willNotParticipate = proposalWillNotParticipate();
         const answered = CRITICAL_ANALYSIS_FIELDS.filter((fieldName) =>
             ["SIM", "NAO", "NA"].includes(state.criticalAnalysisAnswers[fieldName])
         ).length;
@@ -3355,6 +3670,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (progress) {
             progress.textContent = `${answered} de ${CRITICAL_ANALYSIS_FIELDS.length} perguntas respondidas`;
         }
+        refs.newProposalModal?.classList.toggle("is-not-participating", willNotParticipate);
     }
 
     function populateSelect(selectId, options, config = {}) {
@@ -3547,7 +3863,8 @@ document.addEventListener("DOMContentLoaded", () => {
             tempo_habil_aquisicao: "Existe tempo hábil para aquisição de materiais ou equipamentos específicos, quando aplicável?",
             riscos_comerciais_relevantes: "O contrato apresenta riscos comerciais relevantes?",
             oportunidade_viavel_rentavel: "A oportunidade é comercialmente viável e rentável para a empresa?",
-            pendencias_financeiras_cliente: "Existem pendências financeiras do cliente junto à Ambipar?"
+            pendencias_financeiras_cliente: "Existem pendências financeiras do cliente junto à Ambipar?",
+            iremos_participar: "Iremos participar?"
         };
         return labels[fieldName] || fieldName;
     }
@@ -3628,9 +3945,13 @@ document.addEventListener("DOMContentLoaded", () => {
         syncOverlayState();
     }
 
-    function generateProposalPdf() {
+    function generateProposalPdf(kind = "proposta") {
         const proposal = getSelectedProposal();
-        const endpoint = buildEndpoint(state.endpoints.pdfPattern, proposal?.id);
+        const isCriticalAnalysis = kind === "analise-critica";
+        const endpoint = buildEndpoint(
+            isCriticalAnalysis ? state.endpoints.criticalAnalysisPdfPattern : state.endpoints.pdfPattern,
+            proposal?.id
+        );
         if (!proposal || !endpoint) {
             showNotification({
                 type: "warning",
@@ -3640,13 +3961,15 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        downloadProposalPdf(endpoint, `proposta_${proposal.numeroProposta || proposal.id}.pdf`);
+        const filenamePrefix = isCriticalAnalysis ? "analise_critica_proposta" : "proposta";
+        downloadProposalPdf(endpoint, `${filenamePrefix}_${proposal.numeroProposta || proposal.id}.pdf`, isCriticalAnalysis ? "Análise crítica" : "Proposta");
     }
 
-    async function downloadProposalPdf(endpoint, filename) {
+    async function downloadProposalPdf(endpoint, filename, label = "Proposta") {
         try {
             const response = await fetch(endpoint, {
-                credentials: "same-origin"
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "XMLHttpRequest" }
             });
 
             if (!response.ok) {
@@ -3654,26 +3977,97 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(message || "Não foi possível gerar o PDF da proposta.");
             }
 
+            const contentType = response.headers.get("content-type") || "";
+            if (!contentType.includes("application/pdf")) {
+                const message = await response.text();
+                throw new Error(message || "O servidor n\u00e3o retornou um arquivo PDF v\u00e1lido.");
+            }
+
+            const contentDisposition = response.headers.get("content-disposition") || "";
+            const serverFilename = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^;\"]+)/i)?.[1];
             const pdfBlob = await response.blob();
             const downloadUrl = URL.createObjectURL(pdfBlob);
             const downloadLink = document.createElement("a");
             downloadLink.href = downloadUrl;
-            downloadLink.download = filename || "proposta.pdf";
+            downloadLink.download = decodeURIComponent(serverFilename || filename || "proposta.pdf").replace(/[\"']/g, "");
             document.body.appendChild(downloadLink);
             downloadLink.click();
             downloadLink.remove();
-            URL.revokeObjectURL(downloadUrl);
+            // Alguns navegadores iniciam o download de forma ass\u00edncrona; revogar agora pode cancel\u00e1-lo.
+            window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
 
             showNotification({
                 type: "success",
                 title: "PDF gerado",
-                message: "O PDF da proposta foi baixado com sucesso."
+                message: `O PDF ${label.toLowerCase()} foi baixado com sucesso.`
             });
         } catch (error) {
             showNotification({
                 type: "warning",
                 title: "Erro ao gerar PDF",
                 message: error.message || "Não foi possível gerar o PDF da proposta."
+            });
+        }
+    }
+
+    async function uploadProposalDocuments(files) {
+        const proposal = getSelectedProposal();
+        const endpoint = buildEndpoint(state.endpoints.attachmentUploadPattern, proposal?.id);
+        if (!proposal || !endpoint || !files.length) {
+            return;
+        }
+
+        const formData = new FormData();
+        files.forEach((file) => formData.append("arquivos", file));
+
+        try {
+            const response = await fetch(endpoint, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "X-CSRFToken": getCsrfToken() },
+                body: formData,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload?.message || payload?.errors?.join(" ") || "Não foi possível enviar os documentos.");
+            }
+
+            proposal.anexos = [...(proposal.anexos || []), ...(payload.anexos || [])];
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Documentos anexados",
+                message: payload.message || "Os documentos foram anexados à proposta."
+            });
+        } catch (error) {
+            showNotification({
+                type: "warning",
+                title: "Erro ao anexar documentos",
+                message: error.message || "Não foi possível enviar os documentos selecionados."
+            });
+        }
+    }
+
+    async function deleteProposalDocument(endpoint, documentId) {
+        const proposal = getSelectedProposal();
+        if (!proposal || !endpoint || !documentId) {
+            return;
+        }
+
+        try {
+            const payload = await fetchJson(endpoint, { method: "POST" });
+            proposal.anexos = (proposal.anexos || []).filter((attachment) => Number(attachment.id) !== Number(documentId));
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Documento excluído",
+                message: payload.message || "O documento foi removido da proposta."
+            });
+        } catch (error) {
+            showNotification({
+                type: "warning",
+                title: "Erro ao excluir documento",
+                message: error.message || "Não foi possível remover o documento."
             });
         }
     }
@@ -3741,7 +4135,6 @@ document.addEventListener("DOMContentLoaded", () => {
             "proposalMotivo",
             "proposalAnaliseComentario",
             "proposalPo",
-            "proposalRfi",
             "proposalSolicitante",
             "proposalEmailSolicitante",
             "proposalTelefoneSolicitante"
@@ -4189,6 +4582,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const fieldIds = modalFieldsByStep[state.modalStep] || [];
         let isValid = true;
 
+        if (proposalWillNotParticipate()) {
+            return true;
+        }
+
         fieldIds.forEach((id) => {
             const field = document.getElementById(id);
             if (!field) {
@@ -4202,11 +4599,11 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
-        if (state.modalStep === 3 && !validateProposalItems()) {
+        if (state.modalStep === 4 && !validateProposalItems()) {
             isValid = false;
         }
 
-        if (state.modalStep === 3) {
+        if (state.modalStep === 4) {
             const selectedServices = (state.proposalDraftServices || [])
                 .map((item) => String(item || "").trim())
                 .filter(Boolean);
@@ -4226,7 +4623,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (isCreateAction && !validateNewProposalForm()) {
             if (hasProposalItemErrors()) {
-                state.modalStep = 3;
+                state.modalStep = 4;
                 updateModalStep();
                 setFeedback("Revise os itens obrigatórios da proposta antes de continuar.", "error");
                 showNotification({
@@ -4618,7 +5015,6 @@ document.addEventListener("DOMContentLoaded", () => {
             heat_map: valueOf("proposalHeatMap"),
             motivo_perda: valueOf("proposalMotivo"),
             po: valueOf("proposalPo"),
-            rfi: valueOf("proposalRfi"),
             cliente: valueOf("proposalCliente"),
             unidade: valueOf("proposalUnidade"),
             solicitante: valueOf("proposalSolicitante"),
@@ -4694,7 +5090,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ...(targetItem.errors || {}),
                         [frontItemFieldMap[backendItemField]]: message
                     };
-                    state.modalStep = 3;
+                    state.modalStep = 4;
                 }
                 return;
             }
@@ -4707,7 +5103,7 @@ document.addEventListener("DOMContentLoaded", () => {
             setProposalFieldError(frontField, message);
         });
 
-        if (state.modalStep === 3) {
+        if (state.modalStep === 4) {
             updateModalStep();
             renderProposalItemsSection();
             window.requestAnimationFrame(() => {
@@ -4718,13 +5114,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (Object.keys(state.createProposalErrorFields).length) {
             const firstFieldId = Object.keys(state.createProposalErrorFields)[0];
             if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
-                state.modalStep = 2;
-            } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
                 state.modalStep = 3;
+            } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
+                state.modalStep = 4;
             } else if (["proposalStatus", "proposalMotivo"].includes(firstFieldId)) {
                 state.modalStep = 5;
             } else {
-                state.modalStep = 1;
+                state.modalStep = 2;
             }
             updateModalStep();
             focusFieldById(firstFieldId);
@@ -4751,7 +5147,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!validateNewProposalForm()) {
             if (hasProposalItemErrors()) {
-                state.modalStep = 3;
+                state.modalStep = 4;
                 updateModalStep();
                 setFeedback("Revise os itens obrigatórios da proposta antes de continuar.", "error");
             } else {
@@ -4913,7 +5309,7 @@ document.addEventListener("DOMContentLoaded", () => {
             openProposalModal();
         }
         state.createProposalError = true;
-        state.modalStep = 1;
+        state.modalStep = 2;
         updateModalStep();
         if (!Object.keys(state.createProposalErrorFields).length) {
             state.createProposalErrorFields = {
@@ -5400,20 +5796,24 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const escopo = escopos.join(" | ");
+        const campos = buildScopeDraftItemsPayload();
 
         persistProposalUpdate(proposal.id, {
             servico: escopo,
             estimativo_receita: estimativaReceita,
             tempo_contrato_dias: tempoContrato,
+            campos,
             history_entry: {
                 usuario: proposal.responsavel,
                 acao: "Escopo atualizado",
-                detalhe: "Escopos, receita estimada e tempo de contrato foram atualizados."
+                detalhe: "Escopos, itens, receita estimada e tempo de contrato foram atualizados."
             }
         }).then(() => {
             state.scopeEditMode = false;
             state.saveProposalError = false;
             state.scopeDraftServices = [];
+            state.scopeDraftItems = [];
+            state.scopeQuickItemOpen = false;
             renderProposalPanel();
             showNotification({
                 type: "success",
@@ -6319,7 +6719,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return ["perdida/recusada", "cancelada", "declinio"].includes(normalizedStatus);
     }
 
+    function proposalWillNotParticipate() {
+        return state.criticalAnalysisAnswers?.iremos_participar === "NAO";
+    }
+
     function validateNewProposalForm() {
+        if (proposalWillNotParticipate()) {
+            state.createProposalErrorFields = {};
+            clearAllErrors();
+            hideProposalModalAlert();
+            return true;
+        }
+
         const validations = {
             proposalRev: "Informe a revisão.",
             proposalEmissao: "Informe a emissão.",
@@ -6392,7 +6803,7 @@ document.addEventListener("DOMContentLoaded", () => {
             openProposalModal();
         }
         state.createProposalError = true;
-        state.modalStep = 1;
+        state.modalStep = 2;
         updateModalStep();
         if (!Object.keys(state.createProposalErrorFields).length) {
             state.createProposalErrorFields = {
@@ -6443,6 +6854,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function handleDelegatedClick(event) {
+        const quickActionTrigger = event.target.closest("[data-quick-action]");
+        if (quickActionTrigger && !refs.quickActionsList?.contains(quickActionTrigger)) {
+            handleQuickActionClick(event);
+            return;
+        }
+
         const seeAllTrigger = event.target.closest("[data-see-all-stage]");
         if (seeAllTrigger) {
             openFocusedStageView(seeAllTrigger.dataset.seeAllStage);
@@ -6470,8 +6887,24 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
+        if (proposalPdfTrigger) {
+            event.preventDefault();
+            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            return;
+        }
+
+        const proposalPdfMenuTrigger = event.target.closest("[data-proposal-pdf-menu]");
+        if (proposalPdfMenuTrigger) {
+            event.preventDefault();
+            const menu = proposalPdfMenuTrigger.closest(".proposal-card__pdf-menu");
+            const isOpen = menu?.classList.toggle("is-open");
+            proposalPdfMenuTrigger.setAttribute("aria-expanded", String(Boolean(isOpen)));
+            return;
+        }
+
         const proposalTrigger = event.target.closest("[data-proposal-id]");
-        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf]")) {
+        if (proposalTrigger && !event.target.closest("[data-panel-action], [data-proposal-pdf], [data-proposal-pdf-menu]")) {
             openProposalPanel(Number(proposalTrigger.dataset.proposalId));
             return;
         }
@@ -6586,6 +7019,15 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        if (actionTrigger.dataset.panelAction === "upload-documents") {
+            refs.proposalDrawer.querySelector("[data-proposal-attachments-input]")?.click();
+            return;
+        }
+        if (actionTrigger.dataset.panelAction === "delete-document") {
+            deleteProposalDocument(actionTrigger.dataset.documentUrl, actionTrigger.dataset.documentId);
+            return;
+        }
+
         const action = actionTrigger.dataset.panelAction;
         if (action === "close-panel") {
             closeProposalPanel();
@@ -6605,11 +7047,14 @@ document.addEventListener("DOMContentLoaded", () => {
             state.scopeEditMode = true;
             state.saveProposalError = false;
             syncScopeDraftServicesFromProposal(getSelectedProposal());
+            syncScopeDraftItemsFromProposal(getSelectedProposal());
             renderProposalPanel();
         } else if (action === "cancel-scope") {
             state.saveProposalError = false;
             state.scopeEditMode = false;
             state.scopeDraftServices = [];
+            state.scopeDraftItems = [];
+            state.scopeQuickItemOpen = false;
             renderProposalPanel();
         } else if (action === "save-scope") {
             saveScopeData();
@@ -6617,6 +7062,19 @@ document.addEventListener("DOMContentLoaded", () => {
             addScopeDraftService();
         } else if (action === "remove-scope-service") {
             removeScopeDraftService(Number(actionTrigger.dataset.scopeServiceIndex));
+        } else if (action === "add-scope-item") {
+            addScopeDraftItem();
+        } else if (action === "remove-scope-item") {
+            removeScopeDraftItem(Number(actionTrigger.dataset.scopeItemIndex));
+        } else if (action === "open-scope-quick-item") {
+            state.scopeQuickItemOpen = true;
+            renderProposalPanel();
+            window.requestAnimationFrame(() => refs.proposalDrawer.querySelector("#scopeQuickItemName")?.focus());
+        } else if (action === "cancel-scope-quick-item") {
+            state.scopeQuickItemOpen = false;
+            renderProposalPanel();
+        } else if (action === "save-scope-quick-item") {
+            saveScopeQuickItem();
         } else if (action === "open-followup") {
             state.activeDetailTab = "followups";
             state.followupFormOpen = true;
@@ -6630,6 +7088,8 @@ document.addEventListener("DOMContentLoaded", () => {
             createNewRevision();
         } else if (action === "generate-pdf") {
             generateProposalPdf();
+        } else if (action === "generate-critical-analysis-pdf") {
+            generateProposalPdf("analise-critica");
         } else if (action === "focus-status") {
             state.activeDetailTab = "resumo";
             state.focusStatusSection = true;
@@ -6674,6 +7134,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.add("comercial-no-scroll");
         renderFollowupAgenda();
         await loadFollowups();
+        renderUpcomingFollowups();
     }
 
     function closeFullFollowupAgenda() {
@@ -6714,6 +7175,7 @@ document.addEventListener("DOMContentLoaded", () => {
             state.agendaResponsavelOptions = Array.isArray(payload?.responsavel_options) && payload.responsavel_options.length ? payload.responsavel_options : ["Todos"];
             state.agendaStatusOptions = Array.isArray(payload?.status_options) && payload.status_options.length ? payload.status_options : ["Todos", ...FOLLOWUP_STATUSES];
             state.agendaTotalAll = Number(payload?.total_all || 0);
+            state.agendaCanViewAll = Boolean(payload?.can_view_all);
             state.agendaLoaded = true;
             state.agendaLoading = false;
             state.followupsError = false;
@@ -6721,6 +7183,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!agendaFollowups.some((item) => item.data === state.agendaSelectedDate)) {
                 state.agendaSelectedDate = agendaFollowups[0]?.data || state.todayIso;
             }
+            renderUpcomingFollowups();
             renderFollowupAgenda();
         } catch (error) {
             state.agendaLoading = false;
@@ -6824,7 +7287,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.agendaSearch = "";
         state.agendaResponsavel = "Todos";
         state.agendaStatus = "Todos";
-        state.agendaPeriod = state.agendaDefaultPeriod || buildDefaultAgendaPeriod(state.todayIso);
+        state.agendaPeriod = state.agendaDefaultPeriod;
         state.agendaPage = 1;
         state.agendaPerPage = 10;
         state.agendaDayFocus = "";
@@ -6886,17 +7349,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function parseAgendaPeriod(value) {
-        if (!value) return ["", ""];
+        if (!value || !value.trim()) return ["", ""];
         if (value.includes("|")) {
             const [start, end] = value.split("|").map((item) => item.trim());
-            return [start, end];
+            return [normalizeAgendaDateToIso(start), normalizeAgendaDateToIso(end)];
         }
-        return [state.agendaDefaultPeriod.split("|")[0], state.agendaDefaultPeriod.split("|")[1]];
+        return ["", ""];
+    }
+
+    function getDetailSelectOptions(metadataKey, currentValue) {
+        const options = Array.isArray(commercialBootstrap?.metadata?.[metadataKey])
+            ? [...commercialBootstrap.metadata[metadataKey]]
+            : [];
+        const normalizedCurrentValue = String(currentValue || "").trim();
+
+        // Preserva a exibição de registros antigos que já não estejam disponíveis para novos cadastros.
+        if (normalizedCurrentValue && !options.some((item) => String(item || "").trim() === normalizedCurrentValue)) {
+            options.unshift(normalizedCurrentValue);
+        }
+
+        return options;
     }
 
     function formatAgendaPeriodLabel(value) {
-        const [start, end] = parseAgendaPeriod(value);
-        return `${start} | ${end}`;
+        if (!value || !value.trim()) return "";
+        const [start = "", end = ""] = value.split("|").map((item) => item.trim());
+        const formattedStart = formatAgendaDateBr(start);
+        const formattedEnd = formatAgendaDateBr(end);
+
+        if (formattedStart && formattedEnd) return `${formattedStart} | ${formattedEnd}`;
+        return formattedStart || formattedEnd;
+    }
+
+    function normalizeAgendaDateToIso(value) {
+        const date = String(value || "").trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+
+        const match = date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
+    }
+
+    function formatAgendaDateBr(value) {
+        const date = String(value || "").trim();
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return date;
+        return formatDateBr(normalizeAgendaDateToIso(date));
     }
 
     function formatAgendaGroupDate(isoDate) {
@@ -7092,11 +7588,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const selectedDayItems = getAgendaDayItems(state.agendaSelectedDate, summaryItems);
         const summary = state.agendaSummary || { hoje: 0, esta_semana: 0, pendentes: 0, responsavel_principal: { nome: "-", total: 0 } };
 
-        refs.fullFollowupAgendaModal.innerHTML = `<div class="agenda-modal__card"><div class="agenda-modal__header"><div class="agenda-modal__title-wrap"><span class="agenda-modal__title-icon"><span class="material-icons" aria-hidden="true">calendar_month</span></span><div><h2 id="agendaModalTitle">Acompanhamentos Comerciais</h2><p>Visualize, filtre e registre os acompanhamentos das propostas comerciais.</p></div></div><button class="agenda-modal__close" data-agenda-action="close" type="button" aria-label="Fechar"><span class="material-icons" aria-hidden="true">close</span></button></div><div class="agenda-modal__body"><section class="agenda-summary-cards">${renderAgendaSummaryCard("today", "Acompanhamentos hoje", `${summary.hoje}`, "acompanhamentos")}${renderAgendaSummaryCard("date_range", "Esta semana", `${summary.esta_semana}`, "acompanhamentos")}${renderAgendaSummaryCard("schedule", "Pendentes de retorno", `${summary.pendentes}`, "acompanhamentos")}<article class="agenda-summary-card"><span class="agenda-summary-card__icon"><span class="material-icons" aria-hidden="true">person_outline</span></span><div class="agenda-summary-card__content"><span class="agenda-summary-card__label">Responsável principal</span><strong class="agenda-summary-card__value">${escapeHtml(summary.responsavel_principal?.nome || "-")}</strong><span class="agenda-summary-card__meta">${escapeHtml(String(summary.responsavel_principal?.total || 0))} acompanhamentos</span></div></article></section><section class="agenda-filters"><label class="agenda-filter-field agenda-filter-field--search"><span>Buscar acompanhamento</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">search</span><input data-agenda-input="search" type="search" value="${escapeHtml(state.agendaSearch)}" placeholder="Buscar por proposta, cliente ou assunto"></div></label><label class="agenda-filter-field"><span>Período</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">calendar_today</span><input data-agenda-input="period" type="text" value="${escapeHtml(formatAgendaPeriodLabel(state.agendaPeriod))}" placeholder="2026-07-01 | 2026-07-31"></div></label><label class="agenda-filter-field"><span>Responsável</span><select data-agenda-select="responsavel">${state.agendaResponsavelOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaResponsavel ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><label class="agenda-filter-field"><span>Status</span><select data-agenda-select="status">${state.agendaStatusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><div class="agenda-filters__actions"><button class="agenda-button agenda-button--secondary" data-agenda-action="clear-filters" type="button">Limpar filtros</button><button class="agenda-button agenda-button--primary" data-agenda-action="apply-filters" type="button">Aplicar filtros</button></div></section>${renderAgendaCreateForm()}<div class="agenda-layout"><section class="agenda-main"><div class="agenda-list-card"><div class="agenda-list-card__header"><div class="agenda-list-card__title"><h3>Acompanhamentos por data</h3><span class="agenda-list-card__badge">${pagedItems.total} itens</span></div></div><div class="agenda-groups">${state.agendaLoading ? `<div class="agenda-empty agenda-empty--loading"><span class="material-icons" aria-hidden="true">hourglass_top</span><p>Carregando acompanhamentos...</p></div>` : groups.length ? groups.map(renderAgendaGroup).join("") : renderAgendaEmptyState()}</div>${pagedItems.total ? `<div class="agenda-pagination"><span class="agenda-pagination__text">Mostrando ${pagedItems.start} a ${pagedItems.end} de ${pagedItems.total} itens</span><div class="agenda-pagination__controls"><button class="agenda-page-btn" data-agenda-action="prev-page" type="button" ${state.agendaPage === 1 ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_left</span></button>${renderAgendaPageButtons(pagedItems.totalPages)}<button class="agenda-page-btn" data-agenda-action="next-page" type="button" ${state.agendaPage === pagedItems.totalPages ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_right</span></button></div><select class="agenda-pagination__select" data-agenda-select="per-page">${[10, 20, 30].map((size) => `<option value="${size}" ${size === state.agendaPerPage ? "selected" : ""}>${size} por página</option>`).join("")}</select></div>` : ""}</div></section><aside class="agenda-side"><section class="agenda-side-card"><div class="agenda-side-card__header"><h3>Calendário</h3><div class="agenda-calendar__nav"><span>${escapeHtml(formatAgendaMonthLabel(state.agendaSelectedDate || state.todayIso))}</span></div></div>${renderAgendaCalendar()}</section><section class="agenda-side-card"><div class="agenda-side-card__header"><div><h3>Acompanhamentos do dia</h3><p>${escapeHtml(formatAgendaSummaryDay(state.agendaSelectedDate || state.todayIso))}</p></div><span class="agenda-side-card__badge">${selectedDayItems.length} itens</span></div><div class="agenda-day-summary">${selectedDayItems.length ? selectedDayItems.map((item) => `<article class="agenda-day-summary__item"><span class="agenda-day-summary__dot"></span><div><strong>${escapeHtml(item.hora)} — ${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</strong><p>${escapeHtml(item.numeroProposta || item.numero_proposta || "")} • ${escapeHtml(item.cliente)}</p></div></article>`).join("") : `<p class="agenda-day-summary__empty">Sem acompanhamentos para o dia selecionado.</p>`}</div><button class="agenda-day-summary__link" data-agenda-action="view-day" type="button">Ver todos do dia</button></section></aside></div></div><div class="agenda-modal__footer"><button class="agenda-button agenda-button--secondary" data-agenda-action="new-followup" type="button"><span class="material-icons" aria-hidden="true">add</span>Registrar acompanhamento</button><button class="agenda-button agenda-button--primary" data-agenda-action="close" type="button">Fechar</button></div></div>`;
+        const agendaTitle = state.agendaCanViewAll ? "Acompanhamentos Comerciais" : "Meus Follow-ups";
+        const agendaSubtitle = state.agendaCanViewAll ? "Visualize, filtre e registre os acompanhamentos comerciais." : "Visualize, filtre e registre os seus acompanhamentos comerciais.";
+        refs.fullFollowupAgendaModal.innerHTML = `<div class="agenda-modal__card"><div class="agenda-modal__header"><div class="agenda-modal__title-wrap"><span class="agenda-modal__title-icon"><span class="material-icons" aria-hidden="true">calendar_month</span></span><div><h2 id="agendaModalTitle">${agendaTitle}</h2><p>${agendaSubtitle}</p></div></div><button class="agenda-modal__close" data-agenda-action="close" type="button" aria-label="Fechar"><span class="material-icons" aria-hidden="true">close</span></button></div><div class="agenda-modal__body"><section class="agenda-summary-cards">${renderAgendaSummaryCard("today", "Hoje", `${summary.hoje}`, "acompanhamentos")}${renderAgendaSummaryCard("date_range", "Esta semana", `${summary.esta_semana}`, "acompanhamentos")}${renderAgendaSummaryCard("schedule", "Pendentes de retorno", `${summary.pendentes}`, "acompanhamentos")}</section><section class="agenda-filters"><label class="agenda-filter-field agenda-filter-field--search"><span>Buscar acompanhamento</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">search</span><input data-agenda-input="search" type="search" value="${escapeHtml(state.agendaSearch)}" placeholder="Buscar por proposta, cliente ou assunto"></div></label><label class="agenda-filter-field"><span>Período</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">calendar_today</span><input data-agenda-input="period" type="text" inputmode="numeric" value="${escapeHtml(formatAgendaPeriodLabel(state.agendaPeriod))}" placeholder="dd/mm/aaaa | dd/mm/aaaa"></div></label><label class="agenda-filter-field"><span>Status</span><select data-agenda-select="status">${state.agendaStatusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><div class="agenda-filters__actions"><button class="agenda-button agenda-button--secondary" data-agenda-action="clear-filters" type="button">Limpar filtros</button><button class="agenda-button agenda-button--primary" data-agenda-action="apply-filters" type="button">Aplicar filtros</button></div></section>${renderAgendaCreateForm()}<div class="agenda-layout"><section class="agenda-main"><div class="agenda-list-card"><div class="agenda-list-card__header"><div class="agenda-list-card__title"><h3>Acompanhamentos por data</h3><span class="agenda-list-card__badge">${pagedItems.total} itens</span></div></div><div class="agenda-groups">${state.agendaLoading ? `<div class="agenda-empty agenda-empty--loading"><span class="material-icons" aria-hidden="true">hourglass_top</span><p>Carregando acompanhamentos...</p></div>` : groups.length ? groups.map(renderAgendaGroup).join("") : renderAgendaEmptyState()}</div>${pagedItems.total ? `<div class="agenda-pagination"><span class="agenda-pagination__text">Mostrando ${pagedItems.start} a ${pagedItems.end} de ${pagedItems.total} itens</span><div class="agenda-pagination__controls"><button class="agenda-page-btn" data-agenda-action="prev-page" type="button" ${state.agendaPage === 1 ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_left</span></button>${renderAgendaPageButtons(pagedItems.totalPages)}<button class="agenda-page-btn" data-agenda-action="next-page" type="button" ${state.agendaPage === pagedItems.totalPages ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_right</span></button></div><select class="agenda-pagination__select" data-agenda-select="per-page">${[10, 20, 30].map((size) => `<option value="${size}" ${size === state.agendaPerPage ? "selected" : ""}>${size} por página</option>`).join("")}</select></div>` : ""}</div></section><aside class="agenda-side"><section class="agenda-side-card"><div class="agenda-side-card__header"><h3>Calendário</h3><div class="agenda-calendar__nav"><span>${escapeHtml(formatAgendaMonthLabel(state.agendaSelectedDate || state.todayIso))}</span></div></div>${renderAgendaCalendar()}</section><section class="agenda-side-card"><div class="agenda-side-card__header"><div><h3>Acompanhamentos do dia</h3><p>${escapeHtml(formatAgendaSummaryDay(state.agendaSelectedDate || state.todayIso))}</p></div><span class="agenda-side-card__badge">${selectedDayItems.length} itens</span></div><div class="agenda-day-summary">${selectedDayItems.length ? selectedDayItems.map((item) => `<article class="agenda-day-summary__item"><span class="agenda-day-summary__dot"></span><div><strong>${escapeHtml(item.hora)} — ${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</strong><p>${escapeHtml(item.numeroProposta || item.numero_proposta || "")} • ${escapeHtml(item.cliente)}</p></div></article>`).join("") : `<p class="agenda-day-summary__empty">Sem acompanhamentos para este dia.</p>`}</div></section></aside></div></div><div class="agenda-modal__footer"><button class="agenda-button agenda-button--secondary" data-agenda-action="new-followup" type="button"><span class="material-icons" aria-hidden="true">add</span>Registrar acompanhamento</button><button class="agenda-button agenda-button--primary" data-agenda-action="close" type="button">Fechar</button></div></div>`;
     }
 
     function renderAgendaGroup(group) {
-        return `<section class="agenda-group"><div class="agenda-group__header"><div class="agenda-group__title"><span class="material-icons" aria-hidden="true">calendar_today</span><h4>${escapeHtml(formatAgendaGroupDate(group.date))}</h4></div><span>${group.entries.length} acompanhamentos</span></div><div class="agenda-group__items">${group.entries.map((item) => `<article class="agenda-item"><div class="agenda-item__date"><strong>${escapeHtml(formatAgendaDay(item.data))}</strong><span>${escapeHtml(formatAgendaMonthShort(item.data))}</span></div><div class="agenda-item__time">${escapeHtml(item.hora || "--:--")}</div><div class="agenda-item__content"><span class="agenda-item__proposal">${escapeHtml(item.numero_proposta || item.numeroProposta)}</span><strong>${escapeHtml(item.cliente)}</strong><p>${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</p></div><div class="agenda-item__owner">${escapeHtml(item.responsavel)}</div><div class="agenda-item__contact"><span class="material-icons" aria-hidden="true">contact_phone</span></div><div class="agenda-item__status"><span class="agenda-status-badge ${slugify(item.status)}">${escapeHtml(item.status)}</span></div></article>`).join("")}</div></section>`;
+        return `<section class="agenda-group"><div class="agenda-group__header"><div class="agenda-group__title"><span class="material-icons" aria-hidden="true">calendar_today</span><h4>${escapeHtml(formatAgendaGroupDate(group.date))}</h4></div><span>${group.entries.length} acompanhamentos</span></div><div class="agenda-group__items">${group.entries.map((item) => `<article class="agenda-item agenda-item--detailed"><div class="agenda-item__date"><strong>${escapeHtml(formatAgendaDay(item.data))}</strong><span>${escapeHtml(formatAgendaMonthShort(item.data))}</span></div><div class="agenda-item__contact-meta"><strong><i></i>${escapeHtml(item.hora || "--:--")}</strong><span><span class="material-icons" aria-hidden="true">${agendaContactIcon(item.tipo_contato)}</span>${escapeHtml(item.tipo_contato || "Acompanhamento")}</span></div><div class="agenda-item__proposal-detail"><strong>${escapeHtml(item.numero_proposta || item.numeroProposta)}</strong><span>${escapeHtml(item.cliente || "Cliente não informado")}</span><small>${item.revisao ? `REV ${escapeHtml(item.revisao)} · ` : ""}${escapeHtml(item.unidade || "Unidade não informada")}</small></div><div class="agenda-item__subject"><strong>${escapeHtml(item.titulo || "Acompanhamento comercial")}</strong><p>${escapeHtml(item.comentario || "Sem observação complementar.")}</p></div><div class="agenda-item__owner-detail"><span class="material-icons" aria-hidden="true">person</span><strong>${escapeHtml(item.responsavel || "Não informado")}</strong></div><div class="agenda-item__outcome"><span class="agenda-proposal-status ${slugify(item.status_proposta || item.status)}">${escapeHtml(item.status_proposta || item.status || "Sem status")}</span><small>Próxima ação</small><p>${escapeHtml(item.proxima_acao || "Não informada")}</p></div></article>`).join("")}</div></section>`;
+    }
+
+    function agendaContactIcon(type) {
+        const normalized = String(type || "").toLowerCase();
+        if (normalized.includes("e-mail") || normalized.includes("email")) return "mail";
+        if (normalized.includes("whatsapp")) return "chat";
+        if (normalized.includes("reuni")) return "groups";
+        if (normalized.includes("liga")) return "call";
+        return "event_note";
     }
 
     function todayDate() {
@@ -7123,5 +7630,40 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    function renderUpcomingFollowups() {
+        if (!refs.upcomingFollowupsList) {
+            return;
+        }
+
+        const upcomingItems = agendaFollowups
+            .filter((item) => item.status !== "Realizado" && item.status !== "Concluído" && item.status !== "Cancelado")
+            .sort((left, right) => `${left.data || ""}${left.hora || ""}`.localeCompare(`${right.data || ""}${right.hora || ""}`))
+            .slice(0, 3);
+
+        if (!upcomingItems.length) {
+            refs.upcomingFollowupsList.innerHTML = `
+                <div class="upcoming-followups-empty">
+                    <span class="material-icons" aria-hidden="true">event_available</span>
+                    <p>Nenhum follow-up próximo para você.</p>
+                </div>
+            `;
+            return;
+        }
+
+        refs.upcomingFollowupsList.innerHTML = upcomingItems.map((item) => `
+            <article class="upcoming-followup-item">
+                <time class="upcoming-followup-item__date" datetime="${escapeHtml(item.data)}">
+                    <strong>${escapeHtml(formatAgendaDay(item.data))}</strong>
+                    <span>${escapeHtml(formatAgendaMonthShort(item.data))}</span>
+                </time>
+                <div class="upcoming-followup-item__content">
+                    <strong>${escapeHtml(item.cliente || "Cliente não informado")}</strong>
+                    <p>${escapeHtml(item.titulo || item.proxima_acao || "Acompanhamento comercial")}</p>
+                </div>
+                <span class="upcoming-followup-item__time">${escapeHtml(item.hora || "--:--")}</span>
+            </article>
+        `).join("");
     }
 });

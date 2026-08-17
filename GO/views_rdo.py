@@ -3,6 +3,7 @@ from django.http import JsonResponse, HttpResponse
 from django.conf import settings
 from django.utils import timezone
 import os
+import base64
 import glob
 import traceback
 import re
@@ -39,6 +40,7 @@ from .translation_utils import translate_pt_to_en
 from .rdo_access import (
     build_rdo_open_edit_json_response as _build_rdo_open_edit_json_response,
     user_can_delete_rdo as _user_can_delete_rdo,
+    user_can_open_rdo as _user_can_open_rdo,
     user_can_open_or_edit_rdo as _user_can_open_or_edit_rdo,
 )
 from alertas_inteligentes.services import marcar_rdo_para_reanalise
@@ -3468,6 +3470,26 @@ def _rdo_sequence_sort_key(obj):
     )
 
 
+def _latest_rdos_by_os_number(os_numbers):
+    """Return the last RDO in the complete sequence of each visible OS number."""
+    normalized_numbers = {number for number in (os_numbers or []) if number not in (None, '')}
+    if not normalized_numbers:
+        return {}
+
+    latest_by_number = {}
+    candidates = (
+        RDO.objects
+        .select_related('ordem_servico')
+        .filter(ordem_servico__numero_os__in=normalized_numbers)
+    )
+    for candidate in candidates:
+        numero_os = getattr(getattr(candidate, 'ordem_servico', None), 'numero_os', None)
+        current = latest_by_number.get(numero_os)
+        if current is None or _rdo_sequence_sort_key(candidate) > _rdo_sequence_sort_key(current):
+            latest_by_number[numero_os] = candidate
+    return latest_by_number
+
+
 def _is_duplicate_rdo_save_error(exc):
     if isinstance(exc, ValidationError):
         try:
@@ -4108,6 +4130,33 @@ def _build_rdo_page_context(request, rdo_id):
     except Exception:
         pass
 
+    signature_data_uri = None
+    signature_auto_scale = 1
+    try:
+        approved_rdo = RDO.objects.select_related('aprovado_por__assinatura_rdo').get(pk=rdo_id)
+        if approved_rdo.aprovado and approved_rdo.aprovado_por_id:
+            signature = approved_rdo.aprovado_por.assinatura_rdo
+            if signature.imagem_processada:
+                with signature.imagem_processada.open('rb') as signature_file:
+                    from .user_signatures import transparent_signature_png
+                    transparent_png = transparent_signature_png(signature_file.read())
+                    try:
+                        from PIL import Image
+                        with Image.open(BytesIO(transparent_png)) as normalized_signature:
+                            width, height = normalized_signature.size
+                        aspect_ratio = width / max(height, 1)
+                        if aspect_ratio < 2:
+                            signature_auto_scale = round(
+                                min(1.55, 2 / max(aspect_ratio, 0.5)),
+                                2,
+                            )
+                    except Exception:
+                        signature_auto_scale = 1
+                    encoded_signature = base64.b64encode(transparent_png).decode('ascii')
+                signature_data_uri = f'data:image/png;base64,{encoded_signature}'
+    except Exception:
+        signature_data_uri = None
+
     context = {
         'rdo': rdo_payload,
         'equipe_rows': equipe_rows,
@@ -4115,6 +4164,8 @@ def _build_rdo_page_context(request, rdo_id):
         'ec_entradas': ec_entradas,
         'ec_saidas': ec_saidas,
         'inline_css': _get_rdo_inline_css(),
+        'approval_signature_data_uri': signature_data_uri,
+        'approval_signature_scale': signature_auto_scale,
     }
     try:
         tanques_list = rdo_payload.get('tanques') or []
@@ -6640,9 +6691,11 @@ def rdo_detail(request, rdo_id):
 
     try:
         if request.GET.get('render') in ('editor', 'html'):
-            blocked = _guard_rdo_open_edit_json(request, 'abrir ou editar RDO')
-            if blocked is not None:
-                return blocked
+            if not _user_can_open_rdo(getattr(request, 'user', None)):
+                return _build_rdo_open_edit_json_response(
+                    getattr(request, 'user', None),
+                    'abrir RDO',
+                )
             from django.template.loader import render_to_string
             logger = logging.getLogger(__name__)
             try:
@@ -6781,7 +6834,11 @@ def rdo_os_rdos(request, os_id):
 
     try:
         numero_os = getattr(os_obj, 'numero_os', None)
-        if is_supervisor_user and numero_os not in (None, ''):
+        # Uma mesma OS pode possuir mais de um registro interno (por exemplo,
+        # quando uma nova frente e criada). Para a exportacao, a identidade que
+        # o usuario enxerga e o numero da OS; filtrar apenas pela FK do registro
+        # clicado omite os RDOs vinculados aos demais registros desse numero.
+        if numero_os not in (None, ''):
             rdo_qs = list(
                 RDO.objects.filter(
                     ordem_servico__numero_os=numero_os,
@@ -14027,6 +14084,24 @@ def rdo(request):
     # Garantir que o RDO mais recente fique sempre no topo da lista.
     rdos_qs = base_qs.order_by('-id')
     rdos = list(rdos_qs)
+
+    # A permissao para abrir um novo RDO deve considerar a sequencia completa
+    # do numero da OS. Isso nao pode depender da FK interna, do supervisor, dos
+    # filtros aplicados ou da pagina atual.
+    try:
+        visible_os_numbers = {
+            getattr(getattr(rdo_obj, 'ordem_servico', None), 'numero_os', None)
+            for rdo_obj in rdos
+        }
+        latest_rdos_by_number = _latest_rdos_by_os_number(visible_os_numbers)
+        for rdo_obj in rdos:
+            numero_os = getattr(getattr(rdo_obj, 'ordem_servico', None), 'numero_os', None)
+            latest_rdo = latest_rdos_by_number.get(numero_os)
+            setattr(rdo_obj, 'is_latest_for_os', bool(latest_rdo and latest_rdo.id == rdo_obj.id))
+            setattr(rdo_obj, 'latest_rdo_id_for_os', getattr(latest_rdo, 'id', None))
+            setattr(rdo_obj, 'latest_rdo_number_for_os', getattr(latest_rdo, 'rdo', None))
+    except Exception:
+        latest_rdos_by_number = {}
     _os_tank_limit_cache = {}
     _os_service_limit_map, _os_tank_progress_map = _build_rdo_os_batch_metrics(rdos)
 
@@ -14108,6 +14183,9 @@ def rdo(request):
                 for r in scoped_rdos:
                     row = _build_supervisor_rdo_card_row(r, os_obj=current_os_obj)
                     if row is not None:
+                        row.is_latest_for_os = bool(getattr(r, 'is_latest_for_os', False))
+                        row.latest_rdo_id_for_os = getattr(r, 'latest_rdo_id_for_os', None)
+                        row.latest_rdo_number_for_os = getattr(r, 'latest_rdo_number_for_os', None)
                         supervisor_rows.append(row)
                 supervisor_rows.sort(key=_rdo_sequence_sort_key, reverse=True)
             except Exception:
@@ -14118,6 +14196,7 @@ def rdo(request):
                 except Exception:
                     synthetic_row = None
                 if synthetic_row is not None:
+                    synthetic_row.is_latest_for_os = True
                     supervisor_rows.append(synthetic_row)
         try:
             per_page = int(request.GET.get('per_page') or request.GET.get('perpage') or 6)
@@ -14196,6 +14275,9 @@ def rdo(request):
                             row.aprovado = getattr(r, 'aprovado', False)
                             row.aprovado_por = getattr(r, 'aprovado_por', None)
                             row.aprovado_em = getattr(r, 'aprovado_em', None)
+                            row.is_latest_for_os = bool(getattr(r, 'is_latest_for_os', False))
+                            row.latest_rdo_id_for_os = getattr(r, 'latest_rdo_id_for_os', None)
+                            row.latest_rdo_number_for_os = getattr(r, 'latest_rdo_number_for_os', None)
                             flat_rows.append(row)
                         except Exception:
                             pass
@@ -14230,6 +14312,9 @@ def rdo(request):
                     row.aprovado = getattr(r, 'aprovado', False)
                     row.aprovado_por = getattr(r, 'aprovado_por', None)
                     row.aprovado_em = getattr(r, 'aprovado_em', None)
+                    row.is_latest_for_os = bool(getattr(r, 'is_latest_for_os', False))
+                    row.latest_rdo_id_for_os = getattr(r, 'latest_rdo_id_for_os', None)
+                    row.latest_rdo_number_for_os = getattr(r, 'latest_rdo_number_for_os', None)
                     flat_rows.append(row)
             except Exception:
                 row = SimpleNamespace() if SimpleNamespace else type('Row', (), {})()
@@ -14262,6 +14347,9 @@ def rdo(request):
                 row.aprovado = getattr(r, 'aprovado', False)
                 row.aprovado_por = getattr(r, 'aprovado_por', None)
                 row.aprovado_em = getattr(r, 'aprovado_em', None)
+                row.is_latest_for_os = bool(getattr(r, 'is_latest_for_os', False))
+                row.latest_rdo_id_for_os = getattr(r, 'latest_rdo_id_for_os', None)
+                row.latest_rdo_number_for_os = getattr(r, 'latest_rdo_number_for_os', None)
                 flat_rows.append(row)
         try:
             per_page = int(request.GET.get('per_page') or request.GET.get('perpage') or 6)
