@@ -2941,11 +2941,8 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
 
     try:
         serialized = _serialize_financeiro(proposta)
-        pdf_content, filename = generate_official_proposal_pdf(
-            proposta,
-            serialized=serialized,
-            items=serialized.get("campos") or [],
-        )
+        # The report built below is the dedicated critical-analysis document.
+        pdf_content, filename = b"", ""
     except OfficialProposalPdfError as error:
         logger.warning("Não foi possível gerar a proposta oficial %s: %s", proposta_id, error)
         return HttpResponse(str(error), status=400, content_type="text/plain; charset=utf-8")
@@ -2957,9 +2954,7 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
             content_type="text/plain; charset=utf-8",
         )
 
-    response = HttpResponse(pdf_content, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    # Keep the dedicated ReportLab form below as the only response for this endpoint.
 
     try:
         from html import escape
