@@ -200,7 +200,7 @@ class RdoTankPersistenceTest(TestCase):
         self.assertEqual(self.t2.tanque_codigo, '5P')
         self.assertEqual(t3.tanque_codigo, 'DEST')
 
-    def test_previsao_termino_trava_no_primeiro_preenchimento_do_tanque(self):
+    def test_previsao_termino_pode_ser_editada_e_sincroniza_o_tanque(self):
         cliente = Cliente.objects.create(nome='Cliente Previsao Tank Lock')
         unidade = Unidade.objects.create(nome='Unidade Previsao Tank Lock')
         os_obj = OrdemServico.objects.create(
@@ -249,10 +249,10 @@ class RdoTankPersistenceTest(TestCase):
 
         tank_1.refresh_from_db()
         tank_2.refresh_from_db()
-        self.assertEqual(tank_1.previsao_termino, date(2026, 3, 20))
-        self.assertEqual(tank_2.previsao_termino, date(2026, 3, 20))
+        self.assertEqual(tank_1.previsao_termino, date(2026, 3, 25))
+        self.assertEqual(tank_2.previsao_termino, date(2026, 3, 25))
 
-    def test_update_tank_previsao_termino_no_editor_nao_altera_apos_primeiro_preenchimento(self):
+    def test_update_tank_previsao_termino_no_editor_altera_apos_primeiro_preenchimento(self):
         cliente = Cliente.objects.create(nome='Cliente Previsao Tank Edit')
         unidade = Unidade.objects.create(nome='Unidade Previsao Tank Edit')
         os_obj = OrdemServico.objects.create(
@@ -285,11 +285,11 @@ class RdoTankPersistenceTest(TestCase):
         self.assertEqual(res.status_code, 200)
         tank_1.refresh_from_db()
         tank_2.refresh_from_db()
-        self.assertEqual(tank_1.previsao_termino, date(2026, 3, 20))
-        self.assertEqual(tank_2.previsao_termino, date(2026, 3, 20))
+        self.assertEqual(tank_1.previsao_termino, date(2026, 3, 28))
+        self.assertEqual(tank_2.previsao_termino, date(2026, 3, 28))
         data = json.loads(res.content.decode('utf-8'))
-        self.assertEqual(data['tank']['previsao_termino'], '2026-03-20')
-        self.assertTrue(data['tank']['previsao_termino_locked'])
+        self.assertEqual(data['tank']['previsao_termino'], '2026-03-28')
+        self.assertFalse(data['tank']['previsao_termino_locked'])
 
     def test_update_tank_previsoes_mutaveis_no_editor_sincroniza_todos_os_snapshots(self):
         cliente = Cliente.objects.create(nome='Cliente Prev Sync Edit')
@@ -960,7 +960,8 @@ class RdoTankPersistenceTest(TestCase):
         self.assertIn('name="previous_compartimentos_json"', html)
         self.assertIn('&quot;index&quot;: 1', html)
         self.assertIn('&quot;mecanizada&quot;: 70', html)
-        self.assertTrue(data['previsao_termino_locked'])
+        self.assertFalse(data['previsao_termino_locked'])
+        self.assertNotIn('id="edit-previsao-termino" disabled', html)
 
     def test_rdo_detail_render_editor_calcula_total_hh_cumulativo_real_quando_ausente(self):
         cliente = Cliente.objects.create(nome='Cliente HH Editor')

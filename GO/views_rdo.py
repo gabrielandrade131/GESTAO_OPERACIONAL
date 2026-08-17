@@ -1494,11 +1494,10 @@ _TANK_SHARED_PREDICTION_FIELDS = (
     'ensacamento_prev',
     'icamento_prev',
     'cambagem_prev',
-)
-
-_TANK_LOCKED_PREDICTION_FIELDS = (
     'previsao_termino',
 )
+
+_TANK_LOCKED_PREDICTION_FIELDS = ()
 
 _TANK_SHARED_STRUCTURE_FIELDS = (
     'tipo_tanque',
@@ -2234,9 +2233,8 @@ def _set_tank_prediction_value(tank_obj, field_name, incoming_value, allow_overw
                     setattr(tank_obj, field_name, existing_value)
                 except Exception:
                     pass
-            # Locked predictions (ex.: previsao_termino) do not change after the
-            # first defined value. Shared predictions remain mutable and should
-            # update the whole tank group when a different value is submitted.
+            # Shared predictions remain mutable and update the whole tank group
+            # when a different value is submitted.
             if normalized_existing == normalized_incoming:
                 return False
             if not allow_overwrite:

@@ -8939,6 +8939,15 @@
           lbl.appendChild(span);
         }
       } else {
+        try {
+          var tankIdEl = document.getElementById('edit-tanque-id');
+          if (tankIdEl && String(tankIdEl.value || '').trim()) el.disabled = false;
+          el.removeAttribute('aria-disabled');
+          if (title && (
+            title.toLowerCase().indexOf('nao pode mais ser editada') !== -1 ||
+            title.toLowerCase().indexOf('nÃ£o pode mais ser editada') !== -1
+          )) el.removeAttribute('title');
+        } catch(_){ }
         try { if (wrapper) wrapper.classList.remove('rdo-auto-locked'); } catch(_){ }
         if (icon && icon.parentNode) {
           try {
