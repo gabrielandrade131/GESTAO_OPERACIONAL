@@ -25,6 +25,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('login/', views.CustomLoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', views.logout_view, name='logout'),
+    path('api/auth/change-password-mandatory/', views.change_password_mandatory, name='change_password_mandatory'),
     path('', views.home, name='home'),
     path('api/busca-global/', search_views.global_search, name='global_search'),
     path('comercial/propostas/', views_comercial.comercial_home, name='comercial_propostas'),

@@ -144,6 +144,15 @@ def synchro_shell(request):
         alert_count = snapshot['unread_count']
         alerts = snapshot['items']
 
+    password_change_required = False
+    if authenticated:
+        from .models import UserPasswordChangeStatus
+        try:
+            status, created = UserPasswordChangeStatus.objects.get_or_create(user=user)
+            password_change_required = status.needs_password_change
+        except Exception:
+            password_change_required = False
+
     return {
         'can_use_alerts_ai': can_use_ai,
         'can_access_synchro_ai': can_access_synchro_ai,
@@ -156,4 +165,5 @@ def synchro_shell(request):
         'synchro_user_name': full_name,
         'synchro_user_initials': initials,
         'synchro_user_role': role,
+        'password_change_required': password_change_required,
     }

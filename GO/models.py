@@ -5203,3 +5203,22 @@ class PlanejamentoEquipeHistorico(models.Model):
 
     def __str__(self):
         return f'{self.acao} - Planejamento {self.planejamento_id}'
+
+
+class UserPasswordChangeStatus(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='password_change_status',
+    )
+    needs_password_change = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Password Change Status'
+        verbose_name_plural = 'Password Change Statuses'
+
+    def __str__(self):
+        return f"{self.user.username} - needs change: {self.needs_password_change}"
+

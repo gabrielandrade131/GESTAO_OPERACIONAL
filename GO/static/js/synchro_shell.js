@@ -306,5 +306,129 @@
                 if (selected) { event.preventDefault(); selected.click(); }
             }
         });
+
+        // Lógica do Popup Obrigatório de Alteração de Senha
+        var pwdForm = document.getElementById('pwdForceForm');
+        if (pwdForm) {
+            var pwdCurrent = document.getElementById('pwdCurrent');
+            var pwdNew = document.getElementById('pwdNew');
+            var pwdConfirm = document.getElementById('pwdConfirm');
+            var pwdSubmitBtn = document.getElementById('pwdSubmitBtn');
+            var errorContainer = document.getElementById('pwdErrorContainer');
+
+            var reqLength = document.getElementById('req-length');
+            var reqUpper = document.getElementById('req-upper');
+            var reqLower = document.getElementById('req-lower');
+            var reqDigit = document.getElementById('req-digit');
+            var reqSpecial = document.getElementById('req-special');
+            var reqMatch = document.getElementById('req-match');
+
+            // Prevenir fechamento pressionando Esc
+            window.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && document.getElementById('pwdForceOverlay')) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+            }, true);
+
+            // Toggle de visibilidade da senha
+            pwdForm.querySelectorAll('.pwd-toggle-visibility').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    var input = btn.previousElementSibling;
+                    var icon = btn.querySelector('.material-icons');
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        icon.textContent = 'visibility_off';
+                    } else {
+                        input.type = 'password';
+                        icon.textContent = 'visibility';
+                    }
+                });
+            });
+
+            function validatePassword() {
+                var val = pwdNew.value;
+                var confVal = pwdConfirm.value;
+
+                var isLengthValid = val.length >= 8;
+                var isUpperValid = /[A-Z]/.test(val);
+                var isLowerValid = /[a-z]/.test(val);
+                var isDigitValid = /[0-9]/.test(val);
+                var isSpecialValid = /[!@#$%^&*(),.?\":{}|<>\-_+=\[\]\\/;`~]/.test(val);
+                var isMatchValid = val && val === confVal;
+
+                updateRequirement(reqLength, isLengthValid);
+                updateRequirement(reqUpper, isUpperValid);
+                updateRequirement(reqLower, isLowerValid);
+                updateRequirement(reqDigit, isDigitValid);
+                updateRequirement(reqSpecial, isSpecialValid);
+                updateRequirement(reqMatch, isMatchValid);
+
+                var allValid = isLengthValid && isUpperValid && isLowerValid && isDigitValid && isSpecialValid && isMatchValid;
+                pwdSubmitBtn.disabled = !allValid;
+            }
+
+            function updateRequirement(el, isValid) {
+                if (!el) return;
+                var icon = el.querySelector('.material-icons');
+                if (isValid) {
+                    el.classList.add('valid');
+                    if (icon) icon.textContent = 'check_circle';
+                } else {
+                    el.classList.remove('valid');
+                    if (icon) icon.textContent = 'radio_button_unchecked';
+                }
+            }
+
+            pwdNew.addEventListener('input', validatePassword);
+            pwdConfirm.addEventListener('input', validatePassword);
+
+            pwdForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                errorContainer.style.display = 'none';
+                errorContainer.innerHTML = '';
+                pwdSubmitBtn.disabled = true;
+                pwdSubmitBtn.classList.add('loading');
+                var span = pwdSubmitBtn.querySelector('span');
+                var originalText = span.textContent;
+                span.textContent = 'Processando...';
+
+                var formData = new FormData(pwdForm);
+                fetch(pwdForm.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(function (res) {
+                    return res.json().then(function (data) {
+                        return { ok: res.ok, data: data };
+                    });
+                })
+                .then(function (result) {
+                    if (result.ok && result.data.success) {
+                        window.location.reload();
+                    } else {
+                        var errors = result.data.errors || ['Erro desconhecido ao alterar senha.'];
+                        errorContainer.innerHTML = errors.map(function(err) {
+                            return '<div>• ' + err + '</div>';
+                        }).join('');
+                        errorContainer.style.display = 'block';
+                        pwdSubmitBtn.disabled = false;
+                        pwdSubmitBtn.classList.remove('loading');
+                        span.textContent = originalText;
+                    }
+                })
+                .catch(function (err) {
+                    errorContainer.innerHTML = '<div>• Erro de conexão com o servidor. Tente novamente.</div>';
+                    errorContainer.style.display = 'block';
+                    pwdSubmitBtn.disabled = false;
+                    pwdSubmitBtn.classList.remove('loading');
+                    span.textContent = originalText;
+                });
+            });
+        }
     });
 }());

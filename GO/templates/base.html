@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{% static 'css/cadastro.css' %}">
     <link rel="stylesheet" href="{% static 'css/logout.css' %}">
     <link rel="stylesheet" href="{% static 'css/ajuda.css' %}">
-    <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260731h">
+    <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260812a">
     <link rel="shortcut icon" href="{% static 'js/img/ico/favicon.ico' %}" type="image/x-icon">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     {% block extra_head %}{% endblock %}
@@ -26,8 +26,9 @@
         {% include '_synchro_shell.html' %}
         <main>{% block content %}{% endblock %}</main>
     </div>
+
     <script src="{% static 'js/scripts.js' %}"></script>
-    <script src="{% static 'js/synchro_shell.js' %}?v=20260731g"></script>
+    <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

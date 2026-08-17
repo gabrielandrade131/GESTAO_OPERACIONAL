@@ -2935,3 +2935,63 @@ def creditos(request):
 @login_required(login_url='/login/')
 def mobile_app_download(request):
     return render(request, 'mobile_app_download.html', resolve_mobile_release_context(request))
+
+
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth import update_session_auth_hash
+from django.core.exceptions import ValidationError
+from django.views.decorators.http import require_POST
+
+@login_required
+@require_POST
+def change_password_mandatory(request):
+    current_password = request.POST.get('current_password', '')
+    new_password = request.POST.get('new_password', '')
+    confirm_password = request.POST.get('confirm_password', '')
+
+    if not current_password or not new_password or not confirm_password:
+        return JsonResponse({'success': False, 'errors': ['Todos os campos são obrigatórios.']}, status=400)
+
+    if not request.user.check_password(current_password):
+        return JsonResponse({'success': False, 'errors': ['Senha atual incorreta.']}, status=400)
+
+    if new_password != confirm_password:
+        return JsonResponse({'success': False, 'errors': ['A nova senha e a confirmação não coincidem.']}, status=400)
+
+    # Password complexity checks
+    errors = []
+    if len(new_password) < 8:
+        errors.append('A senha deve ter pelo menos 8 caracteres.')
+    if not any(c.isupper() for c in new_password):
+        errors.append('A senha deve conter pelo menos uma letra maiúscula.')
+    if not any(c.islower() for c in new_password):
+        errors.append('A senha deve conter pelo menos uma letra minúscula.')
+    if not any(c.isdigit() for c in new_password):
+        errors.append('A senha deve conter pelo menos um número.')
+    # Check for special characters
+    special_chars = r"[!@#$%^&*(),.?\":{}|<>\-_+=\[\]\\/;`~]"
+    if not re.search(special_chars, new_password):
+        errors.append('A senha deve conter pelo menos um caractere especial (ex: @, $, !, %, *, ?, &).')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    # Django built-in validators
+    try:
+        validate_password(new_password, request.user)
+    except ValidationError as e:
+        return JsonResponse({'success': False, 'errors': e.messages}, status=400)
+
+    # All checks passed, change password
+    request.user.set_password(new_password)
+    request.user.save()
+    update_session_auth_hash(request, request.user)
+
+    # Update needs_password_change status
+    from .models import UserPasswordChangeStatus
+    status, created = UserPasswordChangeStatus.objects.get_or_create(user=request.user)
+    status.needs_password_change = False
+    status.save()
+
+    return JsonResponse({'success': True})
+
