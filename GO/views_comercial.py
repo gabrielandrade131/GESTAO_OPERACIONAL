@@ -2721,6 +2721,36 @@ def _get_onshore_document_revision(proposta, user, document_type):
     )[0]
 
 
+def _sync_pc_onshore_review_quantities(proposta, conteudo):
+    """Persist the PPU quantities so the proposal and its PDF never diverge."""
+    selections = (conteudo or {}).get("itens_financeiros") or {}
+    if not isinstance(selections, dict):
+        raise ValidationError("Os itens financeiros da PPU são inválidos.")
+
+    campos = {str(campo.id): campo for campo in proposta.campos.all()}
+    for campo_id, selection in selections.items():
+        if not isinstance(selection, dict) or selection.get("incluir") is False:
+            continue
+        campo = campos.get(str(campo_id))
+        if campo is None:
+            raise ValidationError("Um dos itens financeiros selecionados não pertence a esta proposta.")
+        try:
+            quantity = Decimal(str(selection.get("quantidade") or ""))
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise ValidationError("Informe uma quantidade inteira válida para cada item selecionado.") from error
+        if quantity <= 0 or quantity != quantity.to_integral_value():
+            raise ValidationError("A quantidade dos itens da PPU deve ser um número inteiro maior que zero.")
+        if campo.quantidade != quantity:
+            campo.quantidade = quantity
+            campo.save(update_fields=("quantidade", "subtotal"))
+
+    # Keep the commercial revenue aligned with the same item values emitted in the PPU.
+    total_items = sum((campo.subtotal or Decimal("0")) for campo in proposta.campos.all())
+    if proposta.estimativo_receita != total_items:
+        proposta.estimativo_receita = total_items
+        proposta.save(update_fields=("estimativo_receita",))
+
+
 def _get_document_revision(proposta, user):
     documento, created = PropostaDocumentoRevisao.objects.get_or_create(
         proposta=proposta,
@@ -2760,8 +2790,8 @@ def comercial_revisao_documento_proposta(request, proposta_id):
             "document_selection_required": True,
             "proposta": _serialize_financeiro(proposta),
             "document_types": (
-                {"value": "PC_ONSHORE", "label": "Proposta Comercial - PC"},
-                {"value": "PT_ONSHORE", "label": "Proposta Técnica - PT"},
+                {"value": "PC_ONSHORE", "label": "Documento PC"},
+                {"value": "PT_ONSHORE", "label": "Documento PT"},
             ),
         })
     if not _is_offshore_proposal(proposta):
@@ -2778,14 +2808,20 @@ def comercial_salvar_revisao_documento_proposta(request, proposta_id):
     proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos"), proposta=proposta_id)
     payload = _read_request_json(request)
     if _is_onshore_proposal(proposta):
+        document_type = str(payload.get("document_type") or "")
         try:
-            documento = _get_onshore_document_revision(proposta, request.user, str(payload.get("document_type") or ""))
+            documento = _get_onshore_document_revision(proposta, request.user, document_type)
         except ValidationError as error:
             return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
         documento.introducao_objetivo = str(payload.get("introducao") or "").strip()
         documento.procedimento_titulo = str(payload.get("procedimentoTitulo") or "").strip()
         if isinstance(payload.get("conteudo"), dict):
             documento.conteudo_revisao = payload["conteudo"]
+            if document_type == PropostaDocumentoRevisao.TIPO_PC_ONSHORE:
+                try:
+                    _sync_pc_onshore_review_quantities(proposta, documento.conteudo_revisao)
+                except ValidationError as error:
+                    return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
         documento.atualizado_por = request.user
         documento.save()
         documento.linhas.all().delete()

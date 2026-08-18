@@ -15,7 +15,7 @@ import tempfile
 from django.conf import settings
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
@@ -86,6 +86,18 @@ def _format_cover_month(value):
     if not isinstance(value, date):
         return ""
     return f"{PORTUGUESE_MONTHS[value.month - 1].capitalize()} / {value.year}"
+
+
+def _format_document_reference_date(value):
+    """Format the manually reviewed technical-proposal date for the PC text."""
+    raw_value = _clean(value)
+    if not raw_value:
+        return ""
+    try:
+        parsed = date.fromisoformat(raw_value)
+    except ValueError:
+        return raw_value
+    return f"{parsed.day} de {PORTUGUESE_MONTHS[parsed.month - 1]} de {parsed.year}"
 
 
 def _proposal_kind(proposal):
@@ -326,7 +338,7 @@ def _fill_pc_onshore_financial_table(document, items, revision, serialized):
         )
 
 
-def _apply_pc_onshore_revision(document, revision, serialized, items):
+def _apply_pc_onshore_revision(document, revision, serialized, items, *, show_variable_highlights=False):
     """Apply only the PC Onshore review content to its official DOCX template."""
     content = (revision or {}).get("conteudo") or {}
     paragraphs = document.paragraphs
@@ -343,18 +355,26 @@ def _apply_pc_onshore_revision(document, revision, serialized, items):
                 presentation = f"{presentation} {service_complement}"
             _set_paragraph_text(paragraphs[22], presentation)
 
-        if content.get("possui_pt"):
-            reference = " ".join(
-                value for value in (
-                    _clean(content.get("pt_identificacao")),
-                    _clean(content.get("pt_revisao")),
-                    _clean(content.get("pt_data")),
-                ) if value
-            )
-            if reference:
-                _set_paragraph_text(paragraphs[37], f"Esta proposta comercial está vinculada à Proposta Técnica {reference}.")
-        elif _clean(content.get("introducao_sem_pt")):
-            _set_paragraph_text(paragraphs[37], _clean(content.get("introducao_sem_pt")))
+        reference_date = _format_document_reference_date(content.get("pt_data"))
+        if not reference_date:
+            raise OfficialProposalPdfError("Informe a data da Proposta Técnica antes de gerar o documento.")
+        reference = " - ".join(
+            value for value in (
+                f"{_clean(serialized.get('numeroProposta'))} PT",
+                _clean(serialized.get("empresa")),
+                _clean(serialized.get("servico") or serialized.get("escopo")),
+                _clean(serialized.get("unidade")),
+            ) if value
+        )
+        _set_paragraph_with_highlight(
+            paragraphs[37],
+            "Para esta proposta comercial o escopo da proposta, detalhamentos técnicos, prazo de "
+            "execução e regime de trabalho, premissas técnicas, obrigações da contratante, obrigações "
+            "da contratada e itens fora do escopo estão alinhados com a Proposta Técnica “",
+            reference,
+            f"” datada de {reference_date}, no qual um documento complementa o outro e não devem ser analisados separadamente.",
+            show_highlight=show_variable_highlights,
+        )
 
         deadline = _clean(content.get("prazo"))
         if deadline:
@@ -412,6 +432,25 @@ def _set_paragraph_text(paragraph, value):
         paragraph.runs[0].text = _clean(value)
         for run in paragraph.runs[1:]:
             run.text = ""
+
+
+def _set_paragraph_with_highlight(paragraph, prefix, highlighted, suffix, *, show_highlight):
+    """Replace a paragraph while preserving its base run formatting."""
+    base_run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
+    base_properties = deepcopy(base_run._r.rPr) if base_run._r.rPr is not None else None
+    base_run.text = _clean(prefix)
+    for run in paragraph.runs[1:]:
+        run.text = ""
+
+    variable_run = paragraph.add_run(_clean(highlighted))
+    if base_properties is not None:
+        variable_run._r.insert(0, deepcopy(base_properties))
+    if show_highlight:
+        variable_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+
+    ending_run = paragraph.add_run(_clean(suffix))
+    if base_properties is not None:
+        ending_run._r.insert(0, deepcopy(base_properties))
 
 
 def _apply_offshore_revision(document, revision):
@@ -597,7 +636,13 @@ def generate_official_proposal_pdf(
         elif template_key == "pc_onshore":
             if not document_revision:
                 raise OfficialProposalPdfError("Não foi possível carregar a revisão da Proposta Comercial Onshore.")
-            _apply_pc_onshore_revision(document, document_revision, serialized, normalized_items)
+            _apply_pc_onshore_revision(
+                document,
+                document_revision,
+                serialized,
+                normalized_items,
+                show_variable_highlights=preserve_variable_highlights,
+            )
         if not preserve_variable_highlights:
             _remove_text_highlights(document)
         _assert_no_placeholders(document)

@@ -3969,6 +3969,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function previewProposalPdf(endpoint, finalEndpoint, filename) {
+        const loading = document.createElement("div");
+        loading.className = "proposal-preview-loading";
+        loading.setAttribute("role", "status");
+        loading.setAttribute("aria-live", "polite");
+        loading.innerHTML = `<span class="proposal-preview-loading__spinner" aria-hidden="true"></span><div><strong>Preparando pré-visualização</strong><span>Gerando o documento para conferência...</span></div>`;
+        document.body.appendChild(loading);
+        try {
         const response = await fetch(endpoint, {
             credentials: "same-origin",
             headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -4054,6 +4061,9 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.appendChild(viewer);
         window.addEventListener("resize", updateZoom);
         renderPage();
+        } finally {
+            loading.remove();
+        }
     }
 
     async function downloadProposalPdf(endpoint, filename, label = "Proposta") {
@@ -4138,8 +4148,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openOnshoreDocumentSelector(payload, proposalId, pdfEndpoint, filename) {
         const modal = document.createElement("section");
-        modal.className = "document-type-selector";
-        modal.innerHTML = `<div class="document-type-selector__dialog" role="dialog" aria-modal="true" aria-label="Selecionar documento Onshore"><header><div><h2>PDF da proposta</h2><p>Qual documento deseja revisar e gerar?</p></div><button type="button" data-onshore-document-close aria-label="Fechar">×</button></header><main>${(payload.document_types || []).map((documentType) => `<article><h3>${escapeHtml(documentType.label)}</h3><p>${documentType.value === "PC_ONSHORE" ? "Documento comercial" : "Documento técnico"}</p><button type="button" data-onshore-document-type="${escapeHtml(documentType.value)}">Revisar ${documentType.value === "PC_ONSHORE" ? "Proposta Comercial" : "Proposta Técnica"}</button></article>`).join("")}</main><footer><button type="button" data-onshore-document-close>Cancelar</button></footer></div>`;
+        modal.className = "document-type-selector document-type-selector--quick";
+        modal.innerHTML = `<div class="document-type-selector__dialog" role="dialog" aria-modal="true" aria-label="Selecionar documento da proposta"><p>Qual documento deseja revisar?</p><div class="document-type-selector__choices">${(payload.document_types || []).map((documentType) => `<button class="document-type-selector__choice" type="button" data-onshore-document-type="${escapeHtml(documentType.value)}" aria-label="Revisar ${escapeHtml(documentType.label)}"><span class="material-icons" aria-hidden="true">${documentType.value === "PC_ONSHORE" ? "description" : "assignment"}</span><strong>${escapeHtml(documentType.label)}</strong></button>`).join("")}</div></div>`;
         document.body.appendChild(modal);
         document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
         const close = () => {
@@ -4147,7 +4157,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll");
         };
         modal.addEventListener("click", async (event) => {
-            if (event.target.closest("[data-onshore-document-close]")) {
+            if (event.target === modal) {
                 close();
                 return;
             }
@@ -4179,22 +4189,46 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
         modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(review.revisaoDocumental || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais <small>Automático</small></h3><div class="document-review__readonly-grid"><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa)}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo)}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section><section class="document-review__section"><h3>Carta / serviço <small>Revisão documental</small></h3><label>Complemento do serviço<textarea data-pc-service-complement placeholder="Use somente se o serviço exigir complemento na carta.">${escapeHtml(content.complemento_servico || "")}</textarea></label></section><section class="document-review__section"><h3>Referência à Proposta Técnica <small>Revisão documental</small></h3><label class="document-review__checkbox"><input type="checkbox" data-pc-has-pt ${content.possui_pt ? "checked" : ""}> Esta PC possui uma Proposta Técnica relacionada</label><div data-pc-pt-fields class="document-review__line-fields ${content.possui_pt ? "" : "is-hidden"}"><label>Identificação da PT<input data-pc-pt-id value="${escapeHtml(content.pt_identificacao || "")}"></label><label>Data da PT<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}"></label><label>REV da PT<input data-pc-pt-revision value="${escapeHtml(content.pt_revisao || "")}"></label></div><label>Texto de introdução sem PT<textarea data-pc-no-pt-text placeholder="Obrigatório somente se não houver PT relacionada.">${escapeHtml(content.introducao_sem_pt || "")}</textarea></label></section><section class="document-review__section"><h3>Proposta financeira <small>Automático a partir da proposta</small></h3><div class="document-review__financial">${(review.financeiro || []).map((item) => `<div><b>${escapeHtml(item.descricao)}</b><span>Qtd. ${escapeHtml(item.quantidade)}</span><strong>R$ ${escapeHtml(item.preco_unitario)}</strong></div>`).join("") || "Nenhum item financeiro cadastrado."}</div></section><section class="document-review__section"><h3>Prazo e validade <small>Revisão documental</small></h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pc-deadline value="${escapeHtml(content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 60 dias"></label><label>Validade em dias<input type="number" min="1" data-pc-validity value="${escapeHtml(content.validade_dias || "30")}"></label></div><label>Texto complementar<textarea data-pc-deadline-note>${escapeHtml(content.prazo_complementar || "Mobilização a combinar, após assinatura de contrato.")}</textarea></label></section><section class="document-review__section"><h3>Revisão final</h3><p>Os campos comerciais são preenchidos automaticamente; confirme os campos documentais antes da pré-visualização.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
         document.body.appendChild(modal);
+        const automaticTechnicalReference = [
+            payload.proposta.numeroProposta,
+            payload.proposta.empresa,
+            payload.proposta.servico || payload.proposta.escopo,
+            payload.proposta.unidade,
+        ].filter(Boolean).join(" - ");
+        const legacyLetterSection = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.includes("Carta / serviço"));
+        if (legacyLetterSection) {
+            legacyLetterSection.outerHTML = `<section class="document-review__section document-review__technical-reference"><h3>Referência à Proposta Técnica <small>Dados para a introdução</small></h3><p class="document-review__notice">A identificação é formada automaticamente a partir dos dados comerciais da proposta.</p><div class="document-review__generated-reference"><span>Nº da proposta - Cliente - Serviço - Unidade</span><strong>${escapeHtml(automaticTechnicalReference || "Dados da proposta não informados")}</strong></div><label>Data da Proposta Técnica<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}" required></label></section>`;
+        }
+        const legacyTechnicalReference = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.startsWith("Referência à Proposta Técnica") && !section.classList.contains("document-review__technical-reference"));
+        legacyTechnicalReference?.remove();
         const financialSection = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.includes("Proposta financeira"));
         if (financialSection) {
             const selectedItems = content.itens_financeiros || {};
-            financialSection.insertAdjacentHTML("afterbegin", `<div class="document-review__line-fields document-review__financial-meta"><label>Escopo do PPU<textarea data-pc-financial-scope placeholder="Descreva o escopo que será exibido na planilha de preços.">${escapeHtml(content.escopo_ppu || "")}</textarea></label><label>Prazo do PPU<input data-pc-financial-deadline value="${escapeHtml(content.prazo_ppu || content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 48 horas"></label></div><p class="document-review__notice">Cliente e ID são preenchidos pela proposta. Selecione os itens e ajuste apenas a quantidade para esta planilha.</p><div class="document-review__financial-select">${(review.financeiro || []).map((item, index) => { const selected = selectedItems[item.id] || selectedItems[String(index)] || {}; return `<label><input type="checkbox" data-pc-financial-item data-item-key="${escapeHtml(String(item.id || index))}" ${selected.incluir !== false ? "checked" : ""}><span>${escapeHtml(item.descricao)}</span><input type="number" min="0.01" step="0.01" data-pc-financial-quantity value="${escapeHtml(selected.quantidade || item.quantidade || "1")}" aria-label="Quantidade de ${escapeHtml(item.descricao)}"></label>`; }).join("")}</div>`);
+            const asIntegerQuantity = (value) => Math.max(1, Math.round(Number(String(value || "1").replace(",", ".")) || 1));
+            financialSection.insertAdjacentHTML("afterbegin", `<div class="document-review__line-fields document-review__financial-meta"><label>Escopo do PPU<textarea data-pc-financial-scope placeholder="Descreva o escopo que será exibido na planilha de preços.">${escapeHtml(content.escopo_ppu || "")}</textarea></label><label>Prazo do PPU<input data-pc-financial-deadline value="${escapeHtml(content.prazo_ppu || content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 48 horas"></label></div><p class="document-review__notice">Cliente e ID são preenchidos pela proposta. A quantidade aceita somente números inteiros e também atualiza o item comercial.</p><div class="document-review__financial-select">${(review.financeiro || []).map((item, index) => { const selected = selectedItems[item.id] || selectedItems[String(index)] || {}; return `<label><input type="checkbox" data-pc-financial-item data-item-key="${escapeHtml(String(item.id || index))}" ${selected.incluir !== false ? "checked" : ""}><span>${escapeHtml(item.descricao)}</span><input type="number" min="1" step="1" inputmode="numeric" data-pc-financial-quantity value="${escapeHtml(String(asIntegerQuantity(selected.quantidade || item.quantidade || 1)))}" aria-label="Quantidade de ${escapeHtml(item.descricao)}"></label>`; }).join("")}</div>`);
         }
+        const resizeReviewTextarea = (textarea) => {
+            textarea.style.height = "42px";
+            textarea.style.height = `${Math.max(42, textarea.scrollHeight)}px`;
+        };
+        modal.querySelectorAll("textarea").forEach(resizeReviewTextarea);
         const close = () => { modal.remove(); document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll"); };
         const save = async (notify = true) => {
-            const hasPt = modal.querySelector("[data-pc-has-pt]").checked;
             const itensFinanceiros = {};
             modal.querySelectorAll("[data-pc-financial-item]").forEach((checkbox, index) => { itensFinanceiros[checkbox.dataset.itemKey || index] = { incluir: checkbox.checked, quantidade: checkbox.closest("label").querySelector("[data-pc-financial-quantity]").value }; });
-            const conteudo = { complemento_servico: modal.querySelector("[data-pc-service-complement]").value.trim(), possui_pt: hasPt, pt_identificacao: modal.querySelector("[data-pc-pt-id]").value.trim(), pt_data: modal.querySelector("[data-pc-pt-date]").value, pt_revisao: modal.querySelector("[data-pc-pt-revision]").value.trim(), introducao_sem_pt: modal.querySelector("[data-pc-no-pt-text]").value.trim(), prazo: modal.querySelector("[data-pc-deadline]").value.trim(), validade_dias: modal.querySelector("[data-pc-validity]").value, prazo_complementar: modal.querySelector("[data-pc-deadline-note]").value.trim(), escopo_ppu: modal.querySelector("[data-pc-financial-scope]").value.trim(), prazo_ppu: modal.querySelector("[data-pc-financial-deadline]").value.trim(), itens_financeiros: itensFinanceiros };
+            const conteudo = { possui_pt: true, pt_data: modal.querySelector("[data-pc-pt-date]").value, prazo: modal.querySelector("[data-pc-deadline]").value.trim(), validade_dias: modal.querySelector("[data-pc-validity]").value, prazo_complementar: modal.querySelector("[data-pc-deadline-note]").value.trim(), escopo_ppu: modal.querySelector("[data-pc-financial-scope]").value.trim(), prazo_ppu: modal.querySelector("[data-pc-financial-deadline]").value.trim(), itens_financeiros: itensFinanceiros };
             const response = await fetchJson(buildEndpoint(state.endpoints.documentReviewSavePattern, proposalId), { method: "POST", body: JSON.stringify({ document_type: "PC_ONSHORE", conteudo }) });
             if (notify) showNotification({ type: "success", title: "Rascunho salvo", message: "A revisão da Proposta Comercial Onshore foi salva." });
             return response;
         };
-        modal.addEventListener("change", (event) => { if (event.target.matches("[data-pc-has-pt]")) modal.querySelector("[data-pc-pt-fields]").classList.toggle("is-hidden", !event.target.checked); });
+        modal.addEventListener("change", (event) => {
+            if (!event.target.matches("[data-pc-financial-quantity]")) return;
+            const quantity = Number(event.target.value);
+            event.target.value = String(Number.isInteger(quantity) && quantity > 0 ? quantity : 1);
+        });
+        modal.addEventListener("input", (event) => {
+            if (event.target.matches("textarea")) resizeReviewTextarea(event.target);
+        });
         const documentModeUrl = (mode, asImages = false) => `${pdfEndpoint}${pdfEndpoint.includes("?") ? "&" : "?"}document_mode=${mode}${asImages ? "&preview_format=images" : ""}`;
         modal.addEventListener("click", async (event) => { if (event.target.closest("[data-document-close]")) return close(); if (event.target.closest("[data-document-save]")) { try { await save(); } catch (error) { showNotification({ type: "warning", title: "Não foi possível salvar", message: error.message }); } } if (event.target.closest("[data-document-preview]")) { try { await save(false); await previewProposalPdf(documentModeUrl("preview", true), documentModeUrl("final"), filename); } catch (error) { showNotification({ type: "warning", title: "Pré-visualização indisponível", message: error.message }); } } });
     }
