@@ -2684,12 +2684,41 @@ def _is_offshore_proposal(proposta):
     return str(getattr(getattr(proposta, "tipo_operacao", None), "tipo_operacao", "")).strip().casefold() == "offshore"
 
 
+def _is_onshore_proposal(proposta):
+    """Identify the persisted operation choice without relying on its display case."""
+    operation = str(getattr(getattr(proposta, "tipo_operacao", None), "tipo_operacao", ""))
+    normalized = unicodedata.normalize("NFKD", operation).encode("ascii", "ignore").decode("ascii")
+    return normalized.strip().casefold() == "onshore"
+
+
 def _document_revision_payload(documento, proposta):
     linhas = {kind: [] for kind in ("PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO")}
     for linha in documento.linhas.all():
         linhas[linha.tipo].append({"id": linha.id, "descricao": linha.descricao, "quantidade": linha.quantidade, "ordem": linha.ordem})
     financeiro = [{"descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
-    return {"id": documento.id, "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro}
+    return {"id": documento.id, "tipoDocumento": documento.tipo_documento, "revisaoDocumental": f"{documento.revisao_documental:02d}", "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "conteudo": documento.conteudo_revisao or {}, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro}
+
+
+def _get_onshore_document_revision(proposta, user, document_type):
+    if document_type not in {PropostaDocumentoRevisao.TIPO_PC_ONSHORE, PropostaDocumentoRevisao.TIPO_PT_ONSHORE}:
+        raise ValidationError("Selecione um tipo de documento Onshore válido.")
+    defaults = {
+        "criado_por": user,
+        "atualizado_por": user,
+        "revisao_documental": 0,
+        "conteudo_revisao": {
+            "prazo": str(getattr(proposta, "tempo_contrato_dias", "") or ""),
+            "validade_dias": "30",
+            "referencias": [],
+            "sem_referencias": False,
+        },
+    }
+    return PropostaDocumentoRevisao.objects.get_or_create(
+        proposta=proposta,
+        numero_revisao=proposta.revisao,
+        tipo_documento=document_type,
+        defaults=defaults,
+    )[0]
 
 
 def _get_document_revision(proposta, user):
@@ -2716,6 +2745,25 @@ def _get_document_revision(proposta, user):
 @require_GET
 def comercial_revisao_documento_proposta(request, proposta_id):
     proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos", "documentos_revisados__linhas"), proposta=proposta_id)
+    if _is_onshore_proposal(proposta):
+        document_type = request.GET.get("document_type", "").strip()
+        if document_type:
+            try:
+                documento = _get_onshore_document_revision(proposta, request.user, document_type)
+            except ValidationError as error:
+                return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
+            return JsonResponse({"success": True, "revisao": _document_revision_payload(documento, proposta), "proposta": _serialize_financeiro(proposta)})
+        # Onshore always starts with an explicit PC/PT decision. Returning this
+        # response prevents the browser from falling back to a direct download.
+        return JsonResponse({
+            "success": True,
+            "document_selection_required": True,
+            "proposta": _serialize_financeiro(proposta),
+            "document_types": (
+                {"value": "PC_ONSHORE", "label": "Proposta Comercial - PC"},
+                {"value": "PT_ONSHORE", "label": "Proposta Técnica - PT"},
+            ),
+        })
     if not _is_offshore_proposal(proposta):
         return JsonResponse({"success": False, "message": "A revisão documental controlada está disponível apenas para propostas Offshore."}, status=400)
     documento = _get_document_revision(proposta, request.user)
@@ -2728,6 +2776,33 @@ def comercial_revisao_documento_proposta(request, proposta_id):
 @transaction.atomic
 def comercial_salvar_revisao_documento_proposta(request, proposta_id):
     proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos"), proposta=proposta_id)
+    payload = _read_request_json(request)
+    if _is_onshore_proposal(proposta):
+        try:
+            documento = _get_onshore_document_revision(proposta, request.user, str(payload.get("document_type") or ""))
+        except ValidationError as error:
+            return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
+        documento.introducao_objetivo = str(payload.get("introducao") or "").strip()
+        documento.procedimento_titulo = str(payload.get("procedimentoTitulo") or "").strip()
+        if isinstance(payload.get("conteudo"), dict):
+            documento.conteudo_revisao = payload["conteudo"]
+        documento.atualizado_por = request.user
+        documento.save()
+        documento.linhas.all().delete()
+        for kind, rows in (payload.get("linhas") or {}).items():
+            if kind not in {"PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO"}:
+                continue
+            for order, row in enumerate(rows or [], start=1):
+                descricao = str((row or {}).get("descricao") or "").strip()
+                if descricao:
+                    PropostaDocumentoLinha.objects.create(
+                        documento=documento,
+                        tipo=kind,
+                        ordem=order,
+                        descricao=descricao,
+                        quantidade=str((row or {}).get("quantidade") or "").strip(),
+                    )
+        return JsonResponse({"success": True, "message": "Rascunho documental salvo.", "revisao": _document_revision_payload(documento, proposta)})
     if not _is_offshore_proposal(proposta):
         return JsonResponse({"success": False, "message": "A revisão documental está disponível apenas para Offshore."}, status=400)
     payload = _read_request_json(request)

@@ -22,9 +22,9 @@ class OfficialProposalPdfError(Exception):
 
 TEMPLATE_DIR = Path(settings.BASE_DIR) / "GO" / "docs" / "propostas_oficiais"
 TEMPLATE_FILES = {
-    "pc_offshore": "xxxx.xx.xx - Proposta padrão - Offshore.docx",
-    "pc_onshore": "XXXX.XX.XX_PC - Onshore.docx",
-    "pt_onshore": "XXXX.XX.XX_PT - Onshore.docx",
+    "pc_offshore": Path("Offshore") / "xxxx.xx.xx - Proposta padrão - Offshore.docx",
+    "pc_onshore": Path("Onshore_PC") / "XXXX.XX.XX_PC - Onshore.docx",
+    "pt_onshore": Path("Onshore_PT") / "XXXX.XX.XX_PT - Onshore.docx",
 }
 
 PORTUGUESE_MONTHS = (
@@ -33,8 +33,37 @@ PORTUGUESE_MONTHS = (
 )
 
 
+# Prefer the organized document directories, while keeping a safe fallback for
+# deployments that have not yet moved the legacy templates from the root.
+TEMPLATE_ROOT_FALLBACKS = {
+    "pc_offshore": "xxxx.xx.xx - Proposta padrão - Offshore.docx",
+    "pc_onshore": "XXXX.XX.XX_PC - Onshore.docx",
+    "pt_onshore": "XXXX.XX.XX_PT - Onshore.docx",
+}
+
+
 def _clean(value):
     return str(value or "").strip()
+
+
+def resolve_official_template_path(template_key):
+    """Resolve a bundled official template without using an absolute path."""
+    try:
+        preferred_path = TEMPLATE_DIR / TEMPLATE_FILES[template_key]
+        legacy_name = TEMPLATE_ROOT_FALLBACKS[template_key]
+    except KeyError as exc:
+        raise OfficialProposalPdfError("O tipo de documento oficial informado não é suportado.") from exc
+
+    if preferred_path.exists():
+        return preferred_path
+
+    legacy_path = TEMPLATE_DIR / legacy_name
+    if legacy_path.exists():
+        return legacy_path
+
+    raise OfficialProposalPdfError(
+        f"O template oficial '{legacy_name}' não foi encontrado em {TEMPLATE_DIR}."
+    )
 
 
 def _format_currency(value):
@@ -213,7 +242,7 @@ def _apply_offshore_revision(document, revision):
 
 def load_offshore_template_draft():
     """Extract editable defaults from the immutable Offshore template."""
-    path = TEMPLATE_DIR / TEMPLATE_FILES["pc_offshore"]
+    path = resolve_official_template_path("pc_offshore")
     document = Document(path)
     paragraphs = document.paragraphs
     def rows(table_index, description_col, quantity_col=None):
@@ -293,9 +322,7 @@ def _convert_with_word(docx_path, output_dir):
 def generate_official_proposal_pdf(proposal, *, serialized, items, document_revision=None):
     """Fill a private DOCX copy and return the generated PDF bytes and filename."""
     template_key = _proposal_kind(proposal)
-    template_path = TEMPLATE_DIR / TEMPLATE_FILES[template_key]
-    if not template_path.exists():
-        raise OfficialProposalPdfError("O template oficial selecionado não foi encontrado.")
+    template_path = resolve_official_template_path(template_key)
 
     emission_date = proposal.data_emissao
     number = _clean(serialized.get("numeroProposta"))

@@ -5022,6 +5022,8 @@ class PropostaDocumentoRevisao(models.Model):
     """Conteúdo operacional revisável de uma proposta comercial Offshore."""
 
     TIPO_OFFSHORE = "PC_OFFSHORE"
+    TIPO_PC_ONSHORE = "PC_ONSHORE"
+    TIPO_PT_ONSHORE = "PT_ONSHORE"
     STATUS_RASCUNHO = "RASCUNHO"
     STATUS_PRONTA = "PRONTA"
     STATUS_GERADA = "GERADA"
@@ -5033,10 +5035,13 @@ class PropostaDocumentoRevisao(models.Model):
 
     proposta = models.ForeignKey(Financeiro, on_delete=models.CASCADE, related_name="documentos_revisados")
     numero_revisao = models.PositiveIntegerField()
+    revisao_documental = models.PositiveIntegerField(default=0)
     tipo_documento = models.CharField(max_length=30, default=TIPO_OFFSHORE)
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default=STATUS_RASCUNHO)
     introducao_objetivo = models.TextField(blank=True, default="")
     procedimento_titulo = models.CharField(max_length=255, blank=True, default="")
+    # Campos específicos de PC/PT sem duplicar a estrutura documental Offshore.
+    conteudo_revisao = models.JSONField(default=dict, blank=True)
     premissas_confirmadas = models.BooleanField(default=False)
     obrigacoes_confirmadas = models.BooleanField(default=False)
     procedimento_confirmado = models.BooleanField(default=False)

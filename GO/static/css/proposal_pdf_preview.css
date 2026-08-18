@@ -127,3 +127,84 @@
         height: 25px;
     }
 }
+
+/* PC Onshore: automatic proposal data and revision fields stay legible. */
+.document-review-modal--onshore-pc .document-review__general small,
+.document-review-modal--onshore-pc .document-review__section h3 small {
+    display: inline-block;
+    margin-left: 8px;
+    color: #6c7b90;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.document-review-modal--onshore-pc .document-review__readonly-grid,
+.document-review-modal--onshore-pc .document-review__line-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 18px;
+    margin-top: 14px;
+}
+
+.document-review-modal--onshore-pc .document-review__readonly-grid span {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: #1b2e49;
+    overflow-wrap: anywhere;
+}
+
+.document-review-modal--onshore-pc .document-review__readonly-grid b {
+    color: #66768d;
+    font-size: 12px;
+}
+
+.document-review-modal--onshore-pc label {
+    display: grid;
+    gap: 7px;
+    color: #33445f;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.document-review-modal--onshore-pc .document-review__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 12px 0;
+}
+
+.document-review-modal--onshore-pc .document-review__checkbox input {
+    width: auto;
+}
+
+.document-review-modal--onshore-pc .document-review__financial {
+    display: grid;
+    gap: 0;
+    margin-top: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    overflow: hidden;
+}
+
+.document-review-modal--onshore-pc .document-review__financial div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px 140px;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e9eef4;
+}
+
+.document-review-modal--onshore-pc .document-review__financial div:last-child { border-bottom: 0; }
+.document-review-modal--onshore-pc .document-review__financial span { color: #66768d; }
+.document-review-modal--onshore-pc .document-review__financial strong { text-align: right; }
+
+@media (max-width: 700px) {
+    .document-review-modal--onshore-pc .document-review__readonly-grid,
+    .document-review-modal--onshore-pc .document-review__line-fields,
+    .document-review-modal--onshore-pc .document-review__financial div {
+        grid-template-columns: 1fr;
+    }
+
+    .document-review-modal--onshore-pc .document-review__financial strong { text-align: left; }
+}
