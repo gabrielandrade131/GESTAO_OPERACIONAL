@@ -2695,7 +2695,7 @@ def _document_revision_payload(documento, proposta):
     linhas = {kind: [] for kind in ("PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO")}
     for linha in documento.linhas.all():
         linhas[linha.tipo].append({"id": linha.id, "descricao": linha.descricao, "quantidade": linha.quantidade, "ordem": linha.ordem})
-    financeiro = [{"descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
+    financeiro = [{"id": campo.id, "descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
     return {"id": documento.id, "tipoDocumento": documento.tipo_documento, "revisaoDocumental": f"{documento.revisao_documental:02d}", "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "conteudo": documento.conteudo_revisao or {}, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro}
 
 
@@ -2844,7 +2844,7 @@ def _render_pdf_preview_pages(pdf_content):
         raise OfficialProposalPdfError("Não foi possível preparar a pré-visualização do documento.") from error
 
 
-def _generate_official_proposal_response(proposta_id, mode="", preview_as_images=False):
+def _generate_official_proposal_response(proposta_id, mode="", document_type="", preview_as_images=False):
     """Build the approved proposal document and expose it as a PDF response."""
     proposta = get_object_or_404(
         Financeiro.objects.select_related(
@@ -2864,6 +2864,7 @@ def _generate_official_proposal_response(proposta_id, mode="", preview_as_images
         serialized = _serialize_financeiro(proposta)
         documento = None
         revisao_payload = None
+        template_key = None
         if _is_offshore_proposal(proposta):
             documento = PropostaDocumentoRevisao.objects.filter(
                 proposta=proposta,
@@ -2879,11 +2880,31 @@ def _generate_official_proposal_response(proposta_id, mode="", preview_as_images
                 if not all(getattr(documento, field) for field in required):
                     raise OfficialProposalPdfError("Confirme todas as seções da revisão documental antes de gerar o PDF oficial.")
             revisao_payload = _document_revision_payload(documento, proposta)
+        elif _is_onshore_proposal(proposta):
+            type_to_template = {
+                PropostaDocumentoRevisao.TIPO_PC_ONSHORE: "pc_onshore",
+                PropostaDocumentoRevisao.TIPO_PT_ONSHORE: "pt_onshore",
+            }
+            if document_type not in type_to_template:
+                raise OfficialProposalPdfError("Escolha a Proposta Comercial (PC) ou a Proposta Técnica (PT) antes de gerar o documento.")
+            if mode not in {"preview", "final"}:
+                raise OfficialProposalPdfError("Abra e revise o documento Onshore antes de gerar o PDF.")
+            documento = PropostaDocumentoRevisao.objects.filter(
+                proposta=proposta,
+                numero_revisao=proposta.revisao,
+                tipo_documento=document_type,
+            ).prefetch_related("linhas").first()
+            if not documento:
+                raise OfficialProposalPdfError("Não foi possível carregar a revisão documental selecionada. O PDF não foi gerado.")
+            revisao_payload = _document_revision_payload(documento, proposta)
+            template_key = type_to_template[document_type]
         pdf_content, filename = generate_official_proposal_pdf(
             proposta,
             serialized=serialized,
             items=serialized.get("campos") or [],
             document_revision=revisao_payload,
+            template_key=template_key,
+            preserve_variable_highlights=mode != "final",
         )
         if preview_as_images:
             confirmations = (
@@ -2893,7 +2914,7 @@ def _generate_official_proposal_response(proposta_id, mode="", preview_as_images
                 ("premissas_confirmadas", "Premissas"),
                 ("obrigacoes_confirmadas", "Obrigações da contratante"),
             )
-            pending_sections = [label for field, label in confirmations if documento and not getattr(documento, field)]
+            pending_sections = [label for field, label in confirmations if documento and _is_offshore_proposal(proposta) and not getattr(documento, field)]
             return JsonResponse({
                 "success": True,
                 "pages": _render_pdf_preview_pages(pdf_content),
@@ -2931,6 +2952,7 @@ def comercial_gerar_pdf_proposta(request, proposta_id):
     return _generate_official_proposal_response(
         proposta_id,
         request.GET.get("document_mode", ""),
+        request.GET.get("document_type", ""),
         preview_as_images=request.GET.get("preview_format") == "images",
     )
 

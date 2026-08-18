@@ -14,6 +14,11 @@ import tempfile
 
 from django.conf import settings
 from docx import Document
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
 
 
 class OfficialProposalPdfError(Exception):
@@ -158,6 +163,21 @@ def _replace_document_text(document, replacements):
                 _replace_in_runs(paragraph, source, target)
 
 
+def _remove_text_highlights(document):
+    """Remove Word text highlights from the issued PDF without touching table fills."""
+    containers = [document]
+    for section in document.sections:
+        containers.extend((section.header, section.footer))
+    for container in containers:
+        for paragraph in _paragraphs(container):
+            for run in paragraph.runs:
+                properties = run._r.rPr
+                if properties is None:
+                    continue
+                for highlight in list(properties.findall(qn("w:highlight"))):
+                    properties.remove(highlight)
+
+
 def _set_cell_text(cell, value):
     paragraph = cell.paragraphs[0]
     if paragraph.runs:
@@ -166,6 +186,186 @@ def _set_cell_text(cell, value):
             run.text = ""
     else:
         paragraph.add_run(_clean(value))
+
+
+def _set_row_cells(row, values):
+    """Fill a row without replacing its XML, preserving the official table style."""
+    for column, value in enumerate(values):
+        if column < len(row.cells):
+            _set_cell_text(row.cells[column], value)
+
+
+def _add_cell_logo(cell):
+    """Place the approved Ambipar mark in the PPU header when the asset exists."""
+    logo_path = Path(settings.BASE_DIR) / "GO" / "static" / "js" / "img" / "Logo_Preto.png"
+    if not logo_path.exists():
+        return
+    paragraph = cell.paragraphs[0]
+    for run in paragraph.runs:
+        run.text = ""
+    paragraph.alignment = 1
+    paragraph.add_run().add_picture(str(logo_path), width=Inches(0.85))
+
+
+def _set_cell_shading(cell, color):
+    properties = cell._tc.get_or_add_tcPr()
+    shading = properties.find(qn("w:shd"))
+    if shading is None:
+        shading = OxmlElement("w:shd")
+        properties.append(shading)
+    shading.set(qn("w:fill"), color)
+
+
+def _set_ppu_cell_text(cell, value, *, size, bold=False, color="000000", alignment=None):
+    """Set PPU content with the typography used by the official price sheet."""
+    _set_cell_text(cell, value)
+    paragraph = cell.paragraphs[0]
+    if alignment is not None:
+        paragraph.alignment = alignment
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    for run in paragraph.runs:
+        run.font.name = "Arial"
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), "Arial")
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        run.font.color.rgb = RGBColor.from_string(color)
+
+
+def _style_ppu_row(row, *, size, bold=False, color="000000", alignments=()):
+    seen = set()
+    for index, cell in enumerate(row.cells):
+        if id(cell._tc) in seen:
+            continue
+        seen.add(id(cell._tc))
+        _set_ppu_cell_text(
+            cell,
+            cell.text,
+            size=size,
+            bold=bold,
+            color=color,
+            alignment=alignments[index] if index < len(alignments) else WD_ALIGN_PARAGRAPH.CENTER,
+        )
+
+
+def _fill_pc_onshore_financial_table(document, items, revision, serialized):
+    """Populate the blank PPU table in the official PC Onshore template."""
+    if len(document.tables) < 2:
+        raise OfficialProposalPdfError("A tabela financeira do template PC Onshore não foi encontrada.")
+
+    table = document.tables[1]
+    if len(table.rows) < 5:
+        raise OfficialProposalPdfError("A estrutura da tabela PPU do template PC Onshore está incompleta.")
+
+    content = (revision or {}).get("conteudo") or {}
+    selected = content.get("itens_financeiros") or {}
+    selected_items = []
+    for item in items:
+        selection = selected.get(str(item.get("id"))) or {}
+        if selection.get("incluir") is False:
+            continue
+        quantity = Decimal(str(selection.get("quantidade") or item.get("quantidade") or "1"))
+        if quantity <= 0:
+            continue
+        selected_items.append({**item, "quantidade": quantity, "subtotal": item["preco_unitario"] * quantity})
+
+    if not selected_items:
+        raise OfficialProposalPdfError("Selecione ao menos um item financeiro para preencher a PPU.")
+
+    total = sum((item["subtotal"] for item in selected_items), Decimal("0"))
+    scope = _clean(content.get("escopo_ppu")) or _clean(serialized.get("servico") or serialized.get("escopo"))
+    deadline = _clean(content.get("prazo_ppu")) or _clean(content.get("prazo")) or _clean(serialized.get("tempoContratoDias"))
+    number = _clean(serialized.get("numeroProposta"))
+
+    _set_cell_shading(table.rows[0].cells[0], "D4FF00")
+    _set_ppu_cell_text(table.rows[0].cells[0], "PLANILHA DE PREÇOS UNITÁRIOS - PPU", size=9, bold=True, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    # The first PPU rows contain merged cells. Write each physical cell only
+    # once so a later logical column cannot erase the preceding label.
+    _set_ppu_cell_text(table.rows[1].cells[0], "Cliente:", size=8, bold=True, alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    _set_ppu_cell_text(table.rows[1].cells[1], _clean(serialized.get("empresa")), size=8, bold=True, alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    _set_ppu_cell_text(table.rows[1].cells[2], f"ID: {number}", size=8, bold=True, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    _add_cell_logo(table.rows[1].cells[-1])
+    _set_ppu_cell_text(table.rows[2].cells[0], "ESCOPO:", size=8, bold=True, alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    _set_ppu_cell_text(table.rows[2].cells[1], scope, size=8, bold=True, alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    _set_ppu_cell_text(table.rows[2].cells[2], f"Prazo: {deadline}" if deadline else "Prazo:", size=8, bold=True, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    _set_ppu_cell_text(table.rows[2].cells[4], "Preço Total:", size=8, bold=False, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    _set_ppu_cell_text(table.rows[2].cells[5], _format_currency(total), size=9, bold=True, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    _set_row_cells(table.rows[3], ("ITENS", "EXECUÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "CUSTO UNITÁRIO", "VALOR TOTAL"))
+    _style_ppu_row(table.rows[3], size=7, bold=True, color="FFFFFF")
+
+    reference_row = deepcopy(table.rows[4]._tr)
+    for row in list(table.rows[4:]):
+        table._tbl.remove(row._tr)
+
+    for index, item in enumerate(selected_items, start=1):
+        table._tbl.append(deepcopy(reference_row))
+        row = table.rows[-1]
+        _set_row_cells(
+            row,
+            (
+                str(index),
+                item["label"],
+                _clean(item.get("unidade")) or "UN",
+                str(item["quantidade"]).replace(".", ","),
+                _format_currency(item["preco_unitario"]),
+                _format_currency(item["subtotal"]),
+            ),
+        )
+        _style_ppu_row(
+            row,
+            size=8,
+            alignments=(
+                WD_ALIGN_PARAGRAPH.CENTER,
+                WD_ALIGN_PARAGRAPH.LEFT,
+                WD_ALIGN_PARAGRAPH.CENTER,
+                WD_ALIGN_PARAGRAPH.CENTER,
+                WD_ALIGN_PARAGRAPH.CENTER,
+                WD_ALIGN_PARAGRAPH.CENTER,
+            ),
+        )
+
+
+def _apply_pc_onshore_revision(document, revision, serialized, items):
+    """Apply only the PC Onshore review content to its official DOCX template."""
+    content = (revision or {}).get("conteudo") or {}
+    paragraphs = document.paragraphs
+    if len(paragraphs) > 55:
+        service = _clean(serialized.get("servico") or serialized.get("escopo"))
+        if service:
+            presentation = (
+                "É com satisfação que a AMBIPAR RESPONSE TANK CLEANING apresenta sua "
+                "Proposta Comercial para prestação de serviços especializados de "
+                f"{service.casefold()}."
+            )
+            service_complement = _clean(content.get("complemento_servico"))
+            if service_complement:
+                presentation = f"{presentation} {service_complement}"
+            _set_paragraph_text(paragraphs[22], presentation)
+
+        if content.get("possui_pt"):
+            reference = " ".join(
+                value for value in (
+                    _clean(content.get("pt_identificacao")),
+                    _clean(content.get("pt_revisao")),
+                    _clean(content.get("pt_data")),
+                ) if value
+            )
+            if reference:
+                _set_paragraph_text(paragraphs[37], f"Esta proposta comercial está vinculada à Proposta Técnica {reference}.")
+        elif _clean(content.get("introducao_sem_pt")):
+            _set_paragraph_text(paragraphs[37], _clean(content.get("introducao_sem_pt")))
+
+        deadline = _clean(content.get("prazo"))
+        if deadline:
+            _set_paragraph_text(paragraphs[47], f"O prazo de execução será de {deadline}.")
+        if _clean(content.get("prazo_complementar")):
+            _set_paragraph_text(paragraphs[48], _clean(content.get("prazo_complementar")))
+        validity = _clean(content.get("validade_dias"))
+        if validity:
+            _set_paragraph_text(paragraphs[55], f"As condições desta proposta são válidas por {validity} dias a partir da data de sua emissão.")
+
+    _fill_pc_onshore_financial_table(document, items, revision, serialized)
 
 
 def _fill_offshore_financial_table(document, items):
@@ -319,9 +519,17 @@ def _convert_with_word(docx_path, output_dir):
     return output_path
 
 
-def generate_official_proposal_pdf(proposal, *, serialized, items, document_revision=None):
+def generate_official_proposal_pdf(
+    proposal,
+    *,
+    serialized,
+    items,
+    document_revision=None,
+    template_key=None,
+    preserve_variable_highlights=True,
+):
     """Fill a private DOCX copy and return the generated PDF bytes and filename."""
-    template_key = _proposal_kind(proposal)
+    template_key = template_key or _proposal_kind(proposal)
     template_path = resolve_official_template_path(template_key)
 
     emission_date = proposal.data_emissao
@@ -369,8 +577,11 @@ def generate_official_proposal_pdf(proposal, *, serialized, items, document_revi
 
     normalized_items = [
         {
+            "id": _clean(item.get("id")),
             "label": _clean(item.get("label") or item.get("nome")),
             "preco_unitario": Decimal(str(item.get("preco_unitario") or "0")),
+            "quantidade": Decimal(str(item.get("quantidade") or "1")),
+            "unidade": _clean(item.get("unidade")),
         }
         for item in items
     ]
@@ -383,6 +594,12 @@ def generate_official_proposal_pdf(proposal, *, serialized, items, document_revi
         if template_key == "pc_offshore":
             _apply_offshore_revision(document, document_revision)
             _fill_offshore_financial_table(document, normalized_items)
+        elif template_key == "pc_onshore":
+            if not document_revision:
+                raise OfficialProposalPdfError("Não foi possível carregar a revisão da Proposta Comercial Onshore.")
+            _apply_pc_onshore_revision(document, document_revision, serialized, normalized_items)
+        if not preserve_variable_highlights:
+            _remove_text_highlights(document)
         _assert_no_placeholders(document)
         document.save(copied_template)
 
