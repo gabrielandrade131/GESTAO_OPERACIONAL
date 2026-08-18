@@ -1,4 +1,5 @@
 import json
+import base64
 import os
 import re
 import unicodedata
@@ -2750,7 +2751,25 @@ def comercial_salvar_revisao_documento_proposta(request, proposta_id):
     return JsonResponse({"success": True, "message": "Revisão documental salva.", "revisao": _document_revision_payload(documento, proposta)})
 
 
-def _generate_official_proposal_response(proposta_id, mode=""):
+def _render_pdf_preview_pages(pdf_content):
+    """Render the temporary PDF to images so the browser cannot expose native PDF actions."""
+    try:
+        import fitz
+
+        document = fitz.open(stream=pdf_content, filetype="pdf")
+        pages = []
+        for page_number, page in enumerate(document, start=1):
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(1.25, 1.25), alpha=False)
+            image = base64.b64encode(pixmap.tobytes("jpeg", jpg_quality=82)).decode("ascii")
+            pages.append({"number": page_number, "image": f"data:image/jpeg;base64,{image}"})
+        document.close()
+        return pages
+    except Exception as error:
+        logger.exception("Unable to render proposal PDF preview.")
+        raise OfficialProposalPdfError("Não foi possível preparar a pré-visualização do documento.") from error
+
+
+def _generate_official_proposal_response(proposta_id, mode="", preview_as_images=False):
     """Build the approved proposal document and expose it as a PDF response."""
     proposta = get_object_or_404(
         Financeiro.objects.select_related(
@@ -2791,6 +2810,22 @@ def _generate_official_proposal_response(proposta_id, mode=""):
             items=serialized.get("campos") or [],
             document_revision=revisao_payload,
         )
+        if preview_as_images:
+            confirmations = (
+                ("procedimento_confirmado", "Procedimento"),
+                ("equipe_confirmada", "Equipe"),
+                ("equipamentos_confirmados", "Equipamentos"),
+                ("premissas_confirmadas", "Premissas"),
+                ("obrigacoes_confirmadas", "Obrigações da contratante"),
+            )
+            pending_sections = [label for field, label in confirmations if documento and not getattr(documento, field)]
+            return JsonResponse({
+                "success": True,
+                "pages": _render_pdf_preview_pages(pdf_content),
+                "filename": filename,
+                "can_generate": not pending_sections,
+                "pending_sections": pending_sections,
+            })
         if documento and mode == "final":
             PropostaDocumentoFinanceiroSnapshot.objects.filter(documento=documento).delete()
             for order, campo in enumerate(proposta.campos.all(), start=1):
@@ -2818,7 +2853,11 @@ def _generate_official_proposal_response(proposta_id, mode=""):
 @commercial_preview_required
 @require_GET
 def comercial_gerar_pdf_proposta(request, proposta_id):
-    return _generate_official_proposal_response(proposta_id, request.GET.get("document_mode", ""))
+    return _generate_official_proposal_response(
+        proposta_id,
+        request.GET.get("document_mode", ""),
+        preview_as_images=request.GET.get("preview_format") == "images",
+    )
 
     """Generate a proposal PDF from the persisted Commercial data."""
     """Generate a proposal PDF from the persisted Commercial data."""

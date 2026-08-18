@@ -3967,6 +3967,94 @@ document.addEventListener("DOMContentLoaded", () => {
         downloadProposalPdf(endpoint, `${filenamePrefix}_${proposal.numeroProposta || proposal.id}.pdf`, isCriticalAnalysis ? "Análise crítica" : "Proposta");
     }
 
+    async function previewProposalPdf(endpoint, finalEndpoint, filename) {
+        const response = await fetch(endpoint, {
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+
+        if (!response.ok) {
+            const rawMessage = await response.text();
+            let message = rawMessage;
+            try {
+                const payload = JSON.parse(rawMessage);
+                message = payload.message || payload.error || rawMessage;
+            } catch (_) {
+                // Respostas legadas podem não ser JSON; preservamos a mensagem recebida.
+            }
+            throw new Error(message || "Não foi possível gerar a pré-visualização.");
+        }
+
+        const payload = await response.json();
+        if (!payload.success || !Array.isArray(payload.pages) || !payload.pages.length) {
+            throw new Error("Não foi possível carregar as páginas da pré-visualização.");
+        }
+
+        let currentPage = 0;
+        let zoom = 1;
+        const pendingSections = payload.pending_sections || [];
+        const canGenerate = Boolean(payload.can_generate);
+        const generationHint = canGenerate
+            ? "A prévia não realiza download nem altera a emissão oficial."
+            : `Para emitir o PDF, confirme: ${pendingSections.join(", ")}.`;
+        const viewer = document.createElement("section");
+        viewer.className = "proposal-pdf-preview";
+        viewer.innerHTML = `<div class="proposal-pdf-preview__dialog" role="dialog" aria-modal="true" aria-label="Pré-visualização da proposta"><header><div class="proposal-pdf-preview__brand"><span><img src="/static/img/logo_ia_branco.png" alt="Synchro AI"></span><div><p>Synchro AI · Conferência documental</p><h2>Pré-visualização da proposta</h2><small>Revise cada página antes de emitir a versão oficial.</small></div></div><button type="button" aria-label="Fechar pré-visualização" data-pdf-preview-close>×</button></header><main><div class="proposal-pdf-preview__toolbar"><div><button type="button" data-pdf-preview-page="previous" aria-label="Página anterior">‹</button><strong data-pdf-preview-position></strong><button type="button" data-pdf-preview-page="next" aria-label="Próxima página">›</button></div><div class="proposal-pdf-preview__zoom"><button type="button" data-pdf-preview-zoom="out" aria-label="Diminuir zoom">−</button><strong data-pdf-preview-zoom-value>100%</strong><button type="button" data-pdf-preview-zoom="in" aria-label="Aumentar zoom">+</button></div></div><div class="proposal-pdf-preview__page"><img data-pdf-preview-image alt="Página da proposta em pré-visualização"></div></main><footer><div class="proposal-pdf-preview__hint ${canGenerate ? "" : "is-pending"}">${escapeHtml(generationHint)}</div><div><button type="button" data-pdf-preview-close>Voltar para revisão</button><button type="button" class="proposal-pdf-preview__generate" data-pdf-preview-generate ${canGenerate ? "" : "disabled"}>Gerar PDF oficial</button></div></footer></div>`;
+
+        const closePreview = () => {
+            viewer.remove();
+            window.removeEventListener("resize", updateZoom);
+        };
+        const updateZoom = () => {
+            const pageArea = viewer.querySelector(".proposal-pdf-preview__page");
+            const image = viewer.querySelector("[data-pdf-preview-image]");
+            const usableHeight = Math.max(pageArea.clientHeight - 36, 1);
+            pageArea.classList.toggle("is-zoomed", zoom > 1);
+            image.style.setProperty("height", `${Math.round(usableHeight * zoom)}px`, "important");
+            viewer.querySelector("[data-pdf-preview-zoom-value]").textContent = `${Math.round(zoom * 100)}%`;
+            viewer.querySelector('[data-pdf-preview-zoom="out"]').disabled = zoom <= 1;
+            viewer.querySelector('[data-pdf-preview-zoom="in"]').disabled = zoom >= 2.25;
+        };
+
+        const renderPage = () => {
+            const page = payload.pages[currentPage];
+            viewer.querySelector("[data-pdf-preview-image]").src = page.image;
+            viewer.querySelector("[data-pdf-preview-position]").textContent = `Página ${page.number} de ${payload.pages.length}`;
+            viewer.querySelector('[data-pdf-preview-page="previous"]').disabled = currentPage === 0;
+            viewer.querySelector('[data-pdf-preview-page="next"]').disabled = currentPage === payload.pages.length - 1;
+            window.requestAnimationFrame(updateZoom);
+        };
+        viewer.addEventListener("click", async (event) => {
+            if (event.target === viewer || event.target.closest("[data-pdf-preview-close]")) {
+                closePreview();
+                return;
+            }
+            const direction = event.target.closest("[data-pdf-preview-page]")?.dataset.pdfPreviewPage;
+            if (direction) {
+                currentPage = direction === "next" ? Math.min(currentPage + 1, payload.pages.length - 1) : Math.max(currentPage - 1, 0);
+                renderPage();
+                return;
+            }
+            const zoomAction = event.target.closest("[data-pdf-preview-zoom]")?.dataset.pdfPreviewZoom;
+            if (zoomAction) {
+                zoom = Math.min(2.25, Math.max(1, zoom + (zoomAction === "in" ? 0.25 : -0.25)));
+                updateZoom();
+                return;
+            }
+            if (event.target.closest("[data-pdf-preview-generate]")) {
+                const button = event.target.closest("[data-pdf-preview-generate]");
+                button.disabled = true;
+                button.textContent = "Gerando PDF...";
+                await downloadProposalPdf(finalEndpoint, filename, "Proposta");
+                button.disabled = false;
+                button.textContent = "Gerar PDF oficial";
+            }
+        });
+        document.body.appendChild(viewer);
+        window.addEventListener("resize", updateZoom);
+        renderPage();
+    }
+
     async function downloadProposalPdf(endpoint, filename, label = "Proposta") {
         try {
             const response = await fetch(endpoint, {
@@ -4054,7 +4142,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const modal = document.createElement("section");
         modal.className = "document-review-modal";
         document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
-        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(payload.proposta.rev)} • Offshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais</h3><p><strong>Cliente:</strong> ${escapeHtml(payload.proposta.empresa)} &nbsp; <strong>Unidade:</strong> ${escapeHtml(payload.proposta.unidade)} &nbsp; <strong>Serviço:</strong> ${escapeHtml(payload.proposta.escopo || payload.proposta.servico)}</p></section><p class="document-review__notice">Conteúdo carregado do modelo oficial. Revise e confirme cada seção antes da emissão.</p><label>Introdução e objetivo<textarea data-document-introduction>${escapeHtml(review.introducao || "")}</textarea></label><label>Título do procedimento<input data-document-procedure-title value="${escapeHtml(review.procedimentoTitulo || "")}"></label>${renderLines("PROCEDIMENTO", "Procedimento")}${renderLines("EQUIPE", "Equipe", true)}${renderLines("EQUIPAMENTO", "Equipamentos", true)}${renderLines("PREMISSA", "Premissas")}${renderLines("OBRIGACAO", "Obrigações da contratante")}<section class="document-review__section"><h3>Proposta financeira</h3><p>Origem: dados oficiais da proposta comercial.</p>${(review.financeiro || []).map((item) => `<div>${escapeHtml(item.descricao)} — R$ ${escapeHtml(item.preco_unitario)} × ${escapeHtml(item.quantidade)}</div>`).join("")}</section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar</button><button type="button" data-document-generate>Gerar PDF oficial</button></footer></div>`;
+        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(payload.proposta.rev)} • Offshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais</h3><p><strong>Cliente:</strong> ${escapeHtml(payload.proposta.empresa)} &nbsp; <strong>Unidade:</strong> ${escapeHtml(payload.proposta.unidade)} &nbsp; <strong>Serviço:</strong> ${escapeHtml(payload.proposta.escopo || payload.proposta.servico)}</p></section><p class="document-review__notice">Conteúdo carregado do modelo oficial. Revise e confirme cada seção antes da emissão.</p><label>Introdução e objetivo<textarea data-document-introduction>${escapeHtml(review.introducao || "")}</textarea></label><label>Título do procedimento<input data-document-procedure-title value="${escapeHtml(review.procedimentoTitulo || "")}"></label>${renderLines("PROCEDIMENTO", "Procedimento")}${renderLines("EQUIPE", "Equipe", true)}${renderLines("EQUIPAMENTO", "Equipamentos", true)}${renderLines("PREMISSA", "Premissas")}${renderLines("OBRIGACAO", "Obrigações da contratante")}<section class="document-review__section"><h3>Proposta financeira</h3><p>Origem: dados oficiais da proposta comercial.</p>${(review.financeiro || []).map((item) => `<div>${escapeHtml(item.descricao)} — R$ ${escapeHtml(item.preco_unitario)} × ${escapeHtml(item.quantidade)}</div>`).join("")}</section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Continuar para pré-visualização</button></footer></div>`;
         document.body.appendChild(modal);
         const close = () => {
             modal.remove();
@@ -4124,24 +4212,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (event.target.closest("[data-document-preview]")) {
                 try {
                     await saveReview(false);
-                    await downloadProposalPdf(`${pdfEndpoint}?document_mode=preview`, filename, "Pré-visualização");
+                    await previewProposalPdf(`${pdfEndpoint}?document_mode=preview&preview_format=images`, `${pdfEndpoint}?document_mode=final`, filename);
                 } catch (error) {
                     showNotification({
                         type: "warning",
                         title: "Pré-visualização indisponível",
                         message: error.message || "Não foi possível salvar a revisão antes da pré-visualização.",
-                    });
-                }
-            }
-            if (event.target.closest("[data-document-generate]")) {
-                try {
-                    await saveReview(false);
-                    await downloadProposalPdf(`${pdfEndpoint}?document_mode=final`, filename, "Proposta");
-                } catch (error) {
-                    showNotification({
-                        type: "warning",
-                        title: "PDF não gerado",
-                        message: error.message || "Não foi possível salvar a revisão antes de gerar o PDF.",
                     });
                 }
             }
