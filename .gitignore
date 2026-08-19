@@ -298,3 +298,10 @@ tmp/
 
 # Cache
 static/CACHE/
+
+# Outras credenciais
+*.pem
+*.key
+
+# Keep the template versioned; it intentionally contains no values.
+!/.env.example
