@@ -9,6 +9,8 @@ LOG="$PROJ_DIR/deploy.log"
 VENV_DEFAULT="$PROJ_DIR/venv_new"
 HOST_HEADER="synchro.ambipar.vps-kinghost.net"
 APP_SOCKET="/run/gunicorn-gestao/gunicorn.sock"
+DJANGO_ENV_FILE="${DJANGO_ENV_FILE:-/etc/gestao-operacional/django.env}"
+DJANGO_FALLBACK_ENV_FILE="${DJANGO_FALLBACK_ENV_FILE:-/etc/gestao-operacional/django-fallback.env}"
 
 DRY_RUN=false
 COLLECTSTATIC=true
@@ -58,6 +60,24 @@ run(){
 cd "$PROJ_DIR"
 
 log "Iniciando deploy (dry-run=$DRY_RUN)"
+
+# Django settings require DJANGO_SECRET_KEY.  Secrets stay in root-only files
+# outside the repository and are never logged by this script.
+for env_file in "$DJANGO_ENV_FILE" "$DJANGO_FALLBACK_ENV_FILE"; do
+  if [ ! -r "$env_file" ]; then
+    log "ERROR: arquivo de ambiente obrigatório não pode ser lido: $env_file"
+    exit 1
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$env_file"
+  set +a
+done
+
+if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
+  log "ERROR: DJANGO_SECRET_KEY não está definida nos arquivos de ambiente."
+  exit 1
+fi
 
 # Garantir branch main
 BRANCH=$(git rev-parse --abbrev-ref HEAD || true)
