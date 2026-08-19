@@ -1,5 +1,6 @@
 import json
 import base64
+import hashlib
 import os
 import re
 import unicodedata
@@ -2713,12 +2714,120 @@ def _get_onshore_document_revision(proposta, user, document_type):
             "sem_referencias": False,
         },
     }
-    return PropostaDocumentoRevisao.objects.get_or_create(
+    if document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE:
+        emission_date = getattr(proposta, "data_emissao", None)
+        defaults["conteudo_revisao"] = {
+            "resumo_planta": "",
+            "metodologia_executiva": "",
+            "descricao_histograma": "",
+            "referencias": [],
+            "sem_referencias": False,
+            "prazo_execucao": "",
+            "jornada": "07:00 as 17:00.",
+            "data_emissao": emission_date.isoformat() if emission_date else "",
+        }
+    documento, created = PropostaDocumentoRevisao.objects.get_or_create(
         proposta=proposta,
         numero_revisao=proposta.revisao,
         tipo_documento=document_type,
         defaults=defaults,
-    )[0]
+    )
+    if document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE:
+        # PT drafts created by the previous generic flow did not have the
+        # PT-specific keys. Add only safe defaults; manual fields stay empty.
+        content = dict(documento.conteudo_revisao or {})
+        histogram_rows = content.get("histograma_mao_obra") or []
+        normalized = {
+            "resumo_planta": str(content.get("resumo_planta") or "").strip(),
+            "metodologia_executiva": str(content.get("metodologia_executiva") or "").strip(),
+            "descricao_histograma": str(content.get("descricao_histograma") or "").strip(),
+            "referencias": content.get("referencias") if isinstance(content.get("referencias"), list) else [],
+            "sem_referencias": bool(content.get("sem_referencias")),
+            "prazo_execucao": str(content.get("prazo_execucao") or getattr(proposta, "tempo_contrato_dias", "") or "").strip(),
+            "jornada": str(content.get("jornada") or "07:00 as 17:00.").strip(),
+            "data_emissao": str(content.get("data_emissao") or (getattr(proposta, "data_emissao", None).isoformat() if getattr(proposta, "data_emissao", None) else "")).strip(),
+            "data_revisao": str(content.get("data_revisao") or "").strip(),
+            "descricao_revisao": str(content.get("descricao_revisao") or "").strip(),
+            "histograma_mao_obra": [
+                {
+                    "funcao": str(row.get("funcao") or "").strip(),
+                    "quantidade": str(row.get("quantidade") or "").strip(),
+                }
+                for row in histogram_rows if isinstance(row, dict)
+            ],
+            "histograma_equipamentos": [
+                str(description or "").strip()
+                for description in (content.get("histograma_equipamentos") or [])
+                if str(description or "").strip()
+            ],
+        }
+        if content.get("preview_hash"):
+            normalized["preview_hash"] = content["preview_hash"]
+        if content.get("previewed_em"):
+            normalized["previewed_em"] = content["previewed_em"]
+        normalized["quadro_revisoes"] = _build_pt_revision_rows(proposta, documento, normalized)
+        if content != normalized:
+            documento.conteudo_revisao = normalized
+            documento.atualizado_por = user
+            documento.save(update_fields=("conteudo_revisao", "atualizado_por", "atualizado_em"))
+    return documento
+
+
+def _pt_review_fingerprint(conteudo):
+    """Tie PT final emission to the exact revision the user previewed."""
+    values = dict(conteudo or {})
+    values.pop("preview_hash", None)
+    values.pop("previewed_em", None)
+    raw_value = json.dumps(values, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
+
+
+def _pt_revision_number(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _build_pt_revision_rows(proposta, documento, conteudo):
+    """Build the PT revision-table history from prior document revisions."""
+    current_revision = _pt_revision_number(proposta.revisao)
+    rows_by_revision = {}
+    previous_documents = PropostaDocumentoRevisao.objects.filter(
+        proposta=proposta,
+        tipo_documento=PropostaDocumentoRevisao.TIPO_PT_ONSHORE,
+        numero_revisao__lt=current_revision,
+    ).order_by("numero_revisao")
+    for previous in previous_documents:
+        previous_content = previous.conteudo_revisao or {}
+        for row in previous_content.get("quadro_revisoes") or []:
+            revision = _pt_revision_number(row.get("revisao"))
+            if revision == _pt_revision_number(previous.numero_revisao):
+                rows_by_revision[revision] = {
+                    "revisao": f"{revision:02d}",
+                    "data": str(row.get("data") or ""),
+                    "descricao": str(row.get("descricao") or ""),
+                }
+                break
+        else:
+            revision = _pt_revision_number(previous.numero_revisao)
+            rows_by_revision[revision] = {
+                "revisao": f"{revision:02d}",
+                "data": str(previous_content.get("data_revisao") or previous_content.get("data_emissao") or ""),
+                "descricao": str(previous_content.get("descricao_revisao") or ("Emissão Inicial." if revision == 0 else "")),
+            }
+
+    current_date = str(conteudo.get("data_revisao") or "")
+    current_description = str(conteudo.get("descricao_revisao") or "")
+    if current_revision == 0:
+        current_date = current_date or str(conteudo.get("data_emissao") or "")
+        current_description = current_description or "Emissão Inicial."
+    rows_by_revision[current_revision] = {
+        "revisao": f"{current_revision:02d}",
+        "data": current_date,
+        "descricao": current_description,
+    }
+    return [rows_by_revision[number] for number in sorted(rows_by_revision)]
 
 
 def _sync_pc_onshore_review_quantities(proposta, conteudo):
@@ -2816,7 +2925,37 @@ def comercial_salvar_revisao_documento_proposta(request, proposta_id):
         documento.introducao_objetivo = str(payload.get("introducao") or "").strip()
         documento.procedimento_titulo = str(payload.get("procedimentoTitulo") or "").strip()
         if isinstance(payload.get("conteudo"), dict):
-            documento.conteudo_revisao = payload["conteudo"]
+            conteudo = dict(payload["conteudo"])
+            if document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE:
+                raw_references = conteudo.get("referencias") or []
+                if not isinstance(raw_references, list):
+                    return JsonResponse({"success": False, "message": "As referencias da PT devem ser enviadas em lista."}, status=400)
+                conteudo = {
+                    "resumo_planta": str(conteudo.get("resumo_planta") or "").strip(),
+                    "metodologia_executiva": str(conteudo.get("metodologia_executiva") or "").strip(),
+                    "descricao_histograma": str(conteudo.get("descricao_histograma") or "").strip(),
+                    "referencias": [str(value).strip() for value in raw_references if str(value).strip()],
+                    "sem_referencias": bool(conteudo.get("sem_referencias")),
+                    "prazo_execucao": str(conteudo.get("prazo_execucao") or "").strip(),
+                    "jornada": str(conteudo.get("jornada") or "").strip(),
+                    "data_emissao": str(conteudo.get("data_emissao") or "").strip(),
+                    "data_revisao": str(conteudo.get("data_revisao") or "").strip(),
+                    "descricao_revisao": str(conteudo.get("descricao_revisao") or "").strip(),
+                    "histograma_mao_obra": [
+                        {
+                            "funcao": str(row.get("funcao") or "").strip(),
+                            "quantidade": str(row.get("quantidade") or "").strip(),
+                        }
+                        for row in (conteudo.get("histograma_mao_obra") or []) if isinstance(row, dict)
+                    ],
+                    "histograma_equipamentos": [
+                        str(description or "").strip()
+                        for description in (conteudo.get("histograma_equipamentos") or [])
+                        if str(description or "").strip()
+                    ],
+                }
+                conteudo["quadro_revisoes"] = _build_pt_revision_rows(proposta, documento, conteudo)
+            documento.conteudo_revisao = conteudo
             if document_type == PropostaDocumentoRevisao.TIPO_PC_ONSHORE:
                 try:
                     _sync_pc_onshore_review_quantities(proposta, documento.conteudo_revisao)
@@ -2932,6 +3071,12 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
             ).prefetch_related("linhas").first()
             if not documento:
                 raise OfficialProposalPdfError("Não foi possível carregar a revisão documental selecionada. O PDF não foi gerado.")
+            if document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE and mode == "final":
+                expected_preview = _pt_review_fingerprint(documento.conteudo_revisao)
+                if documento.conteudo_revisao.get("preview_hash") != expected_preview:
+                    raise OfficialProposalPdfError(
+                        "A proposta foi alterada apos a ultima pre-visualizacao. Gere uma nova previa antes de emitir o PDF oficial."
+                    )
             revisao_payload = _document_revision_payload(documento, proposta)
             template_key = type_to_template[document_type]
         pdf_content, filename = generate_official_proposal_pdf(
@@ -2943,6 +3088,12 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
             preserve_variable_highlights=mode != "final",
         )
         if preview_as_images:
+            if documento and document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE:
+                conteudo = dict(documento.conteudo_revisao or {})
+                conteudo["preview_hash"] = _pt_review_fingerprint(conteudo)
+                conteudo["previewed_em"] = timezone.now().isoformat()
+                documento.conteudo_revisao = conteudo
+                documento.save(update_fields=("conteudo_revisao", "atualizado_em"))
             confirmations = (
                 ("procedimento_confirmado", "Procedimento"),
                 ("equipe_confirmada", "Equipe"),
