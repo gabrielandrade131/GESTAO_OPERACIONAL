@@ -5018,6 +5018,73 @@ class FinanceiroCampo(models.Model):
         return f'{self.get_nome_display()}: {self.subtotal}'
 
 
+class PropostaDocumentoRevisao(models.Model):
+    """Conteúdo operacional revisável de uma proposta comercial Offshore."""
+
+    TIPO_OFFSHORE = "PC_OFFSHORE"
+    TIPO_PC_ONSHORE = "PC_ONSHORE"
+    TIPO_PT_ONSHORE = "PT_ONSHORE"
+    STATUS_RASCUNHO = "RASCUNHO"
+    STATUS_PRONTA = "PRONTA"
+    STATUS_GERADA = "GERADA"
+    STATUS_CHOICES = (
+        (STATUS_RASCUNHO, "Rascunho"),
+        (STATUS_PRONTA, "Pronta"),
+        (STATUS_GERADA, "Gerada"),
+    )
+
+    proposta = models.ForeignKey(Financeiro, on_delete=models.CASCADE, related_name="documentos_revisados")
+    numero_revisao = models.PositiveIntegerField()
+    revisao_documental = models.PositiveIntegerField(default=0)
+    tipo_documento = models.CharField(max_length=30, default=TIPO_OFFSHORE)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default=STATUS_RASCUNHO)
+    introducao_objetivo = models.TextField(blank=True, default="")
+    procedimento_titulo = models.CharField(max_length=255, blank=True, default="")
+    # Campos específicos de PC/PT sem duplicar a estrutura documental Offshore.
+    conteudo_revisao = models.JSONField(default=dict, blank=True)
+    premissas_confirmadas = models.BooleanField(default=False)
+    obrigacoes_confirmadas = models.BooleanField(default=False)
+    procedimento_confirmado = models.BooleanField(default=False)
+    equipe_confirmada = models.BooleanField(default=False)
+    equipamentos_confirmados = models.BooleanField(default=False)
+    criado_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="documentos_proposta_criados")
+    atualizado_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="documentos_proposta_atualizados")
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+    gerado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("proposta", "numero_revisao", "tipo_documento"), name="unique_documento_revisao_tipo")]
+        ordering = ("-numero_revisao", "-id")
+
+
+class PropostaDocumentoLinha(models.Model):
+    """Linha ordenada das seções variáveis do documento oficial."""
+    TIPO_CHOICES = (("PROCEDIMENTO", "Procedimento"), ("EQUIPE", "Equipe"), ("EQUIPAMENTO", "Equipamento"), ("PREMISSA", "Premissa"), ("OBRIGACAO", "Obrigação"))
+    documento = models.ForeignKey(PropostaDocumentoRevisao, on_delete=models.CASCADE, related_name="linhas")
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    ordem = models.PositiveIntegerField(default=1)
+    descricao = models.TextField()
+    quantidade = models.CharField(max_length=50, blank=True, default="")
+
+    class Meta:
+        ordering = ("tipo", "ordem", "id")
+
+
+class PropostaDocumentoFinanceiroSnapshot(models.Model):
+    """Snapshot imutável dos preços utilizados em um PDF emitido."""
+    documento = models.ForeignKey(PropostaDocumentoRevisao, on_delete=models.CASCADE, related_name="financeiro_snapshot")
+    ordem = models.PositiveIntegerField(default=1)
+    descricao = models.CharField(max_length=150)
+    unidade = models.CharField(max_length=50, blank=True, default="")
+    preco_unitario = models.DecimalField(max_digits=12, decimal_places=2)
+    quantidade = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        ordering = ("ordem", "id")
+
+
 def anexo_proposta_comercial_upload_to(instance, filename):
     base, ext = os.path.splitext(str(filename or ''))
     ext = (ext or '').lower()

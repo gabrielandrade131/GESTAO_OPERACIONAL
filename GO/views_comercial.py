@@ -1,4 +1,5 @@
 import json
+import base64
 import os
 import re
 import unicodedata
@@ -20,8 +21,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
-from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf
+from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf, load_offshore_template_draft
 from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
 
 
@@ -1486,6 +1487,8 @@ def _build_bootstrap_payload():
     update_pattern = reverse("comercial_atualizar_proposta", args=[0]).replace("/0/", "/__id__/")
     pdf_pattern = reverse("comercial_gerar_pdf_proposta", args=[0]).replace("/0/", "/__id__/")
     critical_analysis_pdf_pattern = reverse("comercial_gerar_pdf_analise_critica", args=[0]).replace("/0/", "/__id__/")
+    document_review_pattern = reverse("comercial_revisao_documento_proposta", args=[0]).replace("/0/", "/__id__/")
+    document_review_save_pattern = reverse("comercial_salvar_revisao_documento_proposta", args=[0]).replace("/0/", "/__id__/")
     attachment_list_pattern = reverse("comercial_listar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
     attachment_upload_pattern = reverse("comercial_enviar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
 
@@ -1502,6 +1505,8 @@ def _build_bootstrap_payload():
             "updatePattern": update_pattern,
             "pdfPattern": pdf_pattern,
             "criticalAnalysisPdfPattern": critical_analysis_pdf_pattern,
+            "documentReviewPattern": document_review_pattern,
+            "documentReviewSavePattern": document_review_save_pattern,
             "attachmentListPattern": attachment_list_pattern,
             "attachmentUploadPattern": attachment_upload_pattern,
             "quickClientCreate": reverse("comercial_criar_cliente"),
@@ -2675,7 +2680,207 @@ def comercial_excluir_anexo_proposta(request, anexo_id):
     return JsonResponse({"success": True, "message": "Documento excluído com sucesso."})
 
 
-def _generate_official_proposal_response(proposta_id):
+def _is_offshore_proposal(proposta):
+    return str(getattr(getattr(proposta, "tipo_operacao", None), "tipo_operacao", "")).strip().casefold() == "offshore"
+
+
+def _is_onshore_proposal(proposta):
+    """Identify the persisted operation choice without relying on its display case."""
+    operation = str(getattr(getattr(proposta, "tipo_operacao", None), "tipo_operacao", ""))
+    normalized = unicodedata.normalize("NFKD", operation).encode("ascii", "ignore").decode("ascii")
+    return normalized.strip().casefold() == "onshore"
+
+
+def _document_revision_payload(documento, proposta):
+    linhas = {kind: [] for kind in ("PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO")}
+    for linha in documento.linhas.all():
+        linhas[linha.tipo].append({"id": linha.id, "descricao": linha.descricao, "quantidade": linha.quantidade, "ordem": linha.ordem})
+    financeiro = [{"id": campo.id, "descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
+    return {"id": documento.id, "tipoDocumento": documento.tipo_documento, "revisaoDocumental": f"{documento.revisao_documental:02d}", "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "conteudo": documento.conteudo_revisao or {}, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro}
+
+
+def _get_onshore_document_revision(proposta, user, document_type):
+    if document_type not in {PropostaDocumentoRevisao.TIPO_PC_ONSHORE, PropostaDocumentoRevisao.TIPO_PT_ONSHORE}:
+        raise ValidationError("Selecione um tipo de documento Onshore válido.")
+    defaults = {
+        "criado_por": user,
+        "atualizado_por": user,
+        "revisao_documental": 0,
+        "conteudo_revisao": {
+            "prazo": str(getattr(proposta, "tempo_contrato_dias", "") or ""),
+            "validade_dias": "30",
+            "referencias": [],
+            "sem_referencias": False,
+        },
+    }
+    return PropostaDocumentoRevisao.objects.get_or_create(
+        proposta=proposta,
+        numero_revisao=proposta.revisao,
+        tipo_documento=document_type,
+        defaults=defaults,
+    )[0]
+
+
+def _sync_pc_onshore_review_quantities(proposta, conteudo):
+    """Persist the PPU quantities so the proposal and its PDF never diverge."""
+    selections = (conteudo or {}).get("itens_financeiros") or {}
+    if not isinstance(selections, dict):
+        raise ValidationError("Os itens financeiros da PPU são inválidos.")
+
+    campos = {str(campo.id): campo for campo in proposta.campos.all()}
+    for campo_id, selection in selections.items():
+        if not isinstance(selection, dict) or selection.get("incluir") is False:
+            continue
+        campo = campos.get(str(campo_id))
+        if campo is None:
+            raise ValidationError("Um dos itens financeiros selecionados não pertence a esta proposta.")
+        try:
+            quantity = Decimal(str(selection.get("quantidade") or ""))
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise ValidationError("Informe uma quantidade inteira válida para cada item selecionado.") from error
+        if quantity <= 0 or quantity != quantity.to_integral_value():
+            raise ValidationError("A quantidade dos itens da PPU deve ser um número inteiro maior que zero.")
+        if campo.quantidade != quantity:
+            campo.quantidade = quantity
+            campo.save(update_fields=("quantidade", "subtotal"))
+
+    # Keep the commercial revenue aligned with the same item values emitted in the PPU.
+    total_items = sum((campo.subtotal or Decimal("0")) for campo in proposta.campos.all())
+    if proposta.estimativo_receita != total_items:
+        proposta.estimativo_receita = total_items
+        proposta.save(update_fields=("estimativo_receita",))
+
+
+def _get_document_revision(proposta, user):
+    documento, created = PropostaDocumentoRevisao.objects.get_or_create(
+        proposta=proposta,
+        numero_revisao=proposta.revisao,
+        tipo_documento=PropostaDocumentoRevisao.TIPO_OFFSHORE,
+        defaults={"criado_por": user, "atualizado_por": user},
+    )
+    if created or not documento.linhas.exists():
+        draft = load_offshore_template_draft()
+        documento.introducao_objetivo = documento.introducao_objetivo or draft["introducao"]
+        documento.procedimento_titulo = documento.procedimento_titulo or draft["procedimentoTitulo"]
+        documento.save(update_fields=("introducao_objetivo", "procedimento_titulo", "atualizado_em"))
+        if not documento.linhas.exists():
+            for kind, rows in draft["linhas"].items():
+                for order, row in enumerate(rows, start=1):
+                    PropostaDocumentoLinha.objects.create(documento=documento, tipo=kind, ordem=order, descricao=row["descricao"], quantidade=row.get("quantidade", ""))
+    return documento
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
+def comercial_revisao_documento_proposta(request, proposta_id):
+    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos", "documentos_revisados__linhas"), proposta=proposta_id)
+    if _is_onshore_proposal(proposta):
+        document_type = request.GET.get("document_type", "").strip()
+        if document_type:
+            try:
+                documento = _get_onshore_document_revision(proposta, request.user, document_type)
+            except ValidationError as error:
+                return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
+            return JsonResponse({"success": True, "revisao": _document_revision_payload(documento, proposta), "proposta": _serialize_financeiro(proposta)})
+        # Onshore always starts with an explicit PC/PT decision. Returning this
+        # response prevents the browser from falling back to a direct download.
+        return JsonResponse({
+            "success": True,
+            "document_selection_required": True,
+            "proposta": _serialize_financeiro(proposta),
+            "document_types": (
+                {"value": "PC_ONSHORE", "label": "Documento PC"},
+                {"value": "PT_ONSHORE", "label": "Documento PT"},
+            ),
+        })
+    if not _is_offshore_proposal(proposta):
+        return JsonResponse({"success": False, "message": "A revisão documental controlada está disponível apenas para propostas Offshore."}, status=400)
+    documento = _get_document_revision(proposta, request.user)
+    return JsonResponse({"success": True, "revisao": _document_revision_payload(documento, proposta), "proposta": _serialize_financeiro(proposta)})
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+@transaction.atomic
+def comercial_salvar_revisao_documento_proposta(request, proposta_id):
+    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos"), proposta=proposta_id)
+    payload = _read_request_json(request)
+    if _is_onshore_proposal(proposta):
+        document_type = str(payload.get("document_type") or "")
+        try:
+            documento = _get_onshore_document_revision(proposta, request.user, document_type)
+        except ValidationError as error:
+            return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
+        documento.introducao_objetivo = str(payload.get("introducao") or "").strip()
+        documento.procedimento_titulo = str(payload.get("procedimentoTitulo") or "").strip()
+        if isinstance(payload.get("conteudo"), dict):
+            documento.conteudo_revisao = payload["conteudo"]
+            if document_type == PropostaDocumentoRevisao.TIPO_PC_ONSHORE:
+                try:
+                    _sync_pc_onshore_review_quantities(proposta, documento.conteudo_revisao)
+                except ValidationError as error:
+                    return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
+        documento.atualizado_por = request.user
+        documento.save()
+        documento.linhas.all().delete()
+        for kind, rows in (payload.get("linhas") or {}).items():
+            if kind not in {"PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO"}:
+                continue
+            for order, row in enumerate(rows or [], start=1):
+                descricao = str((row or {}).get("descricao") or "").strip()
+                if descricao:
+                    PropostaDocumentoLinha.objects.create(
+                        documento=documento,
+                        tipo=kind,
+                        ordem=order,
+                        descricao=descricao,
+                        quantidade=str((row or {}).get("quantidade") or "").strip(),
+                    )
+        return JsonResponse({"success": True, "message": "Rascunho documental salvo.", "revisao": _document_revision_payload(documento, proposta)})
+    if not _is_offshore_proposal(proposta):
+        return JsonResponse({"success": False, "message": "A revisão documental está disponível apenas para Offshore."}, status=400)
+    payload = _read_request_json(request)
+    documento = _get_document_revision(proposta, request.user)
+    documento.introducao_objetivo = str(payload.get("introducao") or "").strip()
+    documento.procedimento_titulo = str(payload.get("procedimentoTitulo") or "").strip()
+    confirms = payload.get("confirmacoes") or {}
+    for field, key in (("procedimento_confirmado", "procedimento"), ("equipe_confirmada", "equipe"), ("equipamentos_confirmados", "equipamentos"), ("premissas_confirmadas", "premissas"), ("obrigacoes_confirmadas", "obrigacoes")):
+        setattr(documento, field, bool(confirms.get(key)))
+    documento.atualizado_por = request.user
+    documento.save()
+    documento.linhas.all().delete()
+    for kind, rows in (payload.get("linhas") or {}).items():
+        if kind not in {"PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO"}:
+            continue
+        for order, row in enumerate(rows or [], start=1):
+            descricao = str((row or {}).get("descricao") or "").strip()
+            if descricao:
+                PropostaDocumentoLinha.objects.create(documento=documento, tipo=kind, ordem=order, descricao=descricao, quantidade=str((row or {}).get("quantidade") or "").strip())
+    documento.refresh_from_db()
+    return JsonResponse({"success": True, "message": "Revisão documental salva.", "revisao": _document_revision_payload(documento, proposta)})
+
+
+def _render_pdf_preview_pages(pdf_content):
+    """Render the temporary PDF to images so the browser cannot expose native PDF actions."""
+    try:
+        import fitz
+
+        document = fitz.open(stream=pdf_content, filetype="pdf")
+        pages = []
+        for page_number, page in enumerate(document, start=1):
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(1.25, 1.25), alpha=False)
+            image = base64.b64encode(pixmap.tobytes("jpeg", jpg_quality=82)).decode("ascii")
+            pages.append({"number": page_number, "image": f"data:image/jpeg;base64,{image}"})
+        document.close()
+        return pages
+    except Exception as error:
+        logger.exception("Unable to render proposal PDF preview.")
+        raise OfficialProposalPdfError("Não foi possível preparar a pré-visualização do documento.") from error
+
+
+def _generate_official_proposal_response(proposta_id, mode="", document_type="", preview_as_images=False):
     """Build the approved proposal document and expose it as a PDF response."""
     proposta = get_object_or_404(
         Financeiro.objects.select_related(
@@ -2693,11 +2898,73 @@ def _generate_official_proposal_response(proposta_id):
 
     try:
         serialized = _serialize_financeiro(proposta)
+        documento = None
+        revisao_payload = None
+        template_key = None
+        if _is_offshore_proposal(proposta):
+            documento = PropostaDocumentoRevisao.objects.filter(
+                proposta=proposta,
+                numero_revisao=proposta.revisao,
+                tipo_documento=PropostaDocumentoRevisao.TIPO_OFFSHORE,
+            ).prefetch_related("linhas").first()
+            if not documento:
+                raise OfficialProposalPdfError("Não foi possível carregar a revisão documental desta proposta. O PDF não foi gerado.")
+            if mode not in {"preview", "final"}:
+                raise OfficialProposalPdfError("Abra a revisão documental antes de gerar o PDF Offshore.")
+            if mode == "final":
+                required = ("procedimento_confirmado", "equipe_confirmada", "equipamentos_confirmados", "premissas_confirmadas", "obrigacoes_confirmadas")
+                if not all(getattr(documento, field) for field in required):
+                    raise OfficialProposalPdfError("Confirme todas as seções da revisão documental antes de gerar o PDF oficial.")
+            revisao_payload = _document_revision_payload(documento, proposta)
+        elif _is_onshore_proposal(proposta):
+            type_to_template = {
+                PropostaDocumentoRevisao.TIPO_PC_ONSHORE: "pc_onshore",
+                PropostaDocumentoRevisao.TIPO_PT_ONSHORE: "pt_onshore",
+            }
+            if document_type not in type_to_template:
+                raise OfficialProposalPdfError("Escolha a Proposta Comercial (PC) ou a Proposta Técnica (PT) antes de gerar o documento.")
+            if mode not in {"preview", "final"}:
+                raise OfficialProposalPdfError("Abra e revise o documento Onshore antes de gerar o PDF.")
+            documento = PropostaDocumentoRevisao.objects.filter(
+                proposta=proposta,
+                numero_revisao=proposta.revisao,
+                tipo_documento=document_type,
+            ).prefetch_related("linhas").first()
+            if not documento:
+                raise OfficialProposalPdfError("Não foi possível carregar a revisão documental selecionada. O PDF não foi gerado.")
+            revisao_payload = _document_revision_payload(documento, proposta)
+            template_key = type_to_template[document_type]
         pdf_content, filename = generate_official_proposal_pdf(
             proposta,
             serialized=serialized,
             items=serialized.get("campos") or [],
+            document_revision=revisao_payload,
+            template_key=template_key,
+            preserve_variable_highlights=mode != "final",
         )
+        if preview_as_images:
+            confirmations = (
+                ("procedimento_confirmado", "Procedimento"),
+                ("equipe_confirmada", "Equipe"),
+                ("equipamentos_confirmados", "Equipamentos"),
+                ("premissas_confirmadas", "Premissas"),
+                ("obrigacoes_confirmadas", "Obrigações da contratante"),
+            )
+            pending_sections = [label for field, label in confirmations if documento and _is_offshore_proposal(proposta) and not getattr(documento, field)]
+            return JsonResponse({
+                "success": True,
+                "pages": _render_pdf_preview_pages(pdf_content),
+                "filename": filename,
+                "can_generate": not pending_sections,
+                "pending_sections": pending_sections,
+            })
+        if documento and mode == "final":
+            PropostaDocumentoFinanceiroSnapshot.objects.filter(documento=documento).delete()
+            for order, campo in enumerate(proposta.campos.all(), start=1):
+                PropostaDocumentoFinanceiroSnapshot.objects.create(documento=documento, ordem=order, descricao=campo.get_nome_display(), preco_unitario=campo.preco_unitario, quantidade=campo.quantidade, subtotal=campo.subtotal)
+            documento.status = PropostaDocumentoRevisao.STATUS_GERADA
+            documento.gerado_em = timezone.now()
+            documento.save(update_fields=("status", "gerado_em", "atualizado_em"))
     except OfficialProposalPdfError as error:
         logger.warning("Unable to generate official proposal %s: %s", proposta_id, error)
         return HttpResponse(str(error), status=400, content_type="text/plain; charset=utf-8")
@@ -2718,7 +2985,12 @@ def _generate_official_proposal_response(proposta_id):
 @commercial_preview_required
 @require_GET
 def comercial_gerar_pdf_proposta(request, proposta_id):
-    return _generate_official_proposal_response(proposta_id)
+    return _generate_official_proposal_response(
+        proposta_id,
+        request.GET.get("document_mode", ""),
+        request.GET.get("document_type", ""),
+        preview_as_images=request.GET.get("preview_format") == "images",
+    )
 
     """Generate a proposal PDF from the persisted Commercial data."""
     """Generate a proposal PDF from the persisted Commercial data."""

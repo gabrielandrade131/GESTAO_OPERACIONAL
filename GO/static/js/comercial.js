@@ -1112,7 +1112,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            event.stopImmediatePropagation();
+            handleProposalPdfRequest(proposalPdfTrigger);
             return;
         }
 
@@ -1459,7 +1460,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            handleProposalPdfRequest(proposalPdfTrigger);
             return;
         }
 
@@ -3475,6 +3476,8 @@ document.addEventListener("DOMContentLoaded", () => {
             updatePattern: bootstrap?.endpoints?.updatePattern || "",
             pdfPattern: bootstrap?.endpoints?.pdfPattern || "",
             criticalAnalysisPdfPattern: bootstrap?.endpoints?.criticalAnalysisPdfPattern || "",
+            documentReviewPattern: bootstrap?.endpoints?.documentReviewPattern || "",
+            documentReviewSavePattern: bootstrap?.endpoints?.documentReviewSavePattern || "",
             attachmentListPattern: bootstrap?.endpoints?.attachmentListPattern || "",
             attachmentUploadPattern: bootstrap?.endpoints?.attachmentUploadPattern || "",
             quickClientCreate: bootstrap?.endpoints?.quickClientCreate || "",
@@ -3965,6 +3968,104 @@ document.addEventListener("DOMContentLoaded", () => {
         downloadProposalPdf(endpoint, `${filenamePrefix}_${proposal.numeroProposta || proposal.id}.pdf`, isCriticalAnalysis ? "Análise crítica" : "Proposta");
     }
 
+    async function previewProposalPdf(endpoint, finalEndpoint, filename) {
+        const loading = document.createElement("div");
+        loading.className = "proposal-preview-loading";
+        loading.setAttribute("role", "status");
+        loading.setAttribute("aria-live", "polite");
+        loading.innerHTML = `<span class="proposal-preview-loading__spinner" aria-hidden="true"></span><div><strong>Preparando pré-visualização</strong><span>Gerando o documento para conferência...</span></div>`;
+        document.body.appendChild(loading);
+        try {
+        const response = await fetch(endpoint, {
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+
+        if (!response.ok) {
+            const rawMessage = await response.text();
+            let message = rawMessage;
+            try {
+                const payload = JSON.parse(rawMessage);
+                message = payload.message || payload.error || rawMessage;
+            } catch (_) {
+                // Respostas legadas podem não ser JSON; preservamos a mensagem recebida.
+            }
+            throw new Error(message || "Não foi possível gerar a pré-visualização.");
+        }
+
+        const payload = await response.json();
+        if (!payload.success || !Array.isArray(payload.pages) || !payload.pages.length) {
+            throw new Error("Não foi possível carregar as páginas da pré-visualização.");
+        }
+
+        let currentPage = 0;
+        let zoom = 1;
+        const pendingSections = payload.pending_sections || [];
+        const canGenerate = Boolean(payload.can_generate);
+        const generationHint = canGenerate
+            ? "A prévia não realiza download nem altera a emissão oficial."
+            : `Para emitir o PDF, confirme: ${pendingSections.join(", ")}.`;
+        const viewer = document.createElement("section");
+        viewer.className = "proposal-pdf-preview";
+        viewer.innerHTML = `<div class="proposal-pdf-preview__dialog" role="dialog" aria-modal="true" aria-label="Pré-visualização da proposta"><header><div class="proposal-pdf-preview__brand"><span><img src="/static/img/logo_ia_branco.png" alt="Synchro AI"></span><div><p>Synchro AI · Conferência documental</p><h2>Pré-visualização da proposta</h2><small>Revise cada página antes de emitir a versão oficial.</small></div></div><button type="button" aria-label="Fechar pré-visualização" data-pdf-preview-close>×</button></header><main><div class="proposal-pdf-preview__toolbar"><div><button type="button" data-pdf-preview-page="previous" aria-label="Página anterior">‹</button><strong data-pdf-preview-position></strong><button type="button" data-pdf-preview-page="next" aria-label="Próxima página">›</button></div><div class="proposal-pdf-preview__zoom"><button type="button" data-pdf-preview-zoom="out" aria-label="Diminuir zoom">−</button><strong data-pdf-preview-zoom-value>100%</strong><button type="button" data-pdf-preview-zoom="in" aria-label="Aumentar zoom">+</button></div></div><div class="proposal-pdf-preview__page"><img data-pdf-preview-image alt="Página da proposta em pré-visualização"></div></main><footer><div class="proposal-pdf-preview__hint ${canGenerate ? "" : "is-pending"}">${escapeHtml(generationHint)}</div><div><button type="button" data-pdf-preview-close>Voltar para revisão</button><button type="button" class="proposal-pdf-preview__generate" data-pdf-preview-generate ${canGenerate ? "" : "disabled"}>Gerar PDF oficial</button></div></footer></div>`;
+
+        const closePreview = () => {
+            viewer.remove();
+            window.removeEventListener("resize", updateZoom);
+        };
+        const updateZoom = () => {
+            const pageArea = viewer.querySelector(".proposal-pdf-preview__page");
+            const image = viewer.querySelector("[data-pdf-preview-image]");
+            const usableHeight = Math.max(pageArea.clientHeight - 36, 1);
+            pageArea.classList.toggle("is-zoomed", zoom > 1);
+            image.style.setProperty("height", `${Math.round(usableHeight * zoom)}px`, "important");
+            viewer.querySelector("[data-pdf-preview-zoom-value]").textContent = `${Math.round(zoom * 100)}%`;
+            viewer.querySelector('[data-pdf-preview-zoom="out"]').disabled = zoom <= 1;
+            viewer.querySelector('[data-pdf-preview-zoom="in"]').disabled = zoom >= 2.25;
+        };
+
+        const renderPage = () => {
+            const page = payload.pages[currentPage];
+            viewer.querySelector("[data-pdf-preview-image]").src = page.image;
+            viewer.querySelector("[data-pdf-preview-position]").textContent = `Página ${page.number} de ${payload.pages.length}`;
+            viewer.querySelector('[data-pdf-preview-page="previous"]').disabled = currentPage === 0;
+            viewer.querySelector('[data-pdf-preview-page="next"]').disabled = currentPage === payload.pages.length - 1;
+            window.requestAnimationFrame(updateZoom);
+        };
+        viewer.addEventListener("click", async (event) => {
+            if (event.target === viewer || event.target.closest("[data-pdf-preview-close]")) {
+                closePreview();
+                return;
+            }
+            const direction = event.target.closest("[data-pdf-preview-page]")?.dataset.pdfPreviewPage;
+            if (direction) {
+                currentPage = direction === "next" ? Math.min(currentPage + 1, payload.pages.length - 1) : Math.max(currentPage - 1, 0);
+                renderPage();
+                return;
+            }
+            const zoomAction = event.target.closest("[data-pdf-preview-zoom]")?.dataset.pdfPreviewZoom;
+            if (zoomAction) {
+                zoom = Math.min(2.25, Math.max(1, zoom + (zoomAction === "in" ? 0.25 : -0.25)));
+                updateZoom();
+                return;
+            }
+            if (event.target.closest("[data-pdf-preview-generate]")) {
+                const button = event.target.closest("[data-pdf-preview-generate]");
+                button.disabled = true;
+                button.textContent = "Gerando PDF...";
+                await downloadProposalPdf(finalEndpoint, filename, "Proposta");
+                button.disabled = false;
+                button.textContent = "Gerar PDF oficial";
+            }
+        });
+        document.body.appendChild(viewer);
+        window.addEventListener("resize", updateZoom);
+        renderPage();
+        } finally {
+            loading.remove();
+        }
+    }
+
     async function downloadProposalPdf(endpoint, filename, label = "Proposta") {
         try {
             const response = await fetch(endpoint, {
@@ -3973,7 +4074,14 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                const message = await response.text();
+                const rawMessage = await response.text();
+                let message = rawMessage;
+                try {
+                    const payload = JSON.parse(rawMessage);
+                    message = payload.message || payload.error || rawMessage;
+                } catch (_) {
+                    // Respostas legadas podem não ser JSON; preservamos a mensagem recebida.
+                }
                 throw new Error(message || "Não foi possível gerar o PDF da proposta.");
             }
 
@@ -4008,6 +4116,223 @@ document.addEventListener("DOMContentLoaded", () => {
                 message: error.message || "Não foi possível gerar o PDF da proposta."
             });
         }
+    }
+
+    async function handleProposalPdfRequest(trigger) {
+        const label = trigger.dataset.pdfLabel || "Proposta";
+        if (label !== "Proposta") {
+            downloadProposalPdf(trigger.href, trigger.download, label);
+            return;
+        }
+        const proposalId = Number(trigger.href.match(/propostas\/(\d+)\/pdf\//)?.[1]);
+        if (!proposalId || !state.endpoints.documentReviewPattern) {
+            showNotification({
+                type: "warning",
+                title: "Revisão indisponível",
+                message: "Não foi possível iniciar a revisão documental desta proposta.",
+            });
+            return;
+        }
+        try {
+            const endpoint = buildEndpoint(state.endpoints.documentReviewPattern, proposalId);
+            const payload = await fetchJson(endpoint);
+            if (payload?.document_selection_required) {
+                openOnshoreDocumentSelector(payload, proposalId, trigger.href, trigger.download);
+                return;
+            }
+            openDocumentReviewModal(payload, proposalId, trigger.href, trigger.download);
+        } catch (error) {
+            showNotification({ type: "warning", title: "Revisão indisponível", message: error.message || "Não foi possível abrir a revisão documental." });
+        }
+    }
+
+    function openOnshoreDocumentSelector(payload, proposalId, pdfEndpoint, filename) {
+        const modal = document.createElement("section");
+        modal.className = "document-type-selector document-type-selector--quick";
+        modal.innerHTML = `<div class="document-type-selector__dialog" role="dialog" aria-modal="true" aria-label="Selecionar documento da proposta"><p>Qual documento deseja revisar?</p><div class="document-type-selector__choices">${(payload.document_types || []).map((documentType) => `<button class="document-type-selector__choice" type="button" data-onshore-document-type="${escapeHtml(documentType.value)}" aria-label="Revisar ${escapeHtml(documentType.label)}"><span class="material-icons" aria-hidden="true">${documentType.value === "PC_ONSHORE" ? "description" : "assignment"}</span><strong>${escapeHtml(documentType.label)}</strong></button>`).join("")}</div></div>`;
+        document.body.appendChild(modal);
+        document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
+        const close = () => {
+            modal.remove();
+            document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll");
+        };
+        modal.addEventListener("click", async (event) => {
+            if (event.target === modal) {
+                close();
+                return;
+            }
+            const button = event.target.closest("[data-onshore-document-type]");
+            if (!button) return;
+            const type = button.dataset.onshoreDocumentType;
+            button.disabled = true;
+            try {
+                const reviewEndpoint = `${buildEndpoint(state.endpoints.documentReviewPattern, proposalId)}?document_type=${encodeURIComponent(type)}`;
+                const reviewPayload = await fetchJson(reviewEndpoint);
+                close();
+                openDocumentReviewModal(reviewPayload, proposalId, `${pdfEndpoint}?document_type=${encodeURIComponent(type)}`, filename, type);
+            } catch (error) {
+                button.disabled = false;
+                showNotification({
+                    type: "warning",
+                    title: "Revisão indisponível",
+                    message: error.message || "Não foi possível carregar a revisão documental selecionada.",
+                });
+            }
+        });
+    }
+
+    function openOnshorePcReviewModal(payload, proposalId, pdfEndpoint, filename) {
+        const review = payload.revisao || {};
+        const content = review.conteudo || {};
+        const modal = document.createElement("section");
+        modal.className = "document-review-modal document-review-modal--onshore-pc";
+        document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
+        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(review.revisaoDocumental || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais <small>Automático</small></h3><div class="document-review__readonly-grid"><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa)}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo)}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section><section class="document-review__section"><h3>Carta / serviço <small>Revisão documental</small></h3><label>Complemento do serviço<textarea data-pc-service-complement placeholder="Use somente se o serviço exigir complemento na carta.">${escapeHtml(content.complemento_servico || "")}</textarea></label></section><section class="document-review__section"><h3>Referência à Proposta Técnica <small>Revisão documental</small></h3><label class="document-review__checkbox"><input type="checkbox" data-pc-has-pt ${content.possui_pt ? "checked" : ""}> Esta PC possui uma Proposta Técnica relacionada</label><div data-pc-pt-fields class="document-review__line-fields ${content.possui_pt ? "" : "is-hidden"}"><label>Identificação da PT<input data-pc-pt-id value="${escapeHtml(content.pt_identificacao || "")}"></label><label>Data da PT<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}"></label><label>REV da PT<input data-pc-pt-revision value="${escapeHtml(content.pt_revisao || "")}"></label></div><label>Texto de introdução sem PT<textarea data-pc-no-pt-text placeholder="Obrigatório somente se não houver PT relacionada.">${escapeHtml(content.introducao_sem_pt || "")}</textarea></label></section><section class="document-review__section"><h3>Proposta financeira <small>Automático a partir da proposta</small></h3><div class="document-review__financial">${(review.financeiro || []).map((item) => `<div><b>${escapeHtml(item.descricao)}</b><span>Qtd. ${escapeHtml(item.quantidade)}</span><strong>R$ ${escapeHtml(item.preco_unitario)}</strong></div>`).join("") || "Nenhum item financeiro cadastrado."}</div></section><section class="document-review__section"><h3>Prazo e validade <small>Revisão documental</small></h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pc-deadline value="${escapeHtml(content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 60 dias"></label><label>Validade em dias<input type="number" min="1" data-pc-validity value="${escapeHtml(content.validade_dias || "30")}"></label></div><label>Texto complementar<textarea data-pc-deadline-note>${escapeHtml(content.prazo_complementar || "Mobilização a combinar, após assinatura de contrato.")}</textarea></label></section><section class="document-review__section"><h3>Revisão final</h3><p>Os campos comerciais são preenchidos automaticamente; confirme os campos documentais antes da pré-visualização.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
+        document.body.appendChild(modal);
+        const automaticTechnicalReference = [
+            payload.proposta.numeroProposta,
+            payload.proposta.empresa,
+            payload.proposta.servico || payload.proposta.escopo,
+            payload.proposta.unidade,
+        ].filter(Boolean).join(" - ");
+        const legacyLetterSection = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.includes("Carta / serviço"));
+        if (legacyLetterSection) {
+            legacyLetterSection.outerHTML = `<section class="document-review__section document-review__technical-reference"><h3>Referência à Proposta Técnica <small>Dados para a introdução</small></h3><p class="document-review__notice">A identificação é formada automaticamente a partir dos dados comerciais da proposta.</p><div class="document-review__generated-reference"><span>Nº da proposta - Cliente - Serviço - Unidade</span><strong>${escapeHtml(automaticTechnicalReference || "Dados da proposta não informados")}</strong></div><label>Data da Proposta Técnica<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}" required></label></section>`;
+        }
+        const legacyTechnicalReference = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.startsWith("Referência à Proposta Técnica") && !section.classList.contains("document-review__technical-reference"));
+        legacyTechnicalReference?.remove();
+        const financialSection = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.includes("Proposta financeira"));
+        if (financialSection) {
+            const selectedItems = content.itens_financeiros || {};
+            const asIntegerQuantity = (value) => Math.max(1, Math.round(Number(String(value || "1").replace(",", ".")) || 1));
+            financialSection.insertAdjacentHTML("afterbegin", `<div class="document-review__line-fields document-review__financial-meta"><label>Escopo do PPU<textarea data-pc-financial-scope placeholder="Descreva o escopo que será exibido na planilha de preços.">${escapeHtml(content.escopo_ppu || "")}</textarea></label><label>Prazo do PPU<input data-pc-financial-deadline value="${escapeHtml(content.prazo_ppu || content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 48 horas"></label></div><p class="document-review__notice">Cliente e ID são preenchidos pela proposta. A quantidade aceita somente números inteiros e também atualiza o item comercial.</p><div class="document-review__financial-select">${(review.financeiro || []).map((item, index) => { const selected = selectedItems[item.id] || selectedItems[String(index)] || {}; return `<label><input type="checkbox" data-pc-financial-item data-item-key="${escapeHtml(String(item.id || index))}" ${selected.incluir !== false ? "checked" : ""}><span>${escapeHtml(item.descricao)}</span><input type="number" min="1" step="1" inputmode="numeric" data-pc-financial-quantity value="${escapeHtml(String(asIntegerQuantity(selected.quantidade || item.quantidade || 1)))}" aria-label="Quantidade de ${escapeHtml(item.descricao)}"></label>`; }).join("")}</div>`);
+        }
+        const resizeReviewTextarea = (textarea) => {
+            textarea.style.height = "42px";
+            textarea.style.height = `${Math.max(42, textarea.scrollHeight)}px`;
+        };
+        modal.querySelectorAll("textarea").forEach(resizeReviewTextarea);
+        const close = () => { modal.remove(); document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll"); };
+        const save = async (notify = true) => {
+            const itensFinanceiros = {};
+            modal.querySelectorAll("[data-pc-financial-item]").forEach((checkbox, index) => { itensFinanceiros[checkbox.dataset.itemKey || index] = { incluir: checkbox.checked, quantidade: checkbox.closest("label").querySelector("[data-pc-financial-quantity]").value }; });
+            const conteudo = { possui_pt: true, pt_data: modal.querySelector("[data-pc-pt-date]").value, prazo: modal.querySelector("[data-pc-deadline]").value.trim(), validade_dias: modal.querySelector("[data-pc-validity]").value, prazo_complementar: modal.querySelector("[data-pc-deadline-note]").value.trim(), escopo_ppu: modal.querySelector("[data-pc-financial-scope]").value.trim(), prazo_ppu: modal.querySelector("[data-pc-financial-deadline]").value.trim(), itens_financeiros: itensFinanceiros };
+            const response = await fetchJson(buildEndpoint(state.endpoints.documentReviewSavePattern, proposalId), { method: "POST", body: JSON.stringify({ document_type: "PC_ONSHORE", conteudo }) });
+            if (notify) showNotification({ type: "success", title: "Rascunho salvo", message: "A revisão da Proposta Comercial Onshore foi salva." });
+            return response;
+        };
+        modal.addEventListener("change", (event) => {
+            if (!event.target.matches("[data-pc-financial-quantity]")) return;
+            const quantity = Number(event.target.value);
+            event.target.value = String(Number.isInteger(quantity) && quantity > 0 ? quantity : 1);
+        });
+        modal.addEventListener("input", (event) => {
+            if (event.target.matches("textarea")) resizeReviewTextarea(event.target);
+        });
+        const documentModeUrl = (mode, asImages = false) => `${pdfEndpoint}${pdfEndpoint.includes("?") ? "&" : "?"}document_mode=${mode}${asImages ? "&preview_format=images" : ""}`;
+        modal.addEventListener("click", async (event) => { if (event.target.closest("[data-document-close]")) return close(); if (event.target.closest("[data-document-save]")) { try { await save(); } catch (error) { showNotification({ type: "warning", title: "Não foi possível salvar", message: error.message }); } } if (event.target.closest("[data-document-preview]")) { try { await save(false); await previewProposalPdf(documentModeUrl("preview", true), documentModeUrl("final"), filename); } catch (error) { showNotification({ type: "warning", title: "Pré-visualização indisponível", message: error.message }); } } });
+    }
+
+    function openDocumentReviewModal(payload, proposalId, pdfEndpoint, filename, documentType = "PC_OFFSHORE") {
+        if (documentType === "PC_ONSHORE") {
+            openOnshorePcReviewModal(payload, proposalId, pdfEndpoint, filename);
+            return;
+        }
+        const review = payload.revisao;
+        const lines = review.linhas || {};
+        const renderLines = (kind, label, quantity = false) => `
+            <section class="document-review__section" data-document-kind="${kind}"><h3>${label}</h3>
+            <div class="document-review__lines">${(lines[kind] || []).map((line) => `<div class="document-review__line"><input value="${escapeHtml(line.descricao)}"><input class="document-review__quantity ${quantity ? "" : "is-hidden"}" value="${escapeHtml(line.quantidade || "")}" placeholder="${quantity ? "Qtd./POB" : ""}"><button type="button" data-document-remove>Remover</button></div>`).join("")}</div>
+            <button type="button" data-document-add>+ Adicionar linha</button><label><input type="checkbox" data-document-confirm ${review.confirmacoes?.[kind.toLowerCase().replace("PROCEDIMENTO", "procedimento").replace("EQUIPE", "equipe").replace("EQUIPAMENTO", "equipamentos").replace("PREMISSA", "premissas").replace("OBRIGACAO", "obrigacoes")] ? "checked" : ""}> Conteúdo revisado</label></section>`;
+        const modal = document.createElement("section");
+        modal.className = "document-review-modal";
+        document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
+        const isOnshore = documentType !== "PC_OFFSHORE";
+        const reviewTitle = documentType === "PT_ONSHORE" ? "Revisar Proposta Técnica Onshore" : isOnshore ? "Revisar Proposta Comercial Onshore" : "Revisar Proposta Comercial";
+        const operationLabel = isOnshore ? "Onshore" : "Offshore";
+        const documentRevision = review.revisaoDocumental || payload.proposta.rev || "00";
+        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>${reviewTitle}</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(documentRevision)} • ${operationLabel}</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais</h3><p><strong>Cliente:</strong> ${escapeHtml(payload.proposta.empresa)} &nbsp; <strong>Unidade:</strong> ${escapeHtml(payload.proposta.unidade)} &nbsp; <strong>Serviço:</strong> ${escapeHtml(payload.proposta.escopo || payload.proposta.servico)}</p></section><p class="document-review__notice">Conteúdo carregado do modelo oficial. Revise e confirme cada seção antes da emissão.</p><label>Introdução e objetivo<textarea data-document-introduction>${escapeHtml(review.introducao || "")}</textarea></label><label>Título do procedimento<input data-document-procedure-title value="${escapeHtml(review.procedimentoTitulo || "")}"></label>${renderLines("PROCEDIMENTO", "Procedimento")}${renderLines("EQUIPE", "Equipe", true)}${renderLines("EQUIPAMENTO", "Equipamentos", true)}${renderLines("PREMISSA", "Premissas")}${renderLines("OBRIGACAO", "Obrigações da contratante")}<section class="document-review__section"><h3>Proposta financeira</h3><p>Origem: dados oficiais da proposta comercial.</p>${(review.financeiro || []).map((item) => `<div>${escapeHtml(item.descricao)} — R$ ${escapeHtml(item.preco_unitario)} × ${escapeHtml(item.quantidade)}</div>`).join("")}</section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Continuar para pré-visualização</button></footer></div>`;
+        document.body.appendChild(modal);
+        const close = () => {
+            modal.remove();
+            document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll");
+        };
+
+        const saveReview = async (notify = true) => {
+            const linhasPayload = {};
+            modal.querySelectorAll("[data-document-kind]").forEach((block) => {
+                linhasPayload[block.dataset.documentKind] = [...block.querySelectorAll(".document-review__line")].map((row) => ({
+                    descricao: row.querySelector("input").value,
+                    quantidade: row.querySelector(".document-review__quantity")?.value || "",
+                }));
+            });
+
+            const confirmacoes = {};
+            modal.querySelectorAll("[data-document-kind]").forEach((block) => {
+                const key = {
+                    PROCEDIMENTO: "procedimento",
+                    EQUIPE: "equipe",
+                    EQUIPAMENTO: "equipamentos",
+                    PREMISSA: "premissas",
+                    OBRIGACAO: "obrigacoes",
+                }[block.dataset.documentKind];
+                confirmacoes[key] = block.querySelector("[data-document-confirm]").checked;
+            });
+
+            const response = await fetchJson(
+                buildEndpoint(state.endpoints.documentReviewSavePattern, proposalId),
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        document_type: documentType,
+                        introducao: modal.querySelector("[data-document-introduction]").value,
+                        procedimentoTitulo: modal.querySelector("[data-document-procedure-title]").value,
+                        linhas: linhasPayload,
+                        confirmacoes,
+                    }),
+                },
+            );
+
+            if (notify) {
+                showNotification({
+                    type: "success",
+                    title: "Rascunho salvo",
+                    message: "A revisão documental foi salva.",
+                });
+            }
+            return response;
+        };
+
+        modal.addEventListener("click", async (event) => {
+            if (event.target.closest("[data-document-close]")) return close();
+            const section = event.target.closest("[data-document-kind]");
+            if (event.target.closest("[data-document-add]")) section.querySelector(".document-review__lines").insertAdjacentHTML("beforeend", `<div class="document-review__line"><input><input class="document-review__quantity ${section.dataset.documentKind === "EQUIPE" || section.dataset.documentKind === "EQUIPAMENTO" ? "" : "is-hidden"}" placeholder="Qtd./POB"><button type="button" data-document-remove>Remover</button></div>`);
+            if (event.target.closest("[data-document-remove]")) event.target.closest(".document-review__line").remove();
+            if (event.target.closest("[data-document-save]")) {
+                try {
+                    await saveReview();
+                } catch (error) {
+                    showNotification({
+                        type: "warning",
+                        title: "Não foi possível salvar",
+                        message: error.message || "Revise os dados e tente novamente.",
+                    });
+                }
+            }
+            if (event.target.closest("[data-document-preview]")) {
+                try {
+                    await saveReview(false);
+                    const querySeparator = pdfEndpoint.includes("?") ? "&" : "?";
+                    await previewProposalPdf(`${pdfEndpoint}${querySeparator}document_mode=preview&preview_format=images`, `${pdfEndpoint}${querySeparator}document_mode=final`, filename);
+                } catch (error) {
+                    showNotification({
+                        type: "warning",
+                        title: "Pré-visualização indisponível",
+                        message: error.message || "Não foi possível salvar a revisão antes da pré-visualização.",
+                    });
+                }
+            }
+        });
     }
 
     async function uploadProposalDocuments(files) {
@@ -6890,7 +7215,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const proposalPdfTrigger = event.target.closest("[data-proposal-pdf]");
         if (proposalPdfTrigger) {
             event.preventDefault();
-            downloadProposalPdf(proposalPdfTrigger.href, proposalPdfTrigger.download, proposalPdfTrigger.dataset.pdfLabel);
+            event.stopImmediatePropagation();
+            handleProposalPdfRequest(proposalPdfTrigger);
             return;
         }
 
