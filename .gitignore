@@ -303,5 +303,11 @@ static/CACHE/
 *.pem
 *.key
 
+# Environment and local-secret files
+.env
+*.env
+secrets.*
+*.secrets.*
+
 # Keep the template versioned; it intentionally contains no values.
 !/.env.example
