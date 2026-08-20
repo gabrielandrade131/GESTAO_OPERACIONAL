@@ -1037,11 +1037,17 @@ def _serialize_financeiro(financeiro):
     status_display = _display_status(financeiro.status_proposta)
     kanban_stage = get_kanban_stage(financeiro.status_proposta)
     cliente_nome = _resolve_cliente_name(financeiro.cliente)
-    unidade_nome = _resolve_unidade_name(financeiro.unidade)
+    unidade_nome_base = _resolve_unidade_name(financeiro.unidade)
     commercial_bundle = _build_commercial_bundle(financeiro)
     overrides = commercial_bundle.get("overrides") or {}
     cliente_nome = overrides.get("empresa") or cliente_nome
-    unidade_nome = overrides.get("unidade") or unidade_nome
+    legacy_unidade_override = _clean_text(overrides.get("unidade"))
+    legacy_override_is_unit = bool(_resolve_os_by_value("unidade", legacy_unidade_override))
+    unidade_nome = legacy_unidade_override if legacy_override_is_unit else unidade_nome_base
+    embarcacao_local = (
+        _clean_text(overrides.get("embarcacao_local"))
+        or (legacy_unidade_override if legacy_unidade_override and not legacy_override_is_unit else unidade_nome)
+    )
     campos, total_campos = _serialize_financeiro_campos(financeiro)
     critical_analysis = _serialize_critical_analysis(financeiro)
 
@@ -1073,7 +1079,7 @@ def _serialize_financeiro(financeiro):
         "pcPtc": _clean_text(financeiro.pc_ptc),
         "empresa": cliente_nome,
         "uf": _clean_text(financeiro.uf),
-        "embarcacaoLocal": unidade_nome,
+        "embarcacaoLocal": embarcacao_local,
         "escopo": _clean_text(financeiro.servico) or _clean_text(financeiro.comentario),
         "estimativaReceita": _format_currency_br(receita),
         "estimativaReceitaValor": float(receita),
@@ -1516,6 +1522,7 @@ def _build_bootstrap_payload():
             "quickServiceCreate": reverse("comercial_criar_servico"),
             "quickItemCreate": reverse("comercial_criar_item_equipamento"),
             "quickSegmentCreate": reverse("comercial_criar_segmento"),
+            "catalogMetadata": reverse("comercial_catalogos"),
             "agendaList": reverse("comercial_agenda_followups"),
             "agendaCreate": reverse("comercial_criar_followup"),
         },
@@ -1908,11 +1915,14 @@ def _apply_commercial_bundle_overrides(financeiro, payload):
     overrides = bundle.get("overrides") or {}
     empresa = _clean_text(payload.get("cliente"))
     unidade = _clean_text(payload.get("unidade"))
+    embarcacao_local = _clean_text(payload.get("embarcacao_local"))
 
     if empresa:
         overrides["empresa"] = empresa
     if unidade:
         overrides["unidade"] = unidade
+    if embarcacao_local:
+        overrides["embarcacao_local"] = embarcacao_local
 
     bundle["overrides"] = overrides
     financeiro.follow_up = _dump_commercial_bundle(bundle)
@@ -2106,7 +2116,7 @@ def _update_financeiro_from_payload(financeiro, payload):
         else:
             financeiro.coordenador_cadastro = person
 
-    if any(key in payload for key in ("follow_up", "cliente", "unidade")) and "followup_item" not in payload:
+    if any(key in payload for key in ("follow_up", "cliente", "unidade", "embarcacao_local")) and "followup_item" not in payload:
         _apply_commercial_bundle_overrides(financeiro, payload)
 
     if "escopo" in payload:
@@ -2462,6 +2472,14 @@ def comercial_agenda_followups(request):
 @login_required(login_url="/login/")
 @commercial_preview_required
 @require_GET
+def comercial_catalogos(request):
+    """Expose the persisted commercial catalogues used by proposal forms."""
+    return JsonResponse({"success": True, "metadata": _build_metadata()})
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_GET
 def comercial_meus_followups(request):
     """Renderiza os acompanhamentos atribuídos ao responsável do usuário logado."""
     all_items, responsible_names = _collect_current_user_followup_items(request.user)
@@ -2708,14 +2726,13 @@ def _get_onshore_document_revision(proposta, user, document_type):
         "atualizado_por": user,
         "revisao_documental": 0,
         "conteudo_revisao": {
-            "prazo": str(getattr(proposta, "tempo_contrato_dias", "") or ""),
-            "validade_dias": "30",
+            "prazo": "",
+            "validade_dias": "",
             "referencias": [],
             "sem_referencias": False,
         },
     }
     if document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE:
-        emission_date = getattr(proposta, "data_emissao", None)
         defaults["conteudo_revisao"] = {
             "resumo_planta": "",
             "metodologia_executiva": "",
@@ -2723,8 +2740,8 @@ def _get_onshore_document_revision(proposta, user, document_type):
             "referencias": [],
             "sem_referencias": False,
             "prazo_execucao": "",
-            "jornada": "07:00 as 17:00.",
-            "data_emissao": emission_date.isoformat() if emission_date else "",
+            "jornada": "",
+            "data_emissao": "",
         }
     documento, created = PropostaDocumentoRevisao.objects.get_or_create(
         proposta=proposta,
@@ -2743,9 +2760,9 @@ def _get_onshore_document_revision(proposta, user, document_type):
             "descricao_histograma": str(content.get("descricao_histograma") or "").strip(),
             "referencias": content.get("referencias") if isinstance(content.get("referencias"), list) else [],
             "sem_referencias": bool(content.get("sem_referencias")),
-            "prazo_execucao": str(content.get("prazo_execucao") or getattr(proposta, "tempo_contrato_dias", "") or "").strip(),
-            "jornada": str(content.get("jornada") or "07:00 as 17:00.").strip(),
-            "data_emissao": str(content.get("data_emissao") or (getattr(proposta, "data_emissao", None).isoformat() if getattr(proposta, "data_emissao", None) else "")).strip(),
+            "prazo_execucao": str(content.get("prazo_execucao") or "").strip(),
+            "jornada": str(content.get("jornada") or "").strip(),
+            "data_emissao": str(content.get("data_emissao") or "").strip(),
             "data_revisao": str(content.get("data_revisao") or "").strip(),
             "descricao_revisao": str(content.get("descricao_revisao") or "").strip(),
             "histograma_mao_obra": [

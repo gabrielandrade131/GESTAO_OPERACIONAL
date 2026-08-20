@@ -139,6 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedProposalId: null,
         activeDetailTab: "resumo",
         dataEditMode: false,
+        criticalAnalysisEditMode: false,
         scopeEditMode: false,
         noteEditMode: false,
         followupFormOpen: false,
@@ -980,6 +981,12 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.addEventListener("click", handleDelegatedClick);
         document.body.addEventListener("input", handleDelegatedInput);
         document.body.addEventListener("change", handleDelegatedChange);
+        document.body.addEventListener("focusin", (event) => {
+            const field = event.target;
+            if (field.matches("[data-currency-input]")) {
+                window.requestAnimationFrame(() => field.select());
+            }
+        });
         document.body.addEventListener("keydown", handleDelegatedKeydown);
 
         document.addEventListener("keydown", (event) => {
@@ -1266,6 +1273,18 @@ document.addEventListener("DOMContentLoaded", () => {
             renderProposalPanel();
         } else if (action === "save-data") {
             saveCommercialData();
+        } else if (action === "edit-critical-analysis") {
+            state.activeDetailTab = "analise-critica";
+            state.dataEditMode = false;
+            state.criticalAnalysisEditMode = true;
+            state.saveProposalError = false;
+            renderProposalPanel();
+        } else if (action === "cancel-critical-analysis") {
+            state.criticalAnalysisEditMode = false;
+            state.saveProposalError = false;
+            renderProposalPanel();
+        } else if (action === "save-critical-analysis") {
+            saveCriticalAnalysis();
         } else if (action === "edit-scope") {
             state.activeDetailTab = "escopo";
             state.scopeEditMode = true;
@@ -1401,7 +1420,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (field.matches("[data-proposal-item-field='unitPrice']")) {
             updateProposalItem(Number(field.dataset.itemId), "unitPrice", field.value);
-            field.value = formatCurrencyInputValue(parseCurrencyValue(field.value));
         }
 
         if (field.matches("[data-proposal-item-field='quantity']")) {
@@ -1410,7 +1428,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (field.id === "proposalReceita") {
-            field.value = formatCurrencyDisplay(parseCurrencyValue(field.value));
+            field.value = field.value ? formatCurrencyDisplay(parseCurrencyValue(field.value)) : "";
         }
     }
 
@@ -1424,6 +1442,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (field.closest(".proposal-field")) {
             clearProposalFieldError(field.id);
+        }
+
+        if (field.matches("[data-currency-input]")) {
+            field.value = formatCurrencyTyping(field.value, field.dataset.currencyInput === "with-symbol");
         }
 
         if (field.matches("[data-proposal-item-field='unitPrice']")) {
@@ -1440,11 +1462,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (field.matches("[data-proposal-item-field='quantity']")) {
             updateProposalItem(Number(field.dataset.itemId), "quantity", field.value);
-        }
-
-        if (field.id === "proposalReceita") {
-            const normalizedValue = parseCurrencyValue(field.value);
-            field.value = field.value ? formatCurrencyDisplay(normalizedValue) : "";
         }
 
         if (field.matches("[data-agenda-input='search']")) {
@@ -2379,6 +2396,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="proposal-panel__tabs proposal-details-tabs">
                     ${renderPanelTab("resumo", "Resumo")}
                     ${renderPanelTab("dados", "Dados Comerciais")}
+                    ${renderPanelTab("analise-critica", "Análise Crítica")}
                     ${renderPanelTab("escopo", "Escopo")}
                     ${renderPanelTab("documentos", "Documentos")}
                     ${renderPanelTab("followups", "Follow-ups")}
@@ -2405,6 +2423,9 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderPanelBody(proposal) {
         if (state.activeDetailTab === "dados") {
             return renderDadosComerciaisTab(proposal);
+        }
+        if (state.activeDetailTab === "analise-critica") {
+            return renderCriticalAnalysisTab(proposal);
         }
         if (state.activeDetailTab === "escopo") {
             return renderEscopoTab(proposal);
@@ -2682,7 +2703,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("PC / PTC", "pcPtc", proposal.pcPtc, true),
                         editableField("Comentário", "comentario", proposal.comentario, true, null, true)
                     ])}
-                    ${renderCriticalAnalysisDetail(proposal)}
                 </div>
                 ${state.dataEditMode ? `
                     <div class="detail-actions-row">
@@ -2690,6 +2710,23 @@ document.addEventListener("DOMContentLoaded", () => {
                         <button class="panel-button panel-button--primary" data-panel-action="save-data" type="button">Salvar alterações</button>
                     </div>
                 ` : ""}
+            </div>
+        `;
+    }
+
+    function renderCriticalAnalysisTab(proposal) {
+        return `
+            <div class="detail-main critical-analysis-tab">
+                ${state.saveProposalError ? renderSaveProposalErrorBanner() : ""}
+                ${renderCriticalAnalysisDetail(proposal)}
+                <div class="detail-actions-row critical-analysis-tab__actions">
+                    ${state.criticalAnalysisEditMode ? `
+                        <button class="panel-button panel-button--soft" data-panel-action="cancel-critical-analysis" type="button">Cancelar edição</button>
+                        <button class="panel-button panel-button--primary" data-panel-action="save-critical-analysis" type="button">Salvar análise</button>
+                    ` : `
+                        <button class="panel-button panel-button--primary" data-panel-action="edit-critical-analysis" type="button">Editar análise crítica</button>
+                    `}
+                </div>
             </div>
         `;
     }
@@ -3223,8 +3260,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!state.selectedProposalId) {
             state.selectedProposalId = proposals[0]?.id ?? null;
         }
-        state.activeDetailTab = state.activeDetailTab === "escopo" ? "escopo" : "dados";
+        state.activeDetailTab = ["escopo", "analise-critica"].includes(state.activeDetailTab) ? state.activeDetailTab : "dados";
         state.dataEditMode = state.activeDetailTab === "dados";
+        state.criticalAnalysisEditMode = state.activeDetailTab === "analise-critica";
         state.scopeEditMode = state.activeDetailTab === "escopo";
         renderProposalPanel();
         refs.proposalDrawer.classList.add("is-open");
@@ -3241,6 +3279,10 @@ document.addEventListener("DOMContentLoaded", () => {
         state.saveProposalError = false;
         if (state.activeDetailTab === "escopo") {
             saveScopeData();
+            return;
+        }
+        if (state.activeDetailTab === "analise-critica") {
+            saveCriticalAnalysis();
             return;
         }
         saveCommercialData();
@@ -3486,6 +3528,7 @@ document.addEventListener("DOMContentLoaded", () => {
             quickServiceCreate: bootstrap?.endpoints?.quickServiceCreate || "",
             quickItemCreate: bootstrap?.endpoints?.quickItemCreate || "",
             quickSegmentCreate: bootstrap?.endpoints?.quickSegmentCreate || "",
+            catalogMetadata: bootstrap?.endpoints?.catalogMetadata || "",
             agendaList: bootstrap?.endpoints?.agendaList || "",
             agendaCreate: bootstrap?.endpoints?.agendaCreate || ""
         };
@@ -3684,7 +3727,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const {
             placeholder = "",
-            selectedValue = select.dataset.selectedValue || "",
+            selectedValue = Object.prototype.hasOwnProperty.call(config, "selectedValue")
+                ? config.selectedValue
+                : (select.value || select.dataset.selectedValue || ""),
             valueKey = null,
             labelKey = null
         } = config;
@@ -3708,6 +3753,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 <option value="${escapeHtml(option.value)}" ${option.value === selectedValue ? "selected" : ""}>${escapeHtml(option.label)}</option>
             `).join("")}
         `;
+    }
+
+    async function refreshCommercialCatalogs() {
+        if (!state.endpoints.catalogMetadata) {
+            return;
+        }
+
+        const response = await fetchJson(state.endpoints.catalogMetadata);
+        const metadata = response?.metadata;
+        if (!metadata || typeof metadata !== "object") {
+            return;
+        }
+
+        commercialBootstrap.metadata = {
+            ...(commercialBootstrap.metadata || {}),
+            ...metadata
+        };
+        hydrateCommercialFormOptions();
     }
 
     function buildEndpoint(pattern, proposalId) {
@@ -3838,7 +3901,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <div class="critical-analysis__answers">
                                 ${CRITICAL_ANALYSIS_OPTIONS.map((option) => `
                                     <label class="critical-analysis__option ${answers[fieldName] === option.value ? "is-selected" : ""}">
-                                        <input type="radio" name="edit-critical-${fieldName}" value="${option.value}" data-critical-edit-field="${fieldName}" ${answers[fieldName] === option.value ? "checked" : ""} ${state.dataEditMode ? "" : "disabled"}>
+                                        <input type="radio" name="edit-critical-${fieldName}" value="${option.value}" data-critical-edit-field="${fieldName}" ${answers[fieldName] === option.value ? "checked" : ""} ${state.criticalAnalysisEditMode ? "" : "disabled"}>
                                         <span>${option.label}</span>
                                     </label>
                                 `).join("")}
@@ -3846,7 +3909,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         </div>
                     `).join("")}
                 </div>
-                <label class="edit-field critical-analysis__comment"><span>Comentário da Análise Crítica</span><textarea data-edit-analysis-comment ${state.dataEditMode ? "" : "readonly"} placeholder="Adicione uma observação complementar, se necessário.">${escapeHtml(analysis.comentario || "")}</textarea></label>
+                <label class="edit-field critical-analysis__comment"><span>Comentário da Análise Crítica</span><textarea data-edit-analysis-comment ${state.criticalAnalysisEditMode ? "" : "readonly"} placeholder="Adicione uma observação complementar, se necessário.">${escapeHtml(analysis.comentario || "")}</textarea></label>
             </section>
         `;
     }
@@ -3883,6 +3946,37 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    function saveCriticalAnalysis() {
+        const proposal = getSelectedProposal();
+        if (!proposal) return;
+
+        persistProposalUpdate(proposal.id, {
+            analise_critica_oportunidade: getCriticalAnalysisEditPayload(),
+            history_entry: {
+                usuario: proposal.responsavel,
+                acao: "Análise crítica atualizada",
+                detalhe: "As respostas da análise crítica foram atualizadas no painel."
+            }
+        }).then(() => {
+            state.criticalAnalysisEditMode = false;
+            state.saveProposalError = false;
+            renderProposalPanel();
+            showNotification({
+                type: "success",
+                title: "Análise crítica salva",
+                message: "As respostas da oportunidade foram atualizadas."
+            });
+        }).catch((error) => {
+            state.saveProposalError = true;
+            renderProposalPanel();
+            showNotification({
+                type: "warning",
+                title: "Erro ao salvar",
+                message: Object.values(error.details || {}).join(" ") || error.message || "Não foi possível atualizar a análise crítica."
+            });
+        });
+    }
+
     function getStatusTone(status) {
         const value = normalizeString(status);
         if (["em analise", "avaliando escopo", "sem retorno"].includes(value)) return "analysis";
@@ -3898,6 +3992,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.selectedProposalId = id;
         state.activeDetailTab = "resumo";
         state.dataEditMode = false;
+        state.criticalAnalysisEditMode = false;
         state.scopeEditMode = false;
         state.noteEditMode = false;
         state.followupFormOpen = false;
@@ -3932,6 +4027,7 @@ document.addEventListener("DOMContentLoaded", () => {
         refs.proposalDrawer.classList.remove("is-open");
         refs.proposalDrawer.setAttribute("aria-hidden", "true");
         state.dataEditMode = false;
+        state.criticalAnalysisEditMode = false;
         state.scopeEditMode = false;
         state.noteEditMode = false;
         state.followupFormOpen = false;
@@ -4187,8 +4283,24 @@ document.addEventListener("DOMContentLoaded", () => {
         const modal = document.createElement("section");
         modal.className = "document-review-modal document-review-modal--onshore-pc";
         document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
-        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(review.revisaoDocumental || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais <small>Automático</small></h3><div class="document-review__readonly-grid"><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa)}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo)}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section><section class="document-review__section"><h3>Carta / serviço <small>Revisão documental</small></h3><label>Complemento do serviço<textarea data-pc-service-complement placeholder="Use somente se o serviço exigir complemento na carta.">${escapeHtml(content.complemento_servico || "")}</textarea></label></section><section class="document-review__section"><h3>Referência à Proposta Técnica <small>Revisão documental</small></h3><label class="document-review__checkbox"><input type="checkbox" data-pc-has-pt ${content.possui_pt ? "checked" : ""}> Esta PC possui uma Proposta Técnica relacionada</label><div data-pc-pt-fields class="document-review__line-fields ${content.possui_pt ? "" : "is-hidden"}"><label>Identificação da PT<input data-pc-pt-id value="${escapeHtml(content.pt_identificacao || "")}"></label><label>Data da PT<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}"></label><label>REV da PT<input data-pc-pt-revision value="${escapeHtml(content.pt_revisao || "")}"></label></div><label>Texto de introdução sem PT<textarea data-pc-no-pt-text placeholder="Obrigatório somente se não houver PT relacionada.">${escapeHtml(content.introducao_sem_pt || "")}</textarea></label></section><section class="document-review__section"><h3>Proposta financeira <small>Automático a partir da proposta</small></h3><div class="document-review__financial">${(review.financeiro || []).map((item) => `<div><b>${escapeHtml(item.descricao)}</b><span>Qtd. ${escapeHtml(item.quantidade)}</span><strong>R$ ${escapeHtml(item.preco_unitario)}</strong></div>`).join("") || "Nenhum item financeiro cadastrado."}</div></section><section class="document-review__section"><h3>Prazo e validade <small>Revisão documental</small></h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pc-deadline value="${escapeHtml(content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 60 dias"></label><label>Validade em dias<input type="number" min="1" data-pc-validity value="${escapeHtml(content.validade_dias || "30")}"></label></div><label>Texto complementar<textarea data-pc-deadline-note>${escapeHtml(content.prazo_complementar || "Mobilização a combinar, após assinatura de contrato.")}</textarea></label></section><section class="document-review__section"><h3>Revisão final</h3><p>Os campos comerciais são preenchidos automaticamente; confirme os campos documentais antes da pré-visualização.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
+        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(review.revisaoDocumental || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais <small>Automático</small></h3><div class="document-review__readonly-grid"><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa)}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo)}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section><section class="document-review__section"><h3>Carta / serviço <small>Revisão documental</small></h3><label>Complemento do serviço<textarea data-pc-service-complement placeholder="Use somente se o serviço exigir complemento na carta.">${escapeHtml(content.complemento_servico || "")}</textarea></label></section><section class="document-review__section"><h3>Referência à Proposta Técnica <small>Revisão documental</small></h3><label class="document-review__checkbox"><input type="checkbox" data-pc-has-pt ${content.possui_pt ? "checked" : ""}> Esta PC possui uma Proposta Técnica relacionada</label><div data-pc-pt-fields class="document-review__line-fields ${content.possui_pt ? "" : "is-hidden"}"><label>Identificação da PT<input data-pc-pt-id value="${escapeHtml(content.pt_identificacao || "")}"></label><label>Data da PT<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}"></label><label>REV da PT<input data-pc-pt-revision value="${escapeHtml(content.pt_revisao || "")}"></label></div><label>Texto de introdução sem PT<textarea data-pc-no-pt-text placeholder="Obrigatório somente se não houver PT relacionada.">${escapeHtml(content.introducao_sem_pt || "")}</textarea></label></section><section class="document-review__section"><h3>Proposta financeira <small>Automático a partir da proposta</small></h3><div class="document-review__financial">${(review.financeiro || []).map((item) => `<div><b>${escapeHtml(item.descricao)}</b><span>Qtd. ${escapeHtml(item.quantidade)}</span><strong>R$ ${escapeHtml(item.preco_unitario)}</strong></div>`).join("") || "Nenhum item financeiro cadastrado."}</div></section><section class="document-review__section"><h3>Prazo e validade <small>Revisão documental</small></h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pc-deadline value="${escapeHtml(content.prazo || "")}" placeholder="Ex.: ${escapeHtml(payload.proposta.tempoContratoDias || "60 dias")}"></label><label>Validade em dias<input type="number" min="1" data-pc-validity value="${escapeHtml(content.validade_dias || "")}" placeholder="Ex.: 30"></label></div><label>Texto complementar<textarea data-pc-deadline-note placeholder="Ex.: Mobilização a combinar, após assinatura de contrato.">${escapeHtml(content.prazo_complementar || "")}</textarea></label></section><section class="document-review__section"><h3>Revisão final</h3><p>Os campos comerciais são preenchidos automaticamente; confirme os campos documentais antes da pré-visualização.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
         document.body.appendChild(modal);
+        const clearLegacyDefault = (selector, expectedValue, placeholder) => {
+            const input = modal.querySelector(selector);
+            if (input && String(input.value || "").trim() === String(expectedValue || "").trim()) {
+                input.value = "";
+                input.placeholder = placeholder;
+            }
+        };
+        const pcDeadlineInput = modal.querySelector("[data-pc-deadline]");
+        const proposalDeadlineNumber = String(payload.proposta.tempoContratoDias || "").match(/\d+/)?.[0] || "";
+        const reviewDeadlineNumber = String(pcDeadlineInput?.value || "").match(/\d+/)?.[0] || "";
+        if (pcDeadlineInput && (!content.prazo || (proposalDeadlineNumber && reviewDeadlineNumber === proposalDeadlineNumber))) {
+            pcDeadlineInput.value = "";
+            pcDeadlineInput.placeholder = `Ex.: ${payload.proposta.tempoContratoDias || "60 dias"}`;
+        }
+        clearLegacyDefault("[data-pc-validity]", "30", "Ex.: 30");
+        clearLegacyDefault("[data-pc-deadline-note]", "Mobilização a combinar, após assinatura de contrato.", "Ex.: Mobilização a combinar, após assinatura de contrato.");
         const automaticTechnicalReference = [
             payload.proposta.numeroProposta,
             payload.proposta.empresa,
@@ -4205,7 +4317,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (financialSection) {
             const selectedItems = content.itens_financeiros || {};
             const asIntegerQuantity = (value) => Math.max(1, Math.round(Number(String(value || "1").replace(",", ".")) || 1));
-            financialSection.insertAdjacentHTML("afterbegin", `<div class="document-review__line-fields document-review__financial-meta"><label>Escopo do PPU<textarea data-pc-financial-scope placeholder="Descreva o escopo que será exibido na planilha de preços.">${escapeHtml(content.escopo_ppu || "")}</textarea></label><label>Prazo do PPU<input data-pc-financial-deadline value="${escapeHtml(content.prazo_ppu || content.prazo || payload.proposta.tempoContratoDias || "")}" placeholder="Ex.: 48 horas"></label></div><p class="document-review__notice">Cliente e ID são preenchidos pela proposta. A quantidade aceita somente números inteiros e também atualiza o item comercial.</p><div class="document-review__financial-select">${(review.financeiro || []).map((item, index) => { const selected = selectedItems[item.id] || selectedItems[String(index)] || {}; return `<label><input type="checkbox" data-pc-financial-item data-item-key="${escapeHtml(String(item.id || index))}" ${selected.incluir !== false ? "checked" : ""}><span>${escapeHtml(item.descricao)}</span><input type="number" min="1" step="1" inputmode="numeric" data-pc-financial-quantity value="${escapeHtml(String(asIntegerQuantity(selected.quantidade || item.quantidade || 1)))}" aria-label="Quantidade de ${escapeHtml(item.descricao)}"></label>`; }).join("")}</div>`);
+            financialSection.insertAdjacentHTML("afterbegin", `<div class="document-review__line-fields document-review__financial-meta"><label>Escopo do PPU<textarea data-pc-financial-scope placeholder="Descreva o escopo que será exibido na planilha de preços.">${escapeHtml(content.escopo_ppu || "")}</textarea></label><label>Prazo do PPU<input data-pc-financial-deadline value="${escapeHtml(content.prazo_ppu || "")}" placeholder="Ex.: ${escapeHtml(content.prazo || payload.proposta.tempoContratoDias || "48 horas")}"></label></div><p class="document-review__notice">Cliente e ID são preenchidos pela proposta. A quantidade aceita somente números inteiros e também atualiza o item comercial.</p><div class="document-review__financial-select">${(review.financeiro || []).map((item, index) => { const selected = selectedItems[item.id] || selectedItems[String(index)] || {}; return `<label><input type="checkbox" data-pc-financial-item data-item-key="${escapeHtml(String(item.id || index))}" ${selected.incluir !== false ? "checked" : ""}><span>${escapeHtml(item.descricao)}</span><input type="number" min="1" step="1" inputmode="numeric" data-pc-financial-quantity value="${escapeHtml(String(asIntegerQuantity(selected.quantidade || item.quantidade || 1)))}" aria-label="Quantidade de ${escapeHtml(item.descricao)}"></label>`; }).join("")}</div>`);
         }
         const resizeReviewTextarea = (textarea) => {
             textarea.style.height = "42px";
@@ -4254,6 +4366,24 @@ document.addEventListener("DOMContentLoaded", () => {
             : `<section class="document-review__section document-review__revision-board"><h3>Quadro de revisões</h3><table><thead><tr><th>Revisão</th><th>Data</th><th>Descrição</th></tr></thead><tbody>${revisionRows.map((row) => `<tr><td>${escapeHtml(row.revisao)}</td><td>${escapeHtml(row.data || "-")}</td><td>${escapeHtml(row.descricao || "Emissão Inicial.")}</td></tr>`).join("")}</tbody></table></section>`;
         modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Técnica Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(payload.proposta.rev || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados automáticos <small>Origem: proposta comercial</small></h3><div class="document-review__readonly-grid"><span><b>Número da proposta</b>${escapeHtml(payload.proposta.numeroProposta || "Não informado")}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo || "Não informado")}</span><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa || "Não informado")}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section>${revisionSection}<section class="document-review__section"><h3>Resumo sobre a planta do cliente</h3><label><textarea data-pt-summary placeholder="Descreva resumidamente a planta do cliente.">${escapeHtml(content.resumo_planta || "")}</textarea></label></section><section class="document-review__section"><h3>Referências</h3><label class="document-review__checkbox"><input type="checkbox" data-pt-no-references ${content.sem_referencias ? "checked" : ""}> Não existem referências específicas</label><div class="document-review__lines" data-pt-reference-lines>${(references.length ? references : [""]).map(renderReference).join("")}</div><button type="button" data-pt-reference-add>+ Adicionar referência</button></section><section class="document-review__section"><h3>Histograma de mão de obra</h3><p class="document-review__notice">Informe a função e a quantidade inteira de cada profissional.</p><div class="document-review__lines" data-pt-histogram-lines>${(histogramRows.length ? histogramRows : [{}]).map(renderHistogramRow).join("")}</div><button type="button" data-pt-histogram-add>+ Adicionar função</button></section><section class="document-review__section"><h3>Histograma de equipamentos</h3><p class="document-review__notice">Informe a descrição de cada equipamento que deve constar no histograma.</p><div class="document-review__lines" data-pt-equipment-histogram-lines>${(equipmentHistogramRows.length ? equipmentHistogramRows : [""]).map(renderEquipmentHistogramRow).join("")}</div><button type="button" data-pt-equipment-add>+ Adicionar equipamento</button></section><section class="document-review__section"><h3>Prazo e jornada</h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pt-deadline value="${escapeHtml(content.prazo_execucao || "")}" placeholder="Ex.: 30 dias"></label><label>Jornada<input data-pt-journey value="${escapeHtml(content.jornada || "07:00 às 17:00.")}" placeholder="Ex.: 07:00 às 17:00."></label><label>Data de emissão<input type="date" data-pt-emission-date value="${escapeHtml(content.data_emissao || "")}"></label></div></section><section class="document-review__section"><h3>Conferência documental</h3><p class="document-review__notice">A revisão mostra somente os conteúdos variáveis destacados no documento oficial. Os demais textos e elementos permanecem inalterados.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
         document.body.appendChild(modal);
+
+        const clearPtLegacyDefault = (selector, expectedValue, placeholder) => {
+            const input = modal.querySelector(selector);
+            if (input && String(input.value || "").trim() === String(expectedValue || "").trim()) {
+                input.value = "";
+                input.placeholder = placeholder;
+            }
+        };
+        const ptDeadlineInput = modal.querySelector("[data-pt-deadline]");
+        const proposalDeadlineNumber = String(payload.proposta.tempoContratoDias || "").match(/\d+/)?.[0] || "";
+        const reviewDeadlineNumber = String(ptDeadlineInput?.value || "").match(/\d+/)?.[0] || "";
+        if (ptDeadlineInput && (!content.prazo_execucao || (proposalDeadlineNumber && reviewDeadlineNumber === proposalDeadlineNumber))) {
+            ptDeadlineInput.value = "";
+            ptDeadlineInput.placeholder = `Ex.: ${payload.proposta.tempoContratoDias || "30 dias"}`;
+        }
+        clearPtLegacyDefault("[data-pt-journey]", "07:00 às 17:00.", "Ex.: 07:00 às 17:00.");
+        clearPtLegacyDefault("[data-pt-journey]", "07:00 as 17:00.", "Ex.: 07:00 às 17:00.");
+        clearPtLegacyDefault("[data-pt-emission-date]", payload.proposta.emissao, "Selecione a data de emissão");
 
         // The official PT places these fields in separate chapters. Keep the
         // same inputs, but present them in the review in document order.
@@ -4849,6 +4979,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({ nome })
             });
             const cliente = response?.cliente || {};
+            await refreshCommercialCatalogs();
             updateMetadataList("clientes", cliente.value);
             appendOptionAndSelect(refs.proposalCliente, cliente.value, cliente.label);
             closeQuickClientForm();
@@ -4908,6 +5039,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 })
             });
             const unidade = response?.unidade || {};
+            await refreshCommercialCatalogs();
             updateMetadataList("unidades", unidade.value);
             appendOptionAndSelect(refs.proposalUnidade, unidade.value, unidade.label);
             closeQuickUnitForm();
@@ -4952,6 +5084,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({ nome })
             });
             const metodo = response?.metodo || {};
+            await refreshCommercialCatalogs();
             updateMetadataList("metodoOptions", metodo.value);
             appendOptionAndSelect(document.getElementById("proposalMetodo"), metodo.value, metodo.label);
             closeQuickMethodForm();
@@ -4987,6 +5120,7 @@ document.addEventListener("DOMContentLoaded", () => {
             setButtonLoading(refs.saveQuickServiceButton, true, "Salvando...");
             const response = await fetchJson(state.endpoints.quickServiceCreate, { method: "POST", body: JSON.stringify({ nome }) });
             const servico = response?.servico || {};
+            await refreshCommercialCatalogs();
             updateMetadataList("servicos", servico.value);
             const emptyIndex = (state.proposalDraftServices || []).findIndex((value) => !String(value || "").trim());
             if (emptyIndex >= 0) state.proposalDraftServices[emptyIndex] = servico.value;
@@ -5025,6 +5159,7 @@ document.addEventListener("DOMContentLoaded", () => {
             setButtonLoading(refs.saveQuickItemButton, true, "Salvando...");
             const response = await fetchJson(state.endpoints.quickItemCreate, { method: "POST", body: JSON.stringify({ nome }) });
             const item = response?.item || {};
+            await refreshCommercialCatalogs();
             const choices = Array.isArray(commercialBootstrap?.metadata?.financeiroCampoChoices)
                 ? commercialBootstrap.metadata.financeiroCampoChoices : [];
             choices.push({ value: item.value, label: item.label || item.value, group: item.group || "Itens cadastrados" });
@@ -5067,6 +5202,7 @@ document.addEventListener("DOMContentLoaded", () => {
             setButtonLoading(refs.saveQuickSegmentButton, true, "Salvando...");
             const response = await fetchJson(state.endpoints.quickSegmentCreate, { method: "POST", body: JSON.stringify({ nome }) });
             const segmento = response?.segmento || {};
+            await refreshCommercialCatalogs();
             updateMetadataList("segmentoOptions", segmento.value);
             appendOptionAndSelect(document.getElementById("proposalSegmento"), segmento.value, segmento.label);
             closeQuickSegmentForm();
@@ -5246,7 +5382,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return {
             id: state.proposalItemCounter++,
             item: "",
-            unitPrice: 0,
+            unitPrice: "",
             quantity: 1,
             subtotal: 0,
             errors: {}
@@ -5304,7 +5440,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     control: `
                         <div class="proposal-item-price">
                             <span>R$</span>
-                            <input type="text" value="${escapeHtml(formatCurrencyInputValue(item.unitPrice))}" data-proposal-item-field="unitPrice" data-item-id="${item.id}" inputmode="decimal" placeholder="0,00">
+                            <input type="text" value="${escapeHtml(item.unitPrice ? formatCurrencyInputValue(item.unitPrice) : "")}" data-currency-input="without-symbol" data-proposal-item-field="unitPrice" data-item-id="${item.id}" inputmode="numeric" autocomplete="off" placeholder="0,00">
                         </div>
                     `
                 })}
@@ -6257,11 +6393,11 @@ document.addEventListener("DOMContentLoaded", () => {
             previsao_contratacao: updatedValues.previsaoContratacao,
             follow_up: updatedValues.followUp,
             natureza: updatedValues.natureza,
-            unidade: updatedValues.unidade || updatedValues.embarcacaoLocal,
+            unidade: updatedValues.unidade,
+            embarcacao_local: updatedValues.embarcacaoLocal,
             heat_map: updatedValues.heatMap,
             status_proposta: updatedValues.statusProposta,
             motivo_perda: updatedValues.motivoDeclinioPerda,
-            analise_critica_oportunidade: getCriticalAnalysisEditPayload(),
             pt_financeiro: updatedValues.pt,
             pc_ptc: updatedValues.pcPtc,
             cliente: updatedValues.empresa,
@@ -6295,7 +6431,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotification({
                 type: "warning",
                 title: "Erro ao salvar",
-                message: error.message || "Não foi possível atualizar os dados comerciais da proposta."
+                message: Object.values(error.details || {}).join(" ") || error.message || "Não foi possível atualizar os dados comerciais da proposta."
             });
         });
     }
@@ -6801,6 +6937,16 @@ document.addEventListener("DOMContentLoaded", () => {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
+    }
+
+    function formatCurrencyTyping(value, withSymbol = false) {
+        const digits = String(value || "").replace(/\D/g, "");
+        if (!digits) {
+            return "";
+        }
+
+        const amount = Number(digits) / 100;
+        return withSymbol ? formatCurrencyDisplay(amount) : formatCurrencyInputValue(amount);
     }
 
     function buildAgendaFollowups() {
@@ -7576,6 +7722,18 @@ document.addEventListener("DOMContentLoaded", () => {
             renderProposalPanel();
         } else if (action === "save-data") {
             saveCommercialData();
+        } else if (action === "edit-critical-analysis") {
+            state.activeDetailTab = "analise-critica";
+            state.dataEditMode = false;
+            state.criticalAnalysisEditMode = true;
+            state.saveProposalError = false;
+            renderProposalPanel();
+        } else if (action === "cancel-critical-analysis") {
+            state.criticalAnalysisEditMode = false;
+            state.saveProposalError = false;
+            renderProposalPanel();
+        } else if (action === "save-critical-analysis") {
+            saveCriticalAnalysis();
         } else if (action === "edit-scope") {
             state.activeDetailTab = "escopo";
             state.scopeEditMode = true;
