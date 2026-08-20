@@ -19,6 +19,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
+from docx.text.paragraph import Paragraph
 
 
 class OfficialProposalPdfError(Exception):
@@ -49,6 +50,13 @@ TEMPLATE_ROOT_FALLBACKS = {
 
 def _clean(value):
     return str(value or "").strip()
+
+
+def _revision_number(value):
+    try:
+        return int(str(value or "0"))
+    except (TypeError, ValueError):
+        return 0
 
 
 def resolve_official_template_path(template_key):
@@ -188,6 +196,50 @@ def _remove_text_highlights(document):
                     continue
                 for highlight in list(properties.findall(qn("w:highlight"))):
                     properties.remove(highlight)
+
+
+def _clear_run_highlight(run):
+    """Remove only the editing marker from a mapped variable DOCX run."""
+    properties = run._r.rPr
+    if properties is None:
+        return
+    for highlight in list(properties.findall(qn("w:highlight"))):
+        properties.remove(highlight)
+
+
+def _set_highlighted_runs(paragraph, value, *, final):
+    """Replace the yellow runs in a known paragraph without touching its other text."""
+    marked_runs = [run for run in paragraph.runs if run.font.highlight_color == WD_COLOR_INDEX.YELLOW]
+    if not marked_runs:
+        raise OfficialProposalPdfError("O campo variavel esperado nao foi encontrado no template PT Onshore.")
+    marked_runs[0].text = _clean(value)
+    for run in marked_runs[1:]:
+        run.text = ""
+    if final:
+        for run in marked_runs:
+            _clear_run_highlight(run)
+
+
+def _remove_paragraph(paragraph):
+    parent = paragraph._element.getparent()
+    parent.remove(paragraph._element)
+
+
+def _format_revision_table_date(value):
+    if not isinstance(value, date):
+        return ""
+    abbreviations = ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez")
+    return f"{value.day:02d}-{abbreviations[value.month - 1]}-{value.year}"
+
+
+def _parse_review_date(value):
+    raw_value = _clean(value)
+    if not raw_value:
+        return None
+    try:
+        return date.fromisoformat(raw_value)
+    except ValueError as error:
+        raise OfficialProposalPdfError("Informe uma data valida para a Proposta Tecnica.") from error
 
 
 def _set_cell_text(cell, value):
@@ -388,6 +440,247 @@ def _apply_pc_onshore_revision(document, revision, serialized, items, *, show_va
     _fill_pc_onshore_financial_table(document, items, revision, serialized)
 
 
+def _apply_pt_onshore_revision(document, revision, serialized, *, show_variable_highlights=False):
+    """Apply the PT revision only to the explicitly yellow runs of its official DOCX."""
+    content = (revision or {}).get("conteudo") or {}
+    paragraphs = document.paragraphs
+    if len(paragraphs) <= 148:
+        raise OfficialProposalPdfError("A estrutura esperada do template PT Onshore nao foi encontrada.")
+
+    service = _clean(serialized.get("servico") or serialized.get("escopo"))
+    client = _clean(serialized.get("empresa"))
+    requester = _clean(serialized.get("solicitante"))
+    email = _clean(serialized.get("emailSolicitante"))
+    number = _clean(serialized.get("numeroProposta"))
+    analyst = _clean(serialized.get("responsavel"))
+    summary = _clean(content.get("resumo_planta"))
+    methodology = _clean(content.get("metodologia_executiva"))
+    histogram_description = _clean(content.get("descricao_histograma"))
+    deadline = _clean(content.get("prazo_execucao"))
+    journey = _clean(content.get("jornada"))
+    references = [
+        _clean(reference)
+        for reference in (content.get("referencias") or [])
+        if _clean(reference)
+    ]
+    without_references = bool(content.get("sem_referencias"))
+    document_date = _parse_review_date(content.get("data_emissao"))
+    missing = [
+        label for label, value in (
+            ("resumo sobre a planta", summary),
+            ("prazo de execucao", deadline),
+            ("jornada", journey),
+            ("data de emissao", document_date),
+        ) if not value
+    ]
+    if missing:
+        raise OfficialProposalPdfError("Preencha os campos da revisao PT: " + ", ".join(missing) + ".")
+    if without_references and references:
+        raise OfficialProposalPdfError("Escolha referencias ou marque que nao existem referencias especificas.")
+    if not without_references and not references:
+        raise OfficialProposalPdfError("Informe ao menos uma referencia ou marque que nao existem referencias especificas.")
+
+    final = not show_variable_highlights
+    histogram_note_template = deepcopy(paragraphs[89]._p)
+    _set_highlighted_runs(paragraphs[1], number, final=final)
+    _set_highlighted_runs(paragraphs[5], service, final=final)
+    _set_highlighted_runs(paragraphs[8], client, final=final)
+    _set_highlighted_runs(paragraphs[11], requester, final=final)
+    _set_highlighted_runs(paragraphs[12], email, final=final)
+    _set_highlighted_runs(paragraphs[40], f"A {client},", final=final)
+    _set_highlighted_runs(paragraphs[41], f"de {service.casefold()}", final=final)
+    _set_highlighted_runs(paragraphs[65], summary, final=final)
+    _set_highlighted_runs(paragraphs[85], f"de {deadline}", final=final)
+    if methodology:
+        _set_paragraph_with_highlight(
+            paragraphs[89],
+            "",
+            methodology,
+            "",
+            show_highlight=show_variable_highlights,
+        )
+    if histogram_description:
+        histogram_note_xml = deepcopy(histogram_note_template)
+        paragraphs[90]._p.addnext(histogram_note_xml)
+        histogram_note = Paragraph(histogram_note_xml, paragraphs[90]._parent)
+        _set_paragraph_with_highlight(
+            histogram_note,
+            "",
+            histogram_description,
+            "",
+            show_highlight=show_variable_highlights,
+        )
+    _set_highlighted_runs(paragraphs[114], journey, final=final)
+    _set_paragraph_with_highlight(
+        paragraphs[15],
+        "",
+        _format_cover_month(document_date),
+        "",
+        show_highlight=show_variable_highlights,
+    )
+    _set_paragraph_with_highlight(
+        paragraphs[148],
+        "Rio de Janeiro, ",
+        f"{document_date.day:02d} de {PORTUGUESE_MONTHS[document_date.month - 1]} de {document_date.year}",
+        ".",
+        show_highlight=show_variable_highlights,
+    )
+    _set_paragraph_text(paragraphs[151], analyst or "Não informado")
+    _set_pt_onshore_footer_analyst(document, analyst)
+
+    if without_references:
+        _remove_paragraph(paragraphs[83])
+        _remove_paragraph(paragraphs[105])
+    else:
+        _fill_pt_onshore_references(paragraphs[83], references, final=final)
+        _set_highlighted_runs(
+            paragraphs[105],
+            "Para a elaboracao da proposta Tecnica utilizamos como referencia todos os documentos citados no capitulo REFERENCIAS, questionamentos enviados e experiencia da Ambipar em servicos similares prestados anteriormente;",
+            final=final,
+        )
+
+    for section in document.sections:
+        for table in section.header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        if any(run.font.highlight_color == WD_COLOR_INDEX.YELLOW for run in paragraph.runs):
+                            _set_highlighted_runs(paragraph, service, final=final)
+
+    revision_rows = content.get("quadro_revisoes") or [{
+            "revisao": _clean(serialized.get("rev")) or "00",
+            "data": content.get("data_revisao") or content.get("data_emissao"),
+            "descricao": content.get("descricao_revisao") or "Emissão Inicial.",
+        }]
+    current_revision = max((_revision_number(row.get("revisao")) for row in revision_rows), default=0)
+    current_row = next((row for row in revision_rows if _revision_number(row.get("revisao")) == current_revision), {})
+    if current_revision > 0 and (not _clean(current_row.get("data")) or not _clean(current_row.get("descricao"))):
+        raise OfficialProposalPdfError("Informe a data e a descricao da revisao atual antes de gerar o documento.")
+    _fill_pt_onshore_revision_table(document, revision_rows, final=final)
+
+    histogram_rows = []
+    for row in content.get("histograma_mao_obra") or []:
+        function = _clean(row.get("funcao"))
+        quantity = _revision_number(row.get("quantidade"))
+        if not function and not _clean(row.get("quantidade")):
+            continue
+        if not function or quantity <= 0 or str(quantity) != _clean(row.get("quantidade")):
+            raise OfficialProposalPdfError("Informe função e quantidade inteira positiva para cada linha do histograma.")
+        histogram_rows.append({"funcao": function, "quantidade": quantity})
+    _fill_pt_onshore_histogram_table(document, histogram_rows)
+
+    equipment_histogram_rows = [
+        _clean(description)
+        for description in content.get("histograma_equipamentos") or []
+        if _clean(description)
+    ]
+    _fill_pt_onshore_equipment_histogram_table(document, equipment_histogram_rows)
+
+    # The signature image belongs to the editable template only. The issued
+    # proposal identifies the commercial analyst by name, without a signature.
+    _remove_paragraph(paragraphs[149])
+    _normalize_pt_onshore_footer_logo_positions(document)
+
+
+def _fill_pt_onshore_revision_table(document, revision_rows, *, final):
+    """Clone the official review-table row for every commercial revision."""
+    if len(document.tables) <= 1 or len(document.tables[1].rows) <= 1:
+        raise OfficialProposalPdfError("O quadro de revisoes do template PT Onshore nao foi encontrado.")
+    table = document.tables[1]
+    reference_row = deepcopy(table.rows[1]._tr)
+    for row in list(table.rows[1:]):
+        table._tbl.remove(row._tr)
+
+    for source_row in revision_rows:
+        raw_date = _clean(source_row.get("data"))
+        try:
+            formatted_date = _format_revision_table_date(date.fromisoformat(raw_date)) if raw_date else ""
+        except ValueError:
+            formatted_date = raw_date
+        table._tbl.append(deepcopy(reference_row))
+        row = table.rows[-1]
+        _set_row_cells(
+            row,
+            (
+                _clean(source_row.get("revisao")),
+                formatted_date,
+                _clean(source_row.get("descricao")),
+            ),
+        )
+        if final:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        _clear_run_highlight(run)
+
+
+def _fill_pt_onshore_histogram_table(document, rows):
+    """Fill the official labor histogram by cloning its blank template row."""
+    if len(document.tables) <= 2 or len(document.tables[2].rows) <= 1:
+        raise OfficialProposalPdfError("A tabela de histograma do template PT Onshore nao foi encontrada.")
+    if not rows:
+        return
+    table = document.tables[2]
+    reference_row = deepcopy(table.rows[1]._tr)
+    for row in list(table.rows[1:]):
+        table._tbl.remove(row._tr)
+    for item in rows:
+        table._tbl.append(deepcopy(reference_row))
+        row = table.rows[-1]
+        _set_row_cells(row, (_clean(item.get("funcao")), str(item.get("quantidade"))))
+
+
+def _fill_pt_onshore_equipment_histogram_table(document, rows):
+    """Fill the official equipment histogram by cloning its blank template row."""
+    if len(document.tables) <= 3 or len(document.tables[3].rows) <= 1:
+        raise OfficialProposalPdfError("A tabela de histograma de equipamentos do template PT Onshore nao foi encontrada.")
+    if not rows:
+        return
+    table = document.tables[3]
+    reference_row = deepcopy(table.rows[1]._tr)
+    for row in list(table.rows[1:]):
+        table._tbl.remove(row._tr)
+    for description in rows:
+        table._tbl.append(deepcopy(reference_row))
+        _set_cell_text(table.rows[-1].cells[0], description)
+
+
+def _set_pt_onshore_footer_analyst(document, analyst):
+    """Replace only the template analyst name in each PT section footer."""
+    for section in document.sections:
+        for paragraph in section.footer.paragraphs:
+            if "Katlyn Brito" in paragraph.text:
+                _replace_in_runs(paragraph, "Katlyn Brito", analyst or "Não informado")
+
+
+def _fill_pt_onshore_references(paragraph, references, *, final):
+    """Create one styled official-template paragraph for each PT reference."""
+    template_xml = deepcopy(paragraph._p)
+    current_paragraph = paragraph
+    for index, reference in enumerate(references):
+        if index:
+            new_xml = deepcopy(template_xml)
+            current_paragraph._p.addnext(new_xml)
+            current_paragraph = Paragraph(new_xml, paragraph._parent)
+        _set_highlighted_runs(current_paragraph, reference, final=final)
+
+
+def _normalize_pt_onshore_footer_logo_positions(document):
+    """Anchor every PT footer logo at the same left margin across sections."""
+    for section in document.sections:
+        for paragraph in section.footer.paragraphs:
+            for anchor in paragraph._p.xpath(".//wp:anchor"):
+                if anchor.find(".//" + qn("a:blip")) is None:
+                    continue
+                position = anchor.find(qn("wp:positionH"))
+                if position is None:
+                    continue
+                position.set("relativeFrom", "margin")
+                offset = position.find(qn("wp:posOffset"))
+                if offset is not None:
+                    offset.text = "0"
+
+
 def _fill_offshore_financial_table(document, items):
     if len(document.tables) < 6:
         raise OfficialProposalPdfError("A tabela financeira do template Offshore não foi encontrada.")
@@ -438,7 +731,9 @@ def _set_paragraph_with_highlight(paragraph, prefix, highlighted, suffix, *, sho
     """Replace a paragraph while preserving its base run formatting."""
     base_run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
     base_properties = deepcopy(base_run._r.rPr) if base_run._r.rPr is not None else None
-    base_run.text = _clean(prefix)
+    # Prefixes/suffixes can deliberately contain spaces around a highlighted
+    # variable (for example, a date after a comma), so do not normalize them.
+    base_run.text = str(prefix or "")
     for run in paragraph.runs[1:]:
         run.text = ""
 
@@ -448,7 +743,7 @@ def _set_paragraph_with_highlight(paragraph, prefix, highlighted, suffix, *, sho
     if show_highlight:
         variable_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
-    ending_run = paragraph.add_run(_clean(suffix))
+    ending_run = paragraph.add_run(str(suffix or ""))
     if base_properties is not None:
         ending_run._r.insert(0, deepcopy(base_properties))
 
@@ -477,6 +772,31 @@ def _apply_offshore_revision(document, revision):
             for offset in range(max(3, len(content))):
                 if start + offset < len(paragraphs):
                     _set_paragraph_text(paragraphs[start + offset], content[offset].get("descricao", "") if offset < len(content) else "")
+
+
+def _apply_offshore_signature_details(document, analyst, emission_date):
+    """Apply the issued-document signature text without retaining the stamp image."""
+    paragraphs = document.paragraphs
+    if len(paragraphs) <= 82:
+        raise OfficialProposalPdfError("A estrutura de assinatura do template Offshore nao foi encontrada.")
+
+    _set_paragraph_text(paragraphs[78], _format_date_long(emission_date or date.today()))
+    for drawing in list(paragraphs[79]._p.xpath(".//w:drawing")):
+        drawing.getparent().remove(drawing)
+    _set_paragraph_text(paragraphs[82], analyst or "Nao informado")
+
+    for section in document.sections:
+        for paragraph in section.footer.paragraphs:
+            if "Comercial" not in paragraph.text:
+                continue
+            for run in paragraph.runs:
+                if "Comercial" not in run.text:
+                    continue
+                # Keep the template's leading tab stops: they position the
+                # analyst block on the lower-right corner of every page.
+                leading_tabs = run.text[:len(run.text) - len(run.text.lstrip("\t"))]
+                run.text = f"{leading_tabs}{analyst or 'Nao informado'} - Comercial"
+                break
 
 
 def load_offshore_template_draft():
@@ -581,6 +901,11 @@ def generate_official_proposal_pdf(
     unit = _clean(serialized.get("unidade"))
     responsible = _clean(serialized.get("responsavel"))
     required = {"cliente": client, "serviço": service, "solicitante": requester, "e-mail": requester_email}
+    if template_key == "pt_onshore":
+        # These cover fields are automatic when the Commercial proposal has
+        # them, but the official PT can still be issued without either value.
+        required.pop("solicitante", None)
+        required.pop("e-mail", None)
     missing = [label for label, value in required.items() if not value]
     if missing:
         raise OfficialProposalPdfError("Preencha os campos obrigatórios do documento: " + ", ".join(missing) + ".")
@@ -629,10 +954,14 @@ def generate_official_proposal_pdf(
         copied_template = temporary_dir / f"proposta_{number}_rev_{revision}.docx"
         shutil.copy2(template_path, copied_template)
         document = Document(copied_template)
-        _replace_document_text(document, replacements)
+        # The PT official document explicitly authorizes changes only in yellow
+        # runs. Its content must never pass through the broad legacy replacer.
+        if template_key != "pt_onshore":
+            _replace_document_text(document, replacements)
         if template_key == "pc_offshore":
             _apply_offshore_revision(document, document_revision)
             _fill_offshore_financial_table(document, normalized_items)
+            _apply_offshore_signature_details(document, responsible, emission_date)
         elif template_key == "pc_onshore":
             if not document_revision:
                 raise OfficialProposalPdfError("Não foi possível carregar a revisão da Proposta Comercial Onshore.")
@@ -643,9 +972,19 @@ def generate_official_proposal_pdf(
                 normalized_items,
                 show_variable_highlights=preserve_variable_highlights,
             )
-        if not preserve_variable_highlights:
+        elif template_key == "pt_onshore":
+            if not document_revision:
+                raise OfficialProposalPdfError("Nao foi possivel carregar a revisao da Proposta Tecnica Onshore.")
+            _apply_pt_onshore_revision(
+                document,
+                document_revision,
+                serialized,
+                show_variable_highlights=preserve_variable_highlights,
+            )
+        if not preserve_variable_highlights and template_key != "pt_onshore":
             _remove_text_highlights(document)
-        _assert_no_placeholders(document)
+        if template_key != "pt_onshore":
+            _assert_no_placeholders(document)
         document.save(copied_template)
 
         output_path = _convert_with_libreoffice(copied_template, temporary_dir)

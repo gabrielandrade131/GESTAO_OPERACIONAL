@@ -4233,19 +4233,215 @@ document.addEventListener("DOMContentLoaded", () => {
         modal.addEventListener("click", async (event) => { if (event.target.closest("[data-document-close]")) return close(); if (event.target.closest("[data-document-save]")) { try { await save(); } catch (error) { showNotification({ type: "warning", title: "Não foi possível salvar", message: error.message }); } } if (event.target.closest("[data-document-preview]")) { try { await save(false); await previewProposalPdf(documentModeUrl("preview", true), documentModeUrl("final"), filename); } catch (error) { showNotification({ type: "warning", title: "Pré-visualização indisponível", message: error.message }); } } });
     }
 
+    function openOnshorePtReviewModal(payload, proposalId, pdfEndpoint, filename) {
+        const review = payload.revisao || {};
+        const content = review.conteudo || {};
+        const modal = document.createElement("section");
+        modal.className = "document-review-modal document-review-modal--onshore-pt";
+        document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
+        const references = Array.isArray(content.referencias) ? content.referencias : [];
+        const histogramRows = Array.isArray(content.histograma_mao_obra) ? content.histograma_mao_obra : [];
+        const equipmentHistogramRows = Array.isArray(content.histograma_equipamentos) ? content.histograma_equipamentos : [];
+        const currentRevision = Math.max(0, Number(payload.proposta.rev || 0));
+        const revisionRows = Array.isArray(content.quadro_revisoes) && content.quadro_revisoes.length
+            ? content.quadro_revisoes
+            : [{ revisao: String(currentRevision).padStart(2, "0"), data: content.data_emissao || "", descricao: currentRevision === 0 ? "Emissão Inicial." : "" }];
+        const renderReference = (value = "") => `<div class="document-review__line"><input data-pt-reference value="${escapeHtml(value)}" placeholder="Documento, e-mail ou referência do cliente"><button type="button" data-pt-reference-remove>Remover</button></div>`;
+        const renderHistogramRow = (row = {}) => `<div class="document-review__line document-review__histogram-line"><input data-pt-histogram-function value="${escapeHtml(row.funcao || "")}" placeholder="Função"><input type="number" min="1" step="1" inputmode="numeric" data-pt-histogram-quantity value="${escapeHtml(row.quantidade || "")}" placeholder="Qtd."><button type="button" data-pt-histogram-remove>Remover</button></div>`;
+        const renderEquipmentHistogramRow = (description = "") => `<div class="document-review__line document-review__equipment-histogram-line"><input data-pt-equipment-description value="${escapeHtml(description)}" placeholder="Descrição do equipamento"><button type="button" data-pt-equipment-remove>Remover</button></div>`;
+        const revisionSection = currentRevision > 0
+            ? `<section class="document-review__section document-review__revision-board"><h3>Quadro de revisões</h3><table><thead><tr><th>Revisão</th><th>Data</th><th>Descrição</th></tr></thead><tbody>${revisionRows.map((row) => `<tr><td>${escapeHtml(row.revisao)}</td><td>${escapeHtml(row.data || "-")}</td><td>${escapeHtml(row.descricao || "-")}</td></tr>`).join("")}</tbody></table><div class="document-review__line-fields"><label>REV<input value="${String(currentRevision).padStart(2, "0")}" readonly></label><label>Data da revisão<input type="date" data-pt-revision-date value="${escapeHtml(content.data_revisao || "")}"></label><label>Descrição da revisão<input data-pt-revision-description value="${escapeHtml(content.descricao_revisao || "")}" placeholder="Descreva a alteração desta revisão"></label></div></section>`
+            : `<section class="document-review__section document-review__revision-board"><h3>Quadro de revisões</h3><table><thead><tr><th>Revisão</th><th>Data</th><th>Descrição</th></tr></thead><tbody>${revisionRows.map((row) => `<tr><td>${escapeHtml(row.revisao)}</td><td>${escapeHtml(row.data || "-")}</td><td>${escapeHtml(row.descricao || "Emissão Inicial.")}</td></tr>`).join("")}</tbody></table></section>`;
+        modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Técnica Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(payload.proposta.rev || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados automáticos <small>Origem: proposta comercial</small></h3><div class="document-review__readonly-grid"><span><b>Número da proposta</b>${escapeHtml(payload.proposta.numeroProposta || "Não informado")}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo || "Não informado")}</span><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa || "Não informado")}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section>${revisionSection}<section class="document-review__section"><h3>Resumo sobre a planta do cliente</h3><label><textarea data-pt-summary placeholder="Descreva resumidamente a planta do cliente.">${escapeHtml(content.resumo_planta || "")}</textarea></label></section><section class="document-review__section"><h3>Referências</h3><label class="document-review__checkbox"><input type="checkbox" data-pt-no-references ${content.sem_referencias ? "checked" : ""}> Não existem referências específicas</label><div class="document-review__lines" data-pt-reference-lines>${(references.length ? references : [""]).map(renderReference).join("")}</div><button type="button" data-pt-reference-add>+ Adicionar referência</button></section><section class="document-review__section"><h3>Histograma de mão de obra</h3><p class="document-review__notice">Informe a função e a quantidade inteira de cada profissional.</p><div class="document-review__lines" data-pt-histogram-lines>${(histogramRows.length ? histogramRows : [{}]).map(renderHistogramRow).join("")}</div><button type="button" data-pt-histogram-add>+ Adicionar função</button></section><section class="document-review__section"><h3>Histograma de equipamentos</h3><p class="document-review__notice">Informe a descrição de cada equipamento que deve constar no histograma.</p><div class="document-review__lines" data-pt-equipment-histogram-lines>${(equipmentHistogramRows.length ? equipmentHistogramRows : [""]).map(renderEquipmentHistogramRow).join("")}</div><button type="button" data-pt-equipment-add>+ Adicionar equipamento</button></section><section class="document-review__section"><h3>Prazo e jornada</h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pt-deadline value="${escapeHtml(content.prazo_execucao || "")}" placeholder="Ex.: 30 dias"></label><label>Jornada<input data-pt-journey value="${escapeHtml(content.jornada || "07:00 às 17:00.")}" placeholder="Ex.: 07:00 às 17:00."></label><label>Data de emissão<input type="date" data-pt-emission-date value="${escapeHtml(content.data_emissao || "")}"></label></div></section><section class="document-review__section"><h3>Conferência documental</h3><p class="document-review__notice">A revisão mostra somente os conteúdos variáveis destacados no documento oficial. Os demais textos e elementos permanecem inalterados.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
+        document.body.appendChild(modal);
+
+        // The official PT places these fields in separate chapters. Keep the
+        // same inputs, but present them in the review in document order.
+        const scheduleSection = [...modal.querySelectorAll(".document-review__section")]
+            .find((section) => section.querySelector("h3")?.textContent.trim().toLowerCase() === "prazo e jornada");
+        if (scheduleSection) {
+            const fields = scheduleSection.querySelectorAll(".document-review__line-fields > label");
+            const createFieldSection = (title, field) => {
+                const section = document.createElement("section");
+                section.className = "document-review__section document-review__section--pt-schedule";
+                section.innerHTML = `<h3>${title}</h3><div class="document-review__line-fields"></div>`;
+                section.querySelector(".document-review__line-fields").appendChild(field);
+                return section;
+            };
+            const referencesSection = [...modal.querySelectorAll(".document-review__section")]
+                .find((section) => section.querySelector("h3")?.textContent.trim().toLowerCase() === "referências");
+            const equipmentSection = modal.querySelector("[data-pt-equipment-histogram-lines]")?.closest(".document-review__section");
+            const conferenceSection = [...modal.querySelectorAll(".document-review__section")]
+                .find((section) => section.querySelector("h3")?.textContent.trim().toLowerCase() === "conferência documental");
+
+            if (fields[0] && referencesSection) referencesSection.after(createFieldSection("Prazo de execução", fields[0]));
+            if (fields[1] && equipmentSection) equipmentSection.after(createFieldSection("Jornada de trabalho", fields[1]));
+            if (fields[2] && conferenceSection) conferenceSection.before(createFieldSection("Data de emissão", fields[2]));
+            scheduleSection.remove();
+        }
+
+        const noReferencesControl = modal.querySelector("[data-pt-no-references]")?.closest(".document-review__checkbox");
+        const addReferenceButton = modal.querySelector("[data-pt-reference-add]");
+        if (noReferencesControl && addReferenceButton) {
+            noReferencesControl.classList.add("document-review__checkbox--pt-references");
+            addReferenceButton.after(noReferencesControl);
+        }
+
+        const deadlineSection = modal.querySelector("[data-pt-deadline]")?.closest(".document-review__section");
+        const laborHistogramSection = modal.querySelector("[data-pt-histogram-lines]")?.closest(".document-review__section");
+        let methodologySection;
+        if (deadlineSection && laborHistogramSection) {
+            methodologySection = document.createElement("section");
+            methodologySection.className = "document-review__section document-review__section--pt-methodology";
+            methodologySection.innerHTML = `<h3>Metodologia executiva</h3><p class="document-review__notice">Descreva a metodologia somente quando for necessária para a proposta técnica.</p><label><textarea data-pt-methodology placeholder="Descreva a metodologia executiva.">${escapeHtml(content.metodologia_executiva || "")}</textarea></label>`;
+            deadlineSection.after(methodologySection);
+        }
+        if (methodologySection && laborHistogramSection) {
+            const histogramDescriptionSection = document.createElement("section");
+            histogramDescriptionSection.className = "document-review__section document-review__section--pt-histogram-description";
+            histogramDescriptionSection.innerHTML = `<h3>Histograma</h3><p class="document-review__notice">Adicione uma observação para o capítulo de histograma, caso necessário.</p><label><textarea data-pt-histogram-description placeholder="Descreva o histograma, se necessário.">${escapeHtml(content.descricao_histograma || "")}</textarea></label>`;
+            methodologySection.after(histogramDescriptionSection);
+        }
+
+        const close = () => {
+            modal.remove();
+            document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll");
+        };
+        const save = async (notify = true) => {
+            const conteudo = {
+                resumo_planta: modal.querySelector("[data-pt-summary]").value.trim(),
+                metodologia_executiva: modal.querySelector("[data-pt-methodology]").value.trim(),
+                descricao_histograma: modal.querySelector("[data-pt-histogram-description]").value.trim(),
+                referencias: [...modal.querySelectorAll("[data-pt-reference]")].map((input) => input.value.trim()).filter(Boolean),
+                sem_referencias: modal.querySelector("[data-pt-no-references]").checked,
+                prazo_execucao: modal.querySelector("[data-pt-deadline]").value.trim(),
+                jornada: modal.querySelector("[data-pt-journey]").value.trim(),
+                data_emissao: modal.querySelector("[data-pt-emission-date]").value,
+                data_revisao: modal.querySelector("[data-pt-revision-date]")?.value || "",
+                descricao_revisao: modal.querySelector("[data-pt-revision-description]")?.value.trim() || "",
+                histograma_mao_obra: [...modal.querySelectorAll(".document-review__histogram-line")].map((row) => ({
+                    funcao: row.querySelector("[data-pt-histogram-function]").value.trim(),
+                    quantidade: row.querySelector("[data-pt-histogram-quantity]").value.trim(),
+                })),
+                histograma_equipamentos: [...modal.querySelectorAll(".document-review__equipment-histogram-line")]
+                    .map((row) => row.querySelector("[data-pt-equipment-description]").value.trim())
+                    .filter(Boolean),
+            };
+            const response = await fetchJson(buildEndpoint(state.endpoints.documentReviewSavePattern, proposalId), {
+                method: "POST",
+                body: JSON.stringify({ document_type: "PT_ONSHORE", conteudo }),
+            });
+            if (notify) showNotification({ type: "success", title: "Rascunho salvo", message: "A revisão da Proposta Técnica Onshore foi salva." });
+            return response;
+        };
+        const updateReferenceState = () => {
+            const disabled = modal.querySelector("[data-pt-no-references]").checked;
+            modal.querySelectorAll("[data-pt-reference]").forEach((input) => { input.disabled = disabled; });
+            modal.querySelector("[data-pt-reference-add]").disabled = disabled;
+        };
+        const validateForPreview = () => {
+            const summary = modal.querySelector("[data-pt-summary]").value.trim();
+            const deadline = modal.querySelector("[data-pt-deadline]").value.trim();
+            const journey = modal.querySelector("[data-pt-journey]").value.trim();
+            const emissionDate = modal.querySelector("[data-pt-emission-date]").value;
+            const hasReferences = [...modal.querySelectorAll("[data-pt-reference]")].some((input) => input.value.trim());
+            const noReferences = modal.querySelector("[data-pt-no-references]").checked;
+            const revisionDate = modal.querySelector("[data-pt-revision-date]")?.value || "";
+            const revisionDescription = modal.querySelector("[data-pt-revision-description]")?.value.trim() || "";
+            const invalidHistogram = [...modal.querySelectorAll(".document-review__histogram-line")].some((row) => {
+                const functionName = row.querySelector("[data-pt-histogram-function]").value.trim();
+                const quantity = row.querySelector("[data-pt-histogram-quantity]").value.trim();
+                return Boolean(functionName || quantity) && (!functionName || !/^\d+$/.test(quantity) || Number(quantity) < 1);
+            });
+            if (!summary || !deadline || !journey || !emissionDate || (!hasReferences && !noReferences) || (hasReferences && noReferences) || invalidHistogram || (currentRevision > 0 && (!revisionDate || !revisionDescription))) {
+                showNotification({
+                    type: "warning",
+                    title: "Revise os campos destacados",
+                    message: invalidHistogram ? "Cada linha do histograma deve ter função e quantidade inteira maior que zero." : currentRevision > 0 ? "Preencha os campos da revisão, inclusive data e descrição da REV atual." : "Preencha resumo, prazo, jornada e data. Informe referências ou marque que não existem referências específicas.",
+                });
+                return false;
+            }
+            return true;
+        };
+        updateReferenceState();
+        modal.addEventListener("change", (event) => {
+            if (event.target.matches("[data-pt-no-references]")) updateReferenceState();
+            if (event.target.matches("[data-pt-histogram-quantity]") && event.target.value) {
+                const value = Number(event.target.value);
+                event.target.value = Number.isInteger(value) && value > 0 ? String(value) : "";
+            }
+        });
+        modal.addEventListener("click", async (event) => {
+            if (event.target.closest("[data-document-close]")) return close();
+            if (event.target.closest("[data-pt-reference-add]")) {
+                modal.querySelector("[data-pt-reference-lines]").insertAdjacentHTML("beforeend", renderReference());
+                return;
+            }
+            if (event.target.closest("[data-pt-reference-remove]")) {
+                const row = event.target.closest(".document-review__line");
+                const rows = modal.querySelectorAll("[data-pt-reference-lines] .document-review__line");
+                if (rows.length === 1) row.querySelector("[data-pt-reference]").value = "";
+                else row.remove();
+                return;
+            }
+            if (event.target.closest("[data-pt-histogram-add]")) {
+                modal.querySelector("[data-pt-histogram-lines]").insertAdjacentHTML("beforeend", renderHistogramRow());
+                return;
+            }
+            if (event.target.closest("[data-pt-histogram-remove]")) {
+                const row = event.target.closest(".document-review__histogram-line");
+                const rows = modal.querySelectorAll("[data-pt-histogram-lines] .document-review__histogram-line");
+                if (rows.length === 1) {
+                    row.querySelector("[data-pt-histogram-function]").value = "";
+                    row.querySelector("[data-pt-histogram-quantity]").value = "";
+                } else row.remove();
+                return;
+            }
+            if (event.target.closest("[data-pt-equipment-add]")) {
+                modal.querySelector("[data-pt-equipment-histogram-lines]").insertAdjacentHTML("beforeend", renderEquipmentHistogramRow());
+                return;
+            }
+            if (event.target.closest("[data-pt-equipment-remove]")) {
+                const row = event.target.closest(".document-review__equipment-histogram-line");
+                const rows = modal.querySelectorAll("[data-pt-equipment-histogram-lines] .document-review__equipment-histogram-line");
+                if (rows.length === 1) row.querySelector("[data-pt-equipment-description]").value = "";
+                else row.remove();
+                return;
+            }
+            if (event.target.closest("[data-document-save]")) {
+                try { await save(); } catch (error) { showNotification({ type: "warning", title: "Não foi possível salvar", message: error.message }); }
+                return;
+            }
+            if (event.target.closest("[data-document-preview]")) {
+                try {
+                    if (!validateForPreview()) return;
+                    await save(false);
+                    const separator = pdfEndpoint.includes("?") ? "&" : "?";
+                    await previewProposalPdf(`${pdfEndpoint}${separator}document_mode=preview&preview_format=images`, `${pdfEndpoint}${separator}document_mode=final`, filename);
+                } catch (error) {
+                    showNotification({ type: "warning", title: "Pré-visualização indisponível", message: error.message || "Revise os campos destacados antes de gerar a prévia." });
+                }
+            }
+        });
+    }
+
     function openDocumentReviewModal(payload, proposalId, pdfEndpoint, filename, documentType = "PC_OFFSHORE") {
         if (documentType === "PC_ONSHORE") {
             openOnshorePcReviewModal(payload, proposalId, pdfEndpoint, filename);
             return;
         }
+        if (documentType === "PT_ONSHORE") {
+            openOnshorePtReviewModal(payload, proposalId, pdfEndpoint, filename);
+            return;
+        }
         const review = payload.revisao;
         const lines = review.linhas || {};
         const renderLines = (kind, label, quantity = false) => `
-            <section class="document-review__section" data-document-kind="${kind}"><h3>${label}</h3>
-            <div class="document-review__lines">${(lines[kind] || []).map((line) => `<div class="document-review__line"><input value="${escapeHtml(line.descricao)}"><input class="document-review__quantity ${quantity ? "" : "is-hidden"}" value="${escapeHtml(line.quantidade || "")}" placeholder="${quantity ? "Qtd./POB" : ""}"><button type="button" data-document-remove>Remover</button></div>`).join("")}</div>
-            <button type="button" data-document-add>+ Adicionar linha</button><label><input type="checkbox" data-document-confirm ${review.confirmacoes?.[kind.toLowerCase().replace("PROCEDIMENTO", "procedimento").replace("EQUIPE", "equipe").replace("EQUIPAMENTO", "equipamentos").replace("PREMISSA", "premissas").replace("OBRIGACAO", "obrigacoes")] ? "checked" : ""}> Conteúdo revisado</label></section>`;
+            <section class="document-review__section document-review__section--offshore-content" data-document-kind="${kind}"><h3>${label}</h3>
+            <div class="document-review__lines">${(lines[kind] || []).map((line) => `<div class="document-review__line"><input value="${escapeHtml(line.descricao)}" placeholder="Descreva o conteúdo"><input class="document-review__quantity ${quantity ? "" : "is-hidden"}" value="${escapeHtml(line.quantidade || "")}" placeholder="${quantity ? "Qtd./POB" : ""}"><button type="button" data-document-remove>Remover</button></div>`).join("")}</div>
+            <div class="document-review__section-actions"><button type="button" data-document-add>+ Adicionar linha</button></div><label class="document-review__checkbox document-review__checkbox--offshore"><input type="checkbox" data-document-confirm ${review.confirmacoes?.[kind.toLowerCase().replace("PROCEDIMENTO", "procedimento").replace("EQUIPE", "equipe").replace("EQUIPAMENTO", "equipamentos").replace("PREMISSA", "premissas").replace("OBRIGACAO", "obrigacoes")] ? "checked" : ""}><span><strong>Conteúdo revisado</strong><small>Confirmo que as informações desta seção estão corretas.</small></span></label></section>`;
         const modal = document.createElement("section");
-        modal.className = "document-review-modal";
+        modal.className = "document-review-modal document-review-modal--offshore";
         document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
         const isOnshore = documentType !== "PC_OFFSHORE";
         const reviewTitle = documentType === "PT_ONSHORE" ? "Revisar Proposta Técnica Onshore" : isOnshore ? "Revisar Proposta Comercial Onshore" : "Revisar Proposta Comercial";
@@ -4253,6 +4449,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const documentRevision = review.revisaoDocumental || payload.proposta.rev || "00";
         modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>${reviewTitle}</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(documentRevision)} • ${operationLabel}</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais</h3><p><strong>Cliente:</strong> ${escapeHtml(payload.proposta.empresa)} &nbsp; <strong>Unidade:</strong> ${escapeHtml(payload.proposta.unidade)} &nbsp; <strong>Serviço:</strong> ${escapeHtml(payload.proposta.escopo || payload.proposta.servico)}</p></section><p class="document-review__notice">Conteúdo carregado do modelo oficial. Revise e confirme cada seção antes da emissão.</p><label>Introdução e objetivo<textarea data-document-introduction>${escapeHtml(review.introducao || "")}</textarea></label><label>Título do procedimento<input data-document-procedure-title value="${escapeHtml(review.procedimentoTitulo || "")}"></label>${renderLines("PROCEDIMENTO", "Procedimento")}${renderLines("EQUIPE", "Equipe", true)}${renderLines("EQUIPAMENTO", "Equipamentos", true)}${renderLines("PREMISSA", "Premissas")}${renderLines("OBRIGACAO", "Obrigações da contratante")}<section class="document-review__section"><h3>Proposta financeira</h3><p>Origem: dados oficiais da proposta comercial.</p>${(review.financeiro || []).map((item) => `<div>${escapeHtml(item.descricao)} — R$ ${escapeHtml(item.preco_unitario)} × ${escapeHtml(item.quantidade)}</div>`).join("")}</section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Continuar para pré-visualização</button></footer></div>`;
         document.body.appendChild(modal);
+        const documentNotice = modal.querySelector(".document-review__notice");
+        const introductionField = modal.querySelector("[data-document-introduction]")?.closest("label");
+        const procedureTitleField = modal.querySelector("[data-document-procedure-title]")?.closest("label");
+        const generalSection = modal.querySelector(".document-review__general");
+        if (documentNotice && introductionField && procedureTitleField && generalSection) {
+            const overviewSection = document.createElement("section");
+            overviewSection.className = "document-review__section document-review__section--offshore-overview";
+            overviewSection.innerHTML = "<h3>Introdução e procedimento</h3>";
+            documentNotice.classList.add("document-review__notice--offshore");
+            overviewSection.append(documentNotice, introductionField, procedureTitleField);
+            generalSection.after(overviewSection);
+        }
         const close = () => {
             modal.remove();
             document.body.classList.remove("comercial-proposal-modal-open", "comercial-no-scroll");
@@ -4306,7 +4514,7 @@ document.addEventListener("DOMContentLoaded", () => {
         modal.addEventListener("click", async (event) => {
             if (event.target.closest("[data-document-close]")) return close();
             const section = event.target.closest("[data-document-kind]");
-            if (event.target.closest("[data-document-add]")) section.querySelector(".document-review__lines").insertAdjacentHTML("beforeend", `<div class="document-review__line"><input><input class="document-review__quantity ${section.dataset.documentKind === "EQUIPE" || section.dataset.documentKind === "EQUIPAMENTO" ? "" : "is-hidden"}" placeholder="Qtd./POB"><button type="button" data-document-remove>Remover</button></div>`);
+            if (event.target.closest("[data-document-add]")) section.querySelector(".document-review__lines").insertAdjacentHTML("beforeend", `<div class="document-review__line"><input placeholder="Descreva o conteúdo"><input class="document-review__quantity ${section.dataset.documentKind === "EQUIPE" || section.dataset.documentKind === "EQUIPAMENTO" ? "" : "is-hidden"}" placeholder="Qtd./POB"><button type="button" data-document-remove>Remover</button></div>`);
             if (event.target.closest("[data-document-remove]")) event.target.closest(".document-review__line").remove();
             if (event.target.closest("[data-document-save]")) {
                 try {
