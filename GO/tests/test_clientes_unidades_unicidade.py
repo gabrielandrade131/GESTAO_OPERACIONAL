@@ -5,7 +5,14 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from GO.models import Cliente, Unidade
+from GO.models import (
+    Cliente,
+    ItemEquipamentoComercial,
+    MetodoOperacional,
+    SegmentoClienteComercial,
+    ServicoComercial,
+    Unidade,
+)
 
 
 class ClientesUnidadesUnicidadeTests(TestCase):
@@ -53,3 +60,35 @@ class ClientesUnidadesUnicidadeTests(TestCase):
         )
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['errors']['nome'], 'Ja existe uma unidade cadastrada com este nome.')
+
+    def test_commercial_quick_catalogues_persist_and_are_reloaded_from_backend(self):
+        self.client.force_login(self.staff)
+        entries = [
+            ('comercial_criar_cliente', 'Cliente Persistente', Cliente, 'cliente', 'clientes'),
+            ('comercial_criar_unidade', 'Unidade Persistente', Unidade, 'unidade', 'unidades'),
+            ('comercial_criar_metodo', 'Metodo Persistente', MetodoOperacional, 'metodo', 'metodoOptions'),
+            ('comercial_criar_servico', 'Servico Persistente', ServicoComercial, 'servico', 'servicos'),
+            ('comercial_criar_item_equipamento', 'Item Persistente', ItemEquipamentoComercial, 'item', 'financeiroCampoChoices'),
+            ('comercial_criar_segmento', 'Segmento Persistente', SegmentoClienteComercial, 'segmento', 'segmentoOptions'),
+        ]
+
+        for route_name, name, model_class, response_key, metadata_key in entries:
+            with self.subTest(route=route_name):
+                response = self.client.post(
+                    reverse(route_name),
+                    data=json.dumps({'nome': name}),
+                    content_type='application/json',
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(model_class.objects.filter(nome=name).exists())
+                self.assertEqual(response.json()[response_key]['value'], name)
+
+        response = self.client.get(reverse('comercial_catalogos'))
+        self.assertEqual(response.status_code, 200)
+        metadata = response.json()['metadata']
+        self.assertIn('Cliente Persistente', metadata['clientes'])
+        self.assertIn('Unidade Persistente', metadata['unidades'])
+        self.assertIn('Metodo Persistente', metadata['metodoOptions'])
+        self.assertIn('Servico Persistente', metadata['servicos'])
+        self.assertIn('Segmento Persistente', metadata['segmentoOptions'])
+        self.assertTrue(any(item['value'] == 'Item Persistente' for item in metadata['financeiroCampoChoices']))
