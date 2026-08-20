@@ -5613,6 +5613,25 @@
         try { document.dispatchEvent(new CustomEvent('rdo:saved', { detail: { mode: 'create', response: dataCr } })); } catch(_){ }
         try { closeModal(); } catch(_){ }
         try {
+          var irHandoverChk = document.getElementById('sup-ir-handover');
+          if (irHandoverChk && irHandoverChk.checked) {
+            var osIdToRedirect = '';
+            try {
+              osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
+            } catch(e){}
+            if (!osIdToRedirect) {
+              try {
+                var osInput = form.querySelector('[name="ordem_servico_id"]');
+                if (osInput) osIdToRedirect = osInput.value;
+              } catch(e){}
+            }
+            setTimeout(function(){
+              window.location.href = '/handover/novo/' + (osIdToRedirect ? '?os_id=' + encodeURIComponent(osIdToRedirect) : '');
+            }, 500);
+            return;
+          }
+        } catch(e){ console.error('Redirect to handover failed', e); }
+        try {
           setTimeout(function(){
             try {
               var q = new URLSearchParams(window.location.search || '');

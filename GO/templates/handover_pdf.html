@@ -215,6 +215,12 @@
             <td class="label-cell">PROJETO:</td>
             <td class="value-cell">{{ handover.projeto|default:"—" }}</td>
         </tr>
+        {% if handover.ordem_servico %}
+        <tr>
+            <td class="label-cell">OS Nº:</td>
+            <td class="value-cell" colspan="3">{{ handover.ordem_servico.numero_os }}</td>
+        </tr>
+        {% endif %}
     </table>
 
     <!-- Concluded Services Section -->

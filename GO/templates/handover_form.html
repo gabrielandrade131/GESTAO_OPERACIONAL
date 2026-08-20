@@ -205,6 +205,23 @@
                 <span class="material-icons" style="color: #0284c7;">info</span>
                 Informações Gerais
             </h2>
+            <div class="grid-fields" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 20px;">
+                <div class="form-group" style="grid-column: span 2;">
+                    <label for="ordem_servico">Ordem de Serviço (OS)</label>
+                    <select id="ordem_servico" name="ordem_servico" class="form-control">
+                        <option value="">Selecione a OS associada (opcional)</option>
+                        {% for os in ordens_servico %}
+                            <option value="{{ os.id }}" 
+                                    data-cliente-id="{{ os.Cliente.id|default:'' }}" 
+                                    data-unidade-id="{{ os.Unidade.id|default:'' }}" 
+                                    data-projeto="{{ os.especificacao|default:os.servico|default:'' }}"
+                                    {% if prefilled_os and prefilled_os.id == os.id %}selected{% elif handover.ordem_servico_id == os.id %}selected{% endif %}>
+                                OS {{ os.numero_os }} - {{ os.Cliente.nome|default:'' }} - {{ os.Unidade.nome|default:'' }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
             <div class="grid-fields">
                 <div class="form-group">
                     <label for="periodo_data">Período / Data *</label>
@@ -216,7 +233,7 @@
                     <select id="cliente" name="cliente" class="form-control" required>
                         <option value="">Selecione o Cliente</option>
                         {% for c in clientes %}
-                            <option value="{{ c.id }}" {% if handover.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>
+                            <option value="{{ c.id }}" {% if prefilled_os and prefilled_os.Cliente.id == c.id %}selected{% elif handover.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -231,7 +248,7 @@
                     <select id="unidade" name="unidade" class="form-control" required>
                         <option value="">Selecione a Unidade</option>
                         {% for u in unidades %}
-                            <option value="{{ u.id }}" {% if handover.unidade_id == u.id %}selected{% endif %}>{{ u.nome }}</option>
+                            <option value="{{ u.id }}" {% if prefilled_os and prefilled_os.Unidade.id == u.id %}selected{% elif handover.unidade_id == u.id %}selected{% endif %}>{{ u.nome }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -248,7 +265,7 @@
 
                 <div class="form-group">
                     <label for="projeto">Projeto</label>
-                    <input type="text" id="projeto" name="projeto" class="form-control" placeholder="Ex: Operações Offshore" value="{{ handover.projeto|default:'' }}">
+                    <input type="text" id="projeto" name="projeto" class="form-control" placeholder="Ex: Operações Offshore" value="{% if prefilled_os %}{{ prefilled_os.especificacao|default:prefilled_os.servico|default:'' }}{% else %}{{ handover.projeto|default:'' }}{% endif %}">
                 </div>
             </div>
         </div>
@@ -318,4 +335,33 @@
         </div>
     </form>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var osSelect = document.getElementById('ordem_servico');
+    if (osSelect) {
+        osSelect.addEventListener('change', function() {
+            var selectedOption = osSelect.options[osSelect.selectedIndex];
+            if (selectedOption && selectedOption.value) {
+                var clienteId = selectedOption.getAttribute('data-cliente-id');
+                var unidadeId = selectedOption.getAttribute('data-unidade-id');
+                var projeto = selectedOption.getAttribute('data-projeto');
+                
+                if (clienteId) {
+                    var clienteSelect = document.getElementById('cliente');
+                    if (clienteSelect) clienteSelect.value = clienteId;
+                }
+                if (unidadeId) {
+                    var unidadeSelect = document.getElementById('unidade');
+                    if (unidadeSelect) unidadeSelect.value = unidadeId;
+                }
+                if (projeto) {
+                    var projetoInput = document.getElementById('projeto');
+                    if (projetoInput) projetoInput.value = projeto;
+                }
+            }
+        });
+    }
+});
+</script>
 {% endblock %}
