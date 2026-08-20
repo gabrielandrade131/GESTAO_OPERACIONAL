@@ -1,0 +1,321 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if is_edit %}Editar{% else %}Nova{% endif %} Passagem de Serviço{% endblock %}
+
+{% block extra_head %}
+<style>
+    .form-container {
+        padding: 24px;
+        max-width: 1100px;
+        margin: 0 auto;
+    }
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        border-bottom: 2px solid #eaedf1;
+        padding-bottom: 16px;
+    }
+    .page-title h1 {
+        font-size: 24px;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+    .page-title p {
+        color: #64748b;
+        margin: 4px 0 0 0;
+        font-size: 14px;
+    }
+    .btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #64748b;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        transition: color 0.2s;
+    }
+    .btn-back:hover {
+        color: #1e293b;
+    }
+    .card {
+        background: #ffffff;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        margin-bottom: 24px;
+        padding: 24px;
+    }
+    .card-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-top: 0;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-left: 4px solid #0284c7;
+        padding-left: 8px;
+    }
+    .grid-fields {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+    }
+    @media (max-width: 768px) {
+        .grid-fields {
+            grid-template-columns: 1fr;
+        }
+    }
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .form-group label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #475569;
+    }
+    .form-control {
+        padding: 10px 14px;
+        border-radius: 6px;
+        border: 1px solid #cbd5e1;
+        font-size: 14px;
+        color: #334155;
+        background-color: #ffffff;
+        transition: all 0.2s;
+        outline: none;
+    }
+    .form-control:focus {
+        border-color: #0284c7;
+        box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+    }
+    .form-control:disabled {
+        background-color: #f1f5f9;
+        color: #64748b;
+        cursor: not-allowed;
+    }
+    textarea.form-control {
+        min-height: 120px;
+        resize: vertical;
+        font-family: inherit;
+    }
+    .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+    }
+    .items-table th {
+        background-color: #f8fafc;
+        padding: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #475569;
+        text-transform: uppercase;
+        border-bottom: 2px solid #e2e8f0;
+        text-align: left;
+    }
+    .items-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
+    .items-table tr:hover td {
+        background-color: #f8fafc;
+    }
+    .col-item {
+        width: 60px;
+        text-align: center;
+        font-weight: bold;
+        color: #64748b;
+    }
+    .col-desc {
+        width: 250px;
+        font-weight: 600;
+        color: #334155;
+    }
+    .col-qty {
+        width: 150px;
+    }
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 32px;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 20px;
+    }
+    .btn-submit {
+        background-color: #0284c7;
+        color: #ffffff;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .btn-submit:hover {
+        background-color: #0369a1;
+    }
+    .btn-cancel {
+        background-color: #ffffff;
+        color: #475569;
+        border: 1px solid #cbd5e1;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.2s;
+        text-align: center;
+    }
+    .btn-cancel:hover {
+        background-color: #f8fafc;
+        color: #1e293b;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="page-header">
+        <div class="page-title">
+            <h1>{% if is_edit %}Editar{% else %}Nova{% endif %} Passagem de Serviço</h1>
+            <p>Preencha os dados e informações de passagem de serviço de supervisores</p>
+        </div>
+        <a href="{% url 'handover_list' %}" class="btn-back">
+            <span class="material-icons">arrow_back</span>
+            Voltar para a Lista
+        </a>
+    </div>
+
+    <form method="post" action="">
+        {% csrf_token %}
+
+        <!-- Informações Gerais -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="material-icons" style="color: #0284c7;">info</span>
+                Informações Gerais
+            </h2>
+            <div class="grid-fields">
+                <div class="form-group">
+                    <label for="periodo_data">Período / Data *</label>
+                    <input type="text" id="periodo_data" name="periodo_data" class="form-control" placeholder="Ex: 15/08/2026 a 30/08/2026" required value="{{ handover.periodo_data|default:'' }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="cliente">Cliente *</label>
+                    <select id="cliente" name="cliente" class="form-control" required>
+                        <option value="">Selecione o Cliente</option>
+                        {% for c in clientes %}
+                            <option value="{{ c.id }}" {% if handover.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="supervisor_atual">Supervisor Atual</label>
+                    <input type="text" id="supervisor_atual" class="form-control" disabled value="{% if is_edit %}{{ handover.supervisor_atual.get_full_name|default:handover.supervisor_atual.username }}{% else %}{{ request.user.get_full_name|default:request.user.username }}{% endif %}">
+                </div>
+
+                <div class="form-group">
+                    <label for="unidade">Unidade *</label>
+                    <select id="unidade" name="unidade" class="form-control" required>
+                        <option value="">Selecione a Unidade</option>
+                        {% for u in unidades %}
+                            <option value="{{ u.id }}" {% if handover.unidade_id == u.id %}selected{% endif %}>{{ u.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="supervisor_back">Supervisor Back *</label>
+                    <select id="supervisor_back" name="supervisor_back" class="form-control" required>
+                        <option value="">Selecione o Supervisor Substituto</option>
+                        {% for u in usuarios %}
+                            <option value="{{ u.id }}" {% if handover.supervisor_back_id == u.id %}selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="projeto">Projeto</label>
+                    <input type="text" id="projeto" name="projeto" class="form-control" placeholder="Ex: Operações Offshore" value="{{ handover.projeto|default:'' }}">
+                </div>
+            </div>
+        </div>
+
+        <!-- Relatório de Atividades -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="material-icons" style="color: #0284c7;">notes</span>
+                Atividades e Observações
+            </h2>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label for="servico_concluido">Serviço Concluído no Período</label>
+                <textarea id="servico_concluido" name="servico_concluido" class="form-control" placeholder="Descreva os serviços que foram concluídos..." rows="4">{{ handover.servico_concluido|default:'' }}</textarea>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label for="servico_em_andamento">Serviço em Andamento (No qual o próximo supervisor irá prosseguir)</label>
+                <textarea id="servico_em_andamento" name="servico_em_andamento" class="form-control" placeholder="Descreva os serviços em andamento e pendências..." rows="4">{{ handover.servico_em_andamento|default:'' }}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="orientacoes_observacoes">Orientações para o Próximo Supervisor / Observações Gerais</label>
+                <textarea id="orientacoes_observacoes" name="orientacoes_observacoes" class="form-control" placeholder="Recomendações, avisos, pontos de atenção..." rows="4">{{ handover.orientacoes_observacoes|default:'' }}</textarea>
+            </div>
+        </div>
+
+        <!-- Equipamentos a Bordo -->
+        <div class="card">
+            <h2 class="card-title">
+                <span class="material-icons" style="color: #0284c7;">inventory_2</span>
+                Informações de Itens / Equipamentos a Bordo ao Fim da Quinzena
+            </h2>
+
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th class="col-item">Item</th>
+                        <th class="col-desc">Descrição (Fixo, Não alterar)</th>
+                        <th class="col-qty">Qtd a Bordo</th>
+                        <th>Comentário</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in itens %}
+                    <tr>
+                        <td class="col-item">{{ item.item }}</td>
+                        <td class="col-desc">
+                            {{ item.descricao }}
+                            <input type="hidden" name="desc_{{ item.item }}" value="{{ item.descricao }}">
+                        </td>
+                        <td class="col-qty">
+                            <input type="text" name="qty_{{ item.item }}" class="form-control" style="padding: 6px 10px;" placeholder="Qtd" value="{{ item.quantidade|default:'' }}">
+                        </td>
+                        <td>
+                            <input type="text" name="comment_{{ item.item }}" class="form-control" style="padding: 6px 10px;" placeholder="Comentário sobre o estado/localização" value="{{ item.comentario|default:'' }}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-actions">
+            <a href="{% url 'handover_list' %}" class="btn-cancel">Cancelar</a>
+            <button type="submit" class="btn-submit">Salvar Passagem de Serviço</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -5398,3 +5398,57 @@ class UserPasswordChangeStatus(models.Model):
     def __str__(self):
         return f"{self.user.username} - needs change: {self.needs_password_change}"
 
+
+def default_handover_items():
+    return [
+        {"item": 1, "descricao": "Container", "quantidade": "", "comentario": ""},
+        {"item": 2, "descricao": "Caixa", "quantidade": "", "comentario": ""},
+        {"item": 3, "descricao": "Skid", "quantidade": "", "comentario": ""},
+        {"item": 4, "descricao": "Detector de gás", "quantidade": "", "comentario": ""},
+        {"item": 5, "descricao": "Rádios", "quantidade": "", "comentario": ""},
+        {"item": 6, "descricao": "Luminárias (kit com 3)", "quantidade": "", "comentario": ""},
+        {"item": 7, "descricao": "EEBD", "quantidade": "", "comentario": ""},
+        {"item": 8, "descricao": "Ventilador", "quantidade": "", "comentario": ""},
+        {"item": 9, "descricao": "Kit de resgate", "quantidade": "", "comentario": ""},
+        {"item": 10, "descricao": "Máquina de hidrojato", "quantidade": "", "comentario": ""},
+        {"item": 11, "descricao": "Desincrustador de convés", "quantidade": "", "comentario": ""},
+    ]
+
+
+class SupervisorHandover(models.Model):
+    periodo_data = models.CharField(max_length=100)
+    cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
+    unidade = models.ForeignKey('Unidade', on_delete=models.SET_NULL, null=True, blank=True)
+    projeto = models.CharField(max_length=150, blank=True, default='')
+
+    supervisor_atual = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='handovers_criados'
+    )
+    supervisor_back = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='handovers_recebidos'
+    )
+
+    servico_concluido = models.TextField(blank=True, default='')
+    servico_em_andamento = models.TextField(blank=True, default='')
+    orientacoes_observacoes = models.TextField(blank=True, default='')
+
+    itens_equipamentos = models.JSONField(default=default_handover_items)
+
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-criado_em']
+        verbose_name = 'Passagem de Serviço'
+        verbose_name_plural = 'Passagens de Serviço'
+
+    def __str__(self):
+        return f"Passagem de Serviço - {self.cliente} - {self.periodo_data}"
+
+

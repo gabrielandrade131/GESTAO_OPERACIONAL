@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Passagem de Serviço (Handover){% endblock %}
+
+{% block extra_head %}
+<style>
+    .handover-container {
+        padding: 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        border-bottom: 2px solid #eaedf1;
+        padding-bottom: 16px;
+    }
+    .page-title h1 {
+        font-size: 24px;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+    .page-title p {
+        color: #64748b;
+        margin: 4px 0 0 0;
+        font-size: 14px;
+    }
+    .btn-create {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background-color: #0284c7;
+        color: #ffffff;
+        padding: 10px 18px;
+        border-radius: 6px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background-color 0.2s;
+        border: none;
+        cursor: pointer;
+    }
+    .btn-create:hover {
+        background-color: #0369a1;
+        color: #ffffff;
+    }
+    .handover-card {
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+    }
+    .handover-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+    }
+    .handover-table th {
+        background-color: #f8fafc;
+        padding: 14px 18px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #64748b;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .handover-table td {
+        padding: 16px 18px;
+        border-bottom: 1px solid #e2e8f0;
+        color: #334155;
+        font-size: 14px;
+    }
+    .handover-table tr:last-child td {
+        border-bottom: none;
+    }
+    .handover-table tr:hover td {
+        background-color: #f8fafc;
+    }
+    .actions-cell {
+        display: flex;
+        gap: 8px;
+    }
+    .btn-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        color: #64748b;
+        text-decoration: none;
+        transition: all 0.2s;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+    }
+    .btn-action:hover {
+        background-color: #f1f5f9;
+    }
+    .btn-action.btn-pdf {
+        color: #ef4444;
+        border-color: #fee2e2;
+    }
+    .btn-action.btn-pdf:hover {
+        background-color: #fef2f2;
+    }
+    .btn-action.btn-edit {
+        color: #0284c7;
+        border-color: #e0f2fe;
+    }
+    .btn-action.btn-edit:hover {
+        background-color: #f0f9ff;
+    }
+    .empty-state {
+        padding: 48px;
+        text-align: center;
+        color: #64748b;
+    }
+    .empty-state .material-icons {
+        font-size: 48px;
+        color: #cbd5e1;
+        margin-bottom: 12px;
+    }
+    .empty-state h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #334155;
+        margin: 0 0 8px 0;
+    }
+    .empty-state p {
+        margin: 0 0 16px 0;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="handover-container">
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert {% if message.tags %}alert-{{ message.tags }}{% endif %}" style="padding: 12px; margin-bottom: 20px; border-radius: 6px; background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="page-header">
+        <div class="page-title">
+            <h1>Passagens de Serviço (Handover)</h1>
+            <p>Gerenciamento e registro da passagem de serviço de supervisores</p>
+        </div>
+        <a href="{% url 'handover_criar' %}" class="btn-create">
+            <span class="material-icons">add</span>
+            Nova Passagem de Serviço
+        </a>
+    </div>
+
+    <div class="handover-card">
+        <table class="handover-table">
+            <thead>
+                <tr>
+                    <th>Período / Data</th>
+                    <th>Cliente</th>
+                    <th>Unidade</th>
+                    <th>Projeto</th>
+                    <th>Supervisor Atual</th>
+                    <th>Supervisor Back</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for handover in handovers %}
+                <tr>
+                    <td><strong>{{ handover.periodo_data }}</strong></td>
+                    <td>{{ handover.cliente.nome|default:"—" }}</td>
+                    <td>{{ handover.unidade.nome|default:"—" }}</td>
+                    <td>{{ handover.projeto|default:"—" }}</td>
+                    <td>{{ handover.supervisor_atual.get_full_name|default:handover.supervisor_atual.username }}</td>
+                    <td>{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username|default:"—" }}</td>
+                    <td>
+                        <div class="actions-cell">
+                            <a href="{% url 'handover_editar' handover.pk %}" class="btn-action btn-edit" title="Editar Passagem de Serviço">
+                                <span class="material-icons">edit</span>
+                            </a>
+                            <a href="{% url 'handover_pdf' handover.pk %}" class="btn-action btn-pdf" title="Gerar PDF" target="_blank">
+                                <span class="material-icons">picture_as_pdf</span>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7">
+                        <div class="empty-state">
+                            <span class="material-icons">swap_horiz</span>
+                            <h3>Nenhuma passagem de serviço registrada</h3>
+                            <p>Registre as passagens de turno e atividades em andamento dos supervisores.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
