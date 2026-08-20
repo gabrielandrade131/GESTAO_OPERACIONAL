@@ -40,6 +40,9 @@
                 <a href="{% url 'rdo' %}" class="menu-btn{% if synchro_active_module == 'rdo' %} is-active{% endif %}"{% if synchro_active_module == 'rdo' %} aria-current="page"{% endif %}>
                     <span class="material-icons" aria-hidden="true">description</span><span>Relatório Diário de Operação</span>
                 </a>
+                <a href="{% url 'handover_list' %}" class="menu-btn{% if synchro_active_module == 'handover' %} is-active{% endif %}"{% if synchro_active_module == 'handover' %} aria-current="page"{% endif %}>
+                    <span class="material-icons" aria-hidden="true">swap_horiz</span><span>Passagem de Serviço</span>
+                </a>
             </section>
 
             <section class="synchro-nav-group" aria-labelledby="nav-negocios">

@@ -20,6 +20,7 @@ from GO import api_axis_check
 from GO import views_planejamento
 from GO import views_comercial
 from GO import search_views
+from GO import views_handover
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -96,6 +97,12 @@ urlpatterns = [
     path('os/<int:os_id>/exportar_pdf/', views.exportar_os_pdf, name='exportar_os_pdf'),
     path('nova_os/', views.lista_servicos, name='lista_servicos'),
     path('ajuda/', views_ajuda.ajuda, name='ajuda'),
+    # Handover (Passagem de Serviço)
+    path('handover/', views_handover.handover_list, name='handover_list'),
+    path('handover/novo/', views_handover.handover_criar, name='handover_criar'),
+    path('handover/<int:pk>/editar/', views_handover.handover_editar, name='handover_editar'),
+    path('handover/<int:pk>/pdf/', views_handover.handover_pdf, name='handover_pdf'),
+
     path('relatorio_diario_operacao/', views_rdo.rdo, name='relatorio_diario_operacao'),
     path('rdo/', views_rdo.rdo, name='rdo'),
     path('rdo/exportar_excel/', views_rdo.exportar_rdo_excel, name='exportar_rdo_excel'),
