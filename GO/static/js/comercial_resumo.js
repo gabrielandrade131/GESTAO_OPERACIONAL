@@ -22,17 +22,18 @@ function bindResumoEvents() {
     const monthSelect = document.getElementById("resumoMes");
     const yearSelect = document.getElementById("resumoAno");
     const toggle = document.getElementById("resumoModoToggle");
-    const applyButton = document.getElementById("resumoAplicar");
 
     if (monthSelect) {
         monthSelect.addEventListener("change", (event) => {
             resumoState.mes = event.target.value;
+            applyResumoFilters();
         });
     }
 
     if (yearSelect) {
         yearSelect.addEventListener("change", (event) => {
             resumoState.ano = event.target.value;
+            applyResumoFilters();
         });
     }
 
@@ -47,18 +48,17 @@ function bindResumoEvents() {
             toggle.querySelectorAll("button[data-mode]").forEach((item) => {
                 item.classList.toggle("is-active", item === button);
             });
+            applyResumoFilters();
         });
     }
+}
 
-    if (applyButton) {
-        applyButton.addEventListener("click", () => {
-            const params = new URLSearchParams();
-            params.set("mes", resumoState.mes);
-            params.set("ano", resumoState.ano);
-            params.set("modo", resumoState.modo);
-            window.location.search = params.toString();
-        });
-    }
+function applyResumoFilters() {
+    const params = new URLSearchParams();
+    params.set("mes", resumoState.mes);
+    params.set("ano", resumoState.ano);
+    params.set("modo", resumoState.modo);
+    window.location.search = params.toString();
 }
 
 function renderResumo(data) {
@@ -77,7 +77,8 @@ function renderIndicadores(indicadores) {
             icon: "paid",
             iconClass: "is-highlight",
             label: "Total Emitido no Período",
-            value: formatCurrency(indicadores.totalEmitidoPeriodo),
+            value: formatCompactCurrency(indicadores.totalEmitidoPeriodo),
+            valueTitle: formatCurrency(indicadores.totalEmitidoPeriodo),
             meta: "",
             dotClass: "",
         },
@@ -85,7 +86,8 @@ function renderIndicadores(indicadores) {
             icon: "",
             iconClass: "",
             label: "Em Análise",
-            value: formatCurrency(indicadores.emAnalise?.valor),
+            value: formatCompactCurrency(indicadores.emAnalise?.valor),
+            valueTitle: formatCurrency(indicadores.emAnalise?.valor),
             meta: formatPercent(indicadores.emAnalise?.percentual),
             dotClass: "is-analysis",
         },
@@ -93,7 +95,8 @@ function renderIndicadores(indicadores) {
             icon: "",
             iconClass: "",
             label: "Fechada / Contratada",
-            value: formatCurrency(indicadores.fechadaContratada?.valor),
+            value: formatCompactCurrency(indicadores.fechadaContratada?.valor),
+            valueTitle: formatCurrency(indicadores.fechadaContratada?.valor),
             meta: formatPercent(indicadores.fechadaContratada?.percentual),
             dotClass: "is-closed",
         },
@@ -101,7 +104,8 @@ function renderIndicadores(indicadores) {
             icon: "",
             iconClass: "",
             label: "Perdida / Recusada",
-            value: formatCurrency(indicadores.perdidaRecusada?.valor),
+            value: formatCompactCurrency(indicadores.perdidaRecusada?.valor),
+            valueTitle: formatCurrency(indicadores.perdidaRecusada?.valor),
             meta: formatPercent(indicadores.perdidaRecusada?.percentual),
             dotClass: "is-lost",
         },
@@ -110,6 +114,7 @@ function renderIndicadores(indicadores) {
             iconClass: "",
             label: "Qtd. de Propostas no Período",
             value: formatInteger(indicadores.qtdPropostasPeriodo),
+            valueTitle: "",
             meta: "",
             dotClass: "",
         },
@@ -117,7 +122,8 @@ function renderIndicadores(indicadores) {
             icon: "bar_chart",
             iconClass: "",
             label: "Total Acumulado no Ano",
-            value: formatCurrency(indicadores.totalAcumuladoAno),
+            value: formatCompactCurrency(indicadores.totalAcumuladoAno),
+            valueTitle: formatCurrency(indicadores.totalAcumuladoAno),
             meta: "",
             dotClass: "",
         },
@@ -135,14 +141,14 @@ function renderIndicadores(indicadores) {
                         <span class="resumo-indicator__dot ${item.dotClass}"></span>
                         <span class="resumo-indicator__label">${item.label}</span>
                     </span>
-                    <strong class="resumo-indicator__value">${item.value}</strong>
+                    <strong class="resumo-indicator__value"${item.valueTitle ? ` title="${item.valueTitle}"` : ""}>${item.value}</strong>
                     <span class="resumo-indicator__meta">${item.meta}</span>
                 </div>
             `}
             ${item.icon ? `
                 <div class="resumo-indicator__body">
                     <span class="resumo-indicator__label">${item.label}</span>
-                    <strong class="resumo-indicator__value">${item.value}</strong>
+                    <strong class="resumo-indicator__value"${item.valueTitle ? ` title="${item.valueTitle}"` : ""}>${item.value}</strong>
                     ${item.meta ? `<span class="resumo-indicator__meta">${item.meta}</span>` : ""}
                 </div>
             ` : ""}
@@ -265,9 +271,9 @@ function renderSegmentoComparativo(rows, emptyMessage) {
                 <div class="segment-compare__row">
                     <span class="segment-compare__label">${item.segmento}</span>
                     <div class="segment-compare__track">
-                        <span class="segment-compare__fill" style="width:${((Number(item.total) || 0) / maxValue) * 100}%"></span>
+                        <span class="segment-compare__fill" style="width:${Math.min(100, ((Number(item.total) || 0) / maxValue) * 100)}%"></span>
                     </div>
-                    <strong class="segment-compare__value">${formatCurrency(item.total)}</strong>
+                    <strong class="segment-compare__value" title="${formatCurrency(item.total)}">${formatCompactCurrency(item.total)}</strong>
                 </div>
             `).join("")}
             <div class="segment-compare__axis">
@@ -371,6 +377,10 @@ function buildMillionsAxis(maxValue) {
             return "0";
         }
 
+        if (step >= 1000) {
+            return `${(step / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} bi`;
+        }
+
         return `${Math.round(step)} mi`;
     });
 }
@@ -407,6 +417,17 @@ function formatCurrency(value) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(Number(value) || 0);
+}
+
+function formatCompactCurrency(value) {
+    const amount = Number(value) || 0;
+    if (amount >= 1000000000) {
+        return `R$ ${(amount / 1000000000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} bi`;
+    }
+    if (amount >= 1000000) {
+        return `R$ ${(amount / 1000000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mi`;
+    }
+    return formatCurrency(amount);
 }
 
 function formatInteger(value) {

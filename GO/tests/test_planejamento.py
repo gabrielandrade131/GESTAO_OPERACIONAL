@@ -202,10 +202,11 @@ class PlanejamentoEquipeTests(TestCase):
         self.assertEqual(payload['planejamento']['local_subida'], 'BASE RIO')
         self.assertEqual(payload['planejamento']['observacao'], 'Cabecalho mantido')
 
-    def test_primeiro_membro_herda_agenda_e_adicoes_posteriores_nao(self):
+    def test_todos_membros_herdam_agenda_geral_quando_campos_nao_sao_informados(self):
         os_obj = self._create_os(700122, supervisor=self.supervisor)
         planejamento = self._create_planejamento(os_obj)
         planejamento.data_prevista_subida = date(2026, 6, 20)
+        planejamento.observacao = 'Agenda de embarque da equipe'
         planejamento.data_prevista_desembarque = date(2026, 7, 5)
         planejamento.horario_previsto_desembarque = '18:30'
         planejamento.local_desembarque = 'BASE RIO'
@@ -220,6 +221,7 @@ class PlanejamentoEquipeTests(TestCase):
         self.assertEqual(primeira_resposta.status_code, 200)
         primeiro = PlanejamentoEquipeMembro.objects.get(nome_snapshot='Primeira Pessoa')
         self.assertEqual(primeiro.data_inicio, date(2026, 6, 20))
+        self.assertEqual(primeiro.observacao, 'Agenda de embarque da equipe')
         self.assertEqual(primeiro.data_desembarque, date(2026, 7, 5))
         self.assertEqual(primeiro.horario_desembarque, '18:30')
         self.assertEqual(primeiro.local_desembarque_membro, 'BASE RIO')
@@ -232,13 +234,37 @@ class PlanejamentoEquipeTests(TestCase):
 
         self.assertEqual(segunda_resposta.status_code, 200)
         adicional = PlanejamentoEquipeMembro.objects.get(nome_snapshot='Pessoa Adicional')
-        self.assertIsNone(adicional.data_inicio)
-        self.assertIsNone(adicional.data_desembarque)
-        self.assertEqual(adicional.horario_desembarque, '')
-        self.assertEqual(adicional.local_desembarque_membro, '')
-        self.assertEqual(adicional.observacao_desembarque, '')
+        self.assertEqual(adicional.data_inicio, date(2026, 6, 20))
+        self.assertEqual(adicional.observacao, 'Agenda de embarque da equipe')
+        self.assertEqual(adicional.data_desembarque, date(2026, 7, 5))
+        self.assertEqual(adicional.horario_desembarque, '18:30')
+        self.assertEqual(adicional.local_desembarque_membro, 'BASE RIO')
+        self.assertEqual(adicional.observacao_desembarque, 'Agenda inicial da equipe')
 
-    def test_substituicao_nao_herda_agenda_geral_do_planejamento(self):
+        resposta_data_manual = self.client.post(
+            reverse('api_planejamento_add_membro', args=[planejamento.pk]),
+            data={
+                'nome_snapshot': 'Pessoa com Data Manual',
+                'funcao_planejada': self.funcao_choice,
+                'data_inicio': '2026-06-22',
+                'observacao': 'Agenda individual de embarque',
+                'data_desembarque': '2026-07-07',
+                'horario_desembarque': '20:15',
+                'local_desembarque_membro': 'BASE MACAE',
+                'observacao_desembarque': 'Agenda individual',
+            },
+        )
+
+        self.assertEqual(resposta_data_manual.status_code, 200)
+        membro_data_manual = PlanejamentoEquipeMembro.objects.get(nome_snapshot='Pessoa com Data Manual')
+        self.assertEqual(membro_data_manual.data_inicio, date(2026, 6, 22))
+        self.assertEqual(membro_data_manual.observacao, 'Agenda individual de embarque')
+        self.assertEqual(membro_data_manual.data_desembarque, date(2026, 7, 7))
+        self.assertEqual(membro_data_manual.horario_desembarque, '20:15')
+        self.assertEqual(membro_data_manual.local_desembarque_membro, 'BASE MACAE')
+        self.assertEqual(membro_data_manual.observacao_desembarque, 'Agenda individual')
+
+    def test_substituicao_herda_agenda_geral_do_planejamento(self):
         os_obj = self._create_os(700123)
         planejamento = self._create_planejamento(os_obj)
         planejamento.data_prevista_subida = date(2026, 6, 20)
@@ -259,10 +285,10 @@ class PlanejamentoEquipeTests(TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         substituto = PlanejamentoEquipeMembro.objects.get(nome_snapshot='Pessoa Substituta')
-        self.assertIsNone(substituto.data_inicio)
-        self.assertIsNone(substituto.data_desembarque)
-        self.assertEqual(substituto.horario_desembarque, '')
-        self.assertEqual(substituto.local_desembarque_membro, '')
+        self.assertEqual(substituto.data_inicio, date(2026, 6, 20))
+        self.assertEqual(substituto.data_desembarque, date(2026, 7, 5))
+        self.assertEqual(substituto.horario_desembarque, '18:30')
+        self.assertEqual(substituto.local_desembarque_membro, 'BASE RIO')
 
     def test_get_or_create_bloqueado_quando_os_finalizada(self):
         os_obj = self._create_os(70013, status_operacao='  fInAlIzAdA  ')
