@@ -5407,7 +5407,7 @@ def default_handover_items():
         {"item": 4, "descricao": "Detector de gás", "quantidade": "", "comentario": ""},
         {"item": 5, "descricao": "Rádios", "quantidade": "", "comentario": ""},
         {"item": 6, "descricao": "Luminárias (kit com 3)", "quantidade": "", "comentario": ""},
-        {"item": 7, "descricao": "EEBD", "quantidade": "", "comentario": ""},
+        {"item": 7, "descricao": "EPRD", "quantidade": "", "comentario": ""},
         {"item": 8, "descricao": "Ventilador", "quantidade": "", "comentario": ""},
         {"item": 9, "descricao": "Kit de resgate", "quantidade": "", "comentario": ""},
         {"item": 10, "descricao": "Máquina de hidrojato", "quantidade": "", "comentario": ""},

@@ -14,7 +14,7 @@ User = get_user_model()
 # Lista de itens padrão para inicialização do formulário
 ITEMS_PADRAO = [
     "Container", "Caixa", "Skid", "Detector de gás", "Rádios",
-    "Luminárias (kit com 3)", "EEBD", "Ventilador", "Kit de resgate",
+    "Luminárias (kit com 3)", "EPRD", "Ventilador", "Kit de resgate",
     "Máquina de hidrojato", "Desincrustador de convés"
 ]
 
@@ -175,7 +175,7 @@ def handover_editar(request, pk):
 
 @login_required
 def handover_pdf(request, pk):
-    handover = get_object_or_400(SupervisorHandover, pk=pk)
+    handover = get_object_or_404(SupervisorHandover, pk=pk)
     
     try:
         from weasyprint import HTML
