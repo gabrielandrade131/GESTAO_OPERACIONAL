@@ -7887,28 +7887,7 @@ def _apply_post_to_rdo(request, rdo_obj):
         )
 
         if should_process_retorno:
-            ordem_atual = getattr(rdo_obj, 'ordem_servico', None)
-            if retorno_equipamentos_value is True:
-                embarked_qs = _resolve_ordem_servico_embarcado_equipamentos(ordem_atual)
-                embarked_ids = set(embarked_qs.values_list('id', flat=True))
-                if not embarked_ids:
-                    raise ValueError(
-                        'Não há equipamentos embarcados disponíveis para previsão de retorno nesta OS. Marque "Não" para finalizar o RDO.',
-                    )
-                if not retorno_equipamentos_ids:
-                    raise ValueError(
-                        'Selecione pelo menos 1 equipamento embarcado para confirmar a previsão de retorno.',
-                    )
-                invalid_ids = [
-                    equipamento_id
-                    for equipamento_id in retorno_equipamentos_ids
-                    if equipamento_id not in embarked_ids
-                ]
-                if invalid_ids:
-                    raise ValueError(
-                        'Um ou mais equipamentos informados não pertencem à OS atual ou não estão com situação "Embarcado".',
-                    )
-            elif retorno_equipamentos_value is False:
+            if retorno_equipamentos_value is False:
                 retorno_equipamentos_ids = []
 
             rdo_obj.retorno_equipamentos = retorno_equipamentos_value
@@ -10764,7 +10743,10 @@ def create_rdo_ajax(request):
                     except Exception:
                         logger.exception('Falha ao remover RDO reservado após falha em _apply_post_to_rdo')
                     
-                    return JsonResponse({'success': False, 'error': 'Falha ao criar RDO.'}, status=400)
+                    err_msg = 'Falha ao criar RDO.'
+                    if isinstance(payload, dict) and payload.get('exception'):
+                        err_msg = payload.get('exception')
+                    return JsonResponse({'success': False, 'error': err_msg}, status=400)
 
                 try:
                     record_rdo_channel_event(
@@ -10812,7 +10794,10 @@ def create_rdo_ajax(request):
         else:
             created, payload = _apply_post_to_rdo(request, rdo_obj)
             if not created:
-                return JsonResponse({'success': False, 'error': 'Falha ao criar RDO.'}, status=400)
+                err_msg = 'Falha ao criar RDO.'
+                if isinstance(payload, dict) and payload.get('exception'):
+                    err_msg = payload.get('exception')
+                return JsonResponse({'success': False, 'error': err_msg}, status=400)
             same_os_status_updates = _promote_programada_os_with_rdo_to_em_andamento(
                 getattr(rdo_obj, 'ordem_servico', None),
             )

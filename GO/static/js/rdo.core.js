@@ -2660,12 +2660,8 @@
           || (state.answer === false && radio.value === 'nao');
       } catch(_){ }
     });
-    try { if (refs.actions) refs.actions.hidden = state.answer !== true; } catch(_){ }
-    if (state.answer === true) _renderSupervisorRetornoInlineEquipamentos(form, list);
-    else {
-      try { if (refs.list) refs.list.innerHTML = ''; } catch(_){ }
-    }
-    _updateSupervisorRetornoInlineSummary(form);
+    try { if (refs.actions) refs.actions.hidden = true; } catch(_){ }
+    try { if (refs.list) refs.list.innerHTML = ''; } catch(_){ }
     _setSupervisorRetornoInlineError('');
   }
 
@@ -2721,26 +2717,7 @@
 
   function _validateSupervisorRetornoEquipamentosBeforeSubmit(form){
     if (!form) return true;
-    var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
-    var refs = _getSupervisorRetornoInlineRefs();
-    var allowed = Object.create(null);
-    items.forEach(function(item){
-      var id = parseInt(String((item && item.id) || '').trim(), 10);
-      if (isFinite(id) && id > 0) allowed[id] = true;
-    });
-    if (!items.length) {
-      _setSupervisorRetornoInlineError('');
-      return true;
-    }
     var currentState = _getSupervisorRetornoEquipamentosState(form);
-    var validSelectedIds = [];
-    (currentState.selectedIds || []).forEach(function(id){
-      if (allowed[id]) validSelectedIds.push(id);
-    });
-    if (validSelectedIds.length !== (currentState.selectedIds || []).length) {
-      _setSupervisorRetornoEquipamentosState(form, currentState.answer, validSelectedIds);
-      currentState = _getSupervisorRetornoEquipamentosState(form);
-    }
     if (currentState.answer !== true && currentState.answer !== false) {
       _setSupervisorRetornoInlineError('Responda se há equipamentos retornando para a base.');
       try {
@@ -2749,18 +2726,10 @@
       } catch(_){ }
       return false;
     }
-    if (currentState.answer === false) {
-      _setSupervisorRetornoInlineError('');
-      return true;
-    }
-    if (!currentState.selectedIds || !currentState.selectedIds.length) {
-      _setSupervisorRetornoInlineError('Selecione pelo menos 1 equipamento com previsão de retorno.');
-      try { if (refs.selectBtn) refs.selectBtn.focus(); } catch(_){ }
-      return false;
-    }
     _setSupervisorRetornoInlineError('');
     return true;
   }
+
 
   function _bindSupervisorRetornoInline(){
     var form = document.getElementById('form-supervisor');
@@ -5614,7 +5583,12 @@
         try { closeModal(); } catch(_){ }
         try {
           var irHandoverChk = document.getElementById('sup-ir-handover');
-          if (irHandoverChk && irHandoverChk.checked) {
+          var isRetornoSim = false;
+          try {
+            var radioSim = document.querySelector('input[name="sup-retorno-inline-choice"][value="sim"]');
+            if (radioSim && radioSim.checked) isRetornoSim = true;
+          } catch(_){}
+          if ((irHandoverChk && irHandoverChk.checked) || isRetornoSim) {
             var osIdToRedirect = '';
             try {
               osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
