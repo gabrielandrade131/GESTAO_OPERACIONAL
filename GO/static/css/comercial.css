@@ -696,6 +696,19 @@ body.comercial-is-loading .commercial-main-content {
     grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+/* Keep long filter option labels inside their own grid column. */
+.filters-grid .field {
+    min-width: 0;
+}
+
+.filters-grid .field input,
+.filters-grid .field select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
 .field {
     display: grid;
     gap: 8px;
@@ -1534,6 +1547,14 @@ body.comercial-is-loading .commercial-main-content {
 .proposal-value {
     font-size: 0.95rem;
     font-weight: 800;
+}
+
+.pipeline-column__preview-note {
+    margin: -1px 0 0;
+    color: #78859a;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    text-align: center;
 }
 
 .see-all-button {

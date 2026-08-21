@@ -4590,8 +4590,12 @@ class ResponsavelCoordenadorAuditoria(models.Model):
 
 
 class Financeiro(models.Model):
-    proposta = models.IntegerField(primary_key=True)
+    # The commercial number is not a globally unique database identity: historical
+    # records may reuse it for different opportunities.
+    id = models.BigAutoField(primary_key=True)
+    proposta = models.IntegerField(db_index=True)
     revisao = models.IntegerField()
+    importado_historico = models.BooleanField(default=False, db_index=True)
     data_emissao = models.DateField(blank=True, null=True)
     data_solicitacao_proposta = models.DateField()
     data_fechamento_proposta = models.DateField(blank=True, null=True)
@@ -4606,6 +4610,8 @@ class Financeiro(models.Model):
             ('Contrato Novo', 'Contrato Novo'),
             ('Renovação', 'Renovação'),
         ],
+        blank=True,
+        null=True,
     )
     heat_map = models.IntegerField(choices=[(0, '0'), (1, '1'), (2, '2'), (3, '3')])
     motivo_perda = models.CharField(
@@ -4642,6 +4648,8 @@ class Financeiro(models.Model):
         'GO.OrdemServico',
         on_delete=models.PROTECT,
         related_name='financeiro_clientes',
+        blank=True,
+        null=True,
     )
     unidade = models.ForeignKey(
         'GO.OrdemServico',
@@ -4703,6 +4711,8 @@ class Financeiro(models.Model):
             ('Enviada', 'Enviada'),
             ('Em Negociação', 'Em Negociação'),
         ],
+        blank=True,
+        null=True,
     )
     cordenador = models.ForeignKey(
         'GO.OrdemServico',
@@ -4783,8 +4793,10 @@ class Financeiro(models.Model):
             ('SE', 'SE'),
             ('TO', 'TO'),
         ],
+        blank=True,
+        null=True,
     )
-    estimativo_receita = models.DecimalField(max_digits=12, decimal_places=2)
+    estimativo_receita = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     fonte_lead = models.CharField(
         max_length=50,
         choices=[
@@ -4794,6 +4806,8 @@ class Financeiro(models.Model):
             ('Convite Direto', 'Convite Direto'),
             ('Prospecção Ativa', 'Prospecção Ativa'),
         ],
+        blank=True,
+        null=True,
     )
     segmento_cliente = models.CharField(
         max_length=50,
@@ -4862,6 +4876,8 @@ class Financeiro(models.Model):
             ('Vidro', 'Vidro'),
             ('Marítmo', 'Marítmo'),
         ],
+        blank=True,
+        null=True,
     )
 
     class Meta:

@@ -298,15 +298,29 @@ def _resolve_tipo_operacao_label(financeiro):
 
 def _resolve_resumo_period(mes_value, ano_value, modo_value):
     today = timezone.localdate()
-    try:
-        mes = max(1, min(12, int(str(mes_value or today.month))))
-    except (TypeError, ValueError):
-        mes = today.month
+    requested_month = _clean_text(mes_value)
+    requested_year = _clean_text(ano_value)
+
+    # On first access, show the most recent month that actually has proposal
+    # emissions instead of an empty current calendar month.
+    latest_emission_query = Financeiro.objects.exclude(data_emissao__isnull=True)
+    if requested_year:
+        try:
+            latest_emission_query = latest_emission_query.filter(data_emissao__year=int(requested_year))
+        except (TypeError, ValueError):
+            pass
+    latest_emission = latest_emission_query.order_by("-data_emissao").values_list("data_emissao", flat=True).first()
+    default_date = latest_emission or today
 
     try:
-        ano = int(str(ano_value or today.year))
+        mes = max(1, min(12, int(str(requested_month or default_date.month))))
     except (TypeError, ValueError):
-        ano = today.year
+        mes = default_date.month
+
+    try:
+        ano = int(str(requested_year or default_date.year))
+    except (TypeError, ValueError):
+        ano = default_date.year
 
     modo = "acumulado" if _clean_text(modo_value).lower() == "acumulado" else "mensal"
 
@@ -422,7 +436,7 @@ def build_resumo_propostas_context(mes=None, ano=None, modo=None):
         else:
             receita_status_money[bucket] += valor
 
-        tipo_operacao = _normalize_key(_resolve_tipo_operacao_label(item))
+        tipo_operacao = _normalize_key(_get_proposal_operation(item))
         if tipo_operacao == "offshore":
             segment_row = segmento_template["Offshore"]
             segment_row["emAnalise" if bucket == "em_analise" else "emElaboracao" if bucket == "em_elaboracao" else "fechadaContratada" if bucket == "fechada_contratada" else "perdidaRecusada"] += valor
@@ -975,6 +989,11 @@ def _load_commercial_bundle(financeiro):
             bundle["overrides"] = {
                 "empresa": _clean_text(raw_overrides.get("empresa")),
                 "unidade": _clean_text(raw_overrides.get("unidade")),
+                # Historical imports keep these commercial values in the bundle
+                # because legacy technical foreign keys can only store one value.
+                "embarcacao_local": _clean_text(raw_overrides.get("embarcacao_local")),
+                "tipo_operacao": _clean_text(raw_overrides.get("tipo_operacao")),
+                "servico": _clean_text(raw_overrides.get("servico")),
             }
         return bundle
 
@@ -1032,6 +1051,7 @@ def _build_commercial_bundle(financeiro):
 
 
 def _serialize_financeiro(financeiro):
+    receita_informada = financeiro.estimativo_receita is not None
     receita = _safe_decimal(financeiro.estimativo_receita)
     tipo_operacao = _resolve_tipo_operacao(financeiro)
     status_display = _display_status(financeiro.status_proposta)
@@ -1040,10 +1060,11 @@ def _serialize_financeiro(financeiro):
     unidade_nome_base = _resolve_unidade_name(financeiro.unidade)
     commercial_bundle = _build_commercial_bundle(financeiro)
     overrides = commercial_bundle.get("overrides") or {}
-    cliente_nome = overrides.get("empresa") or cliente_nome
+    if "empresa" in overrides:
+        cliente_nome = _clean_text(overrides.get("empresa"))
     legacy_unidade_override = _clean_text(overrides.get("unidade"))
     legacy_override_is_unit = bool(_resolve_os_by_value("unidade", legacy_unidade_override))
-    unidade_nome = legacy_unidade_override if legacy_override_is_unit else unidade_nome_base
+    unidade_nome = legacy_unidade_override if "unidade" in overrides else unidade_nome_base
     embarcacao_local = (
         _clean_text(overrides.get("embarcacao_local"))
         or (legacy_unidade_override if legacy_unidade_override and not legacy_override_is_unit else unidade_nome)
@@ -1052,8 +1073,9 @@ def _serialize_financeiro(financeiro):
     critical_analysis = _serialize_critical_analysis(financeiro)
 
     return {
-        "id": financeiro.proposta,
-        "propostaId": financeiro.proposta,
+        # Use the internal identity for requests: commercial numbers may repeat in history.
+        "id": financeiro.pk,
+        "propostaId": financeiro.pk,
         "numeroProposta": str(financeiro.proposta),
         "numeroPropostaRaw": str(financeiro.proposta),
         "rev": f"{int(financeiro.revisao or 0):02d}",
@@ -1066,7 +1088,7 @@ def _serialize_financeiro(financeiro):
         "previsaoContratacao": _format_date_br(financeiro.previsao_contratacao),
         "followUp": commercial_bundle["summary"],
         "natureza": _clean_text(financeiro.natureza),
-        "tipoOperacao": tipo_operacao,
+        "tipoOperacao": _clean_text(overrides.get("tipo_operacao")) if "tipo_operacao" in overrides else tipo_operacao,
         "unidade": unidade_nome,
         "heatMap": str(financeiro.heat_map if financeiro.heat_map is not None else ""),
         "statusProposta": status_display,
@@ -1080,9 +1102,9 @@ def _serialize_financeiro(financeiro):
         "empresa": cliente_nome,
         "uf": _clean_text(financeiro.uf),
         "embarcacaoLocal": embarcacao_local,
-        "escopo": _clean_text(financeiro.servico) or _clean_text(financeiro.comentario),
-        "estimativaReceita": _format_currency_br(receita),
-        "estimativaReceitaValor": float(receita),
+        "escopo": _clean_text(overrides.get("servico")) or _clean_text(financeiro.servico) or _clean_text(financeiro.comentario),
+        "estimativaReceita": _format_currency_br(receita) if receita_informada else "",
+        "estimativaReceitaValor": float(receita) if receita_informada else None,
         "tempoContratoDias": f"{financeiro.tempo_contrato_dias} dias" if financeiro.tempo_contrato_dias else "",
         "tempoContratoDiasValor": financeiro.tempo_contrato_dias or 0,
         "solicitante": _clean_text(financeiro.solicitante),
@@ -1095,7 +1117,7 @@ def _serialize_financeiro(financeiro):
         "coordenador": _clean_text(getattr(financeiro.coordenador_cadastro, "nome", "")) or _resolve_os_string(financeiro.cordenador, "coordenador", ""),
         "po": _clean_text(financeiro.po),
         "rfi": _clean_text(financeiro.rfi),
-        "servico": _clean_text(financeiro.servico),
+        "servico": _clean_text(overrides.get("servico")) or _clean_text(financeiro.servico),
         "atrasada": _is_proposal_late(financeiro),
         "followUps": commercial_bundle["items"],
         "historico": commercial_bundle["history"],
@@ -1115,8 +1137,8 @@ def _serialize_agenda_followup(financeiro, item, index=0):
     data_iso = data_followup.isoformat() if data_followup else ""
 
     return {
-        "id": f"{financeiro.proposta}-{index}",
-        "proposta_id": financeiro.proposta,
+        "id": f"{financeiro.pk}-{index}",
+        "proposta_id": financeiro.pk,
         "numero_proposta": str(financeiro.proposta),
         "revisao": _clean_text(financeiro.revisao),
         "cliente": cliente_nome,
@@ -2539,7 +2561,7 @@ def comercial_meus_followups(request):
 def comercial_criar_followup(request):
     payload = _read_request_json(request)
     proposta_id = _parse_proposal_number(payload.get("proposta_id"))
-    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro, pk=proposta_id)
 
     data_followup = _parse_date_input(payload.get("data"))
     hora = _clean_text(payload.get("hora")) or "09:00"
@@ -2614,7 +2636,7 @@ def comercial_detalhe_proposta(request, proposta_id):
             "cordenador",
             "analise_critica_oportunidade",
         ).prefetch_related("campos", "anexos__enviado_por"),
-        proposta=proposta_id,
+        pk=proposta_id,
     )
     return JsonResponse({"success": True, "proposal": _serialize_financeiro(proposta)})
 
@@ -2629,7 +2651,7 @@ PROPOSTA_ANEXO_TAMANHO_MAXIMO = 20 * 1024 * 1024
 @commercial_preview_required
 @require_GET
 def comercial_listar_anexos_proposta(request, proposta_id):
-    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro, pk=proposta_id)
     anexos = proposta.anexos.select_related("enviado_por").all()
     return JsonResponse({
         "success": True,
@@ -2642,7 +2664,7 @@ def comercial_listar_anexos_proposta(request, proposta_id):
 @require_POST
 @transaction.atomic
 def comercial_enviar_anexos_proposta(request, proposta_id):
-    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro, pk=proposta_id)
     arquivos = request.FILES.getlist("arquivos") or ([request.FILES["arquivo"]] if request.FILES.get("arquivo") else [])
     if not arquivos:
         return JsonResponse({"success": False, "message": "Selecione ao menos um documento."}, status=400)
@@ -2699,13 +2721,19 @@ def comercial_excluir_anexo_proposta(request, anexo_id):
     return JsonResponse({"success": True, "message": "Documento excluído com sucesso."})
 
 
+def _get_proposal_operation(proposta):
+    """Return the commercial operation, including the historical-import override."""
+    overrides = _build_commercial_bundle(proposta).get("overrides") or {}
+    return _clean_text(overrides.get("tipo_operacao")) or _resolve_tipo_operacao(proposta)
+
+
 def _is_offshore_proposal(proposta):
-    return str(getattr(getattr(proposta, "tipo_operacao", None), "tipo_operacao", "")).strip().casefold() == "offshore"
+    return _get_proposal_operation(proposta).casefold() == "offshore"
 
 
 def _is_onshore_proposal(proposta):
-    """Identify the persisted operation choice without relying on its display case."""
-    operation = str(getattr(getattr(proposta, "tipo_operacao", None), "tipo_operacao", ""))
+    """Identify the commercial operation without relying on its display case."""
+    operation = _get_proposal_operation(proposta)
     normalized = unicodedata.normalize("NFKD", operation).encode("ascii", "ignore").decode("ascii")
     return normalized.strip().casefold() == "onshore"
 
@@ -2900,7 +2928,7 @@ def _get_document_revision(proposta, user):
 @commercial_preview_required
 @require_GET
 def comercial_revisao_documento_proposta(request, proposta_id):
-    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos", "documentos_revisados__linhas"), proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos", "documentos_revisados__linhas"), pk=proposta_id)
     if _is_onshore_proposal(proposta):
         document_type = request.GET.get("document_type", "").strip()
         if document_type:
@@ -2931,7 +2959,7 @@ def comercial_revisao_documento_proposta(request, proposta_id):
 @require_POST
 @transaction.atomic
 def comercial_salvar_revisao_documento_proposta(request, proposta_id):
-    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos"), proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos"), pk=proposta_id)
     payload = _read_request_json(request)
     if _is_onshore_proposal(proposta):
         document_type = str(payload.get("document_type") or "")
@@ -3049,7 +3077,7 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
             "metodo_cadastro",
             "cordenador",
         ).prefetch_related("campos"),
-        proposta=proposta_id,
+        pk=proposta_id,
     )
 
     try:
@@ -3173,7 +3201,7 @@ def comercial_gerar_pdf_proposta(request, proposta_id):
             "metodo_cadastro",
             "cordenador",
         ).prefetch_related("campos"),
-        proposta=proposta_id,
+        pk=proposta_id,
     )
 
     try:
@@ -3376,7 +3404,7 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
             "unidade__Unidade",
             "analise_critica_oportunidade",
         ),
-        proposta=proposta_id,
+        pk=proposta_id,
     )
 
     try:
@@ -3626,7 +3654,7 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
 @require_POST
 @transaction.atomic
 def comercial_atualizar_proposta(request, proposta_id):
-    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro, pk=proposta_id)
     payload = _read_request_json(request)
     errors = _update_financeiro_from_payload(proposta, payload)
     critical_answers, critical_errors, critical_comment = _parse_critical_analysis_payload(payload)
@@ -3664,7 +3692,7 @@ def comercial_atualizar_proposta(request, proposta_id):
 @commercial_preview_required
 @require_POST
 def comercial_atualizar_status(request, proposta_id):
-    proposta = get_object_or_404(Financeiro, proposta=proposta_id)
+    proposta = get_object_or_404(Financeiro, pk=proposta_id)
     payload = _read_request_json(request)
 
     next_status = _clean_text(payload.get("status_proposta"))
