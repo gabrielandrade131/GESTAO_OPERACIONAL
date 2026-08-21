@@ -5436,6 +5436,7 @@ class SupervisorHandover(models.Model):
     cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
     unidade = models.ForeignKey('Unidade', on_delete=models.SET_NULL, null=True, blank=True)
     projeto = models.CharField(max_length=150, blank=True, default='')
+    ordem_servico = models.ForeignKey('OrdemServico', on_delete=models.SET_NULL, null=True, blank=True, related_name='handovers')
 
     supervisor_atual = models.ForeignKey(
         settings.AUTH_USER_MODEL,

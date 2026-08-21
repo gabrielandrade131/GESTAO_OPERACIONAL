@@ -6,7 +6,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 import logging
 
-from .models import SupervisorHandover, Cliente, Unidade
+from .models import SupervisorHandover, Cliente, Unidade, OrdemServico
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -30,6 +30,7 @@ def handover_list(request):
 def handover_criar(request):
     clientes = Cliente.objects.all()
     unidades = Unidade.objects.all()
+    ordens_servico = OrdemServico.objects.all().order_by('-numero_os')
     usuarios = User.objects.filter(is_active=True).order_by('first_name', 'last_name')
     
     # Inicializa os itens vazios
@@ -41,13 +42,23 @@ def handover_criar(request):
             'quantidade': '',
             'comentario': ''
         })
-        
+
+    # Dados pré-preenchidos se vier por GET os_id
+    prefilled_os = None
+    os_id = request.GET.get('os_id')
+    if os_id:
+        try:
+            prefilled_os = OrdemServico.objects.filter(pk=os_id).first() or OrdemServico.objects.filter(numero_os=os_id).first()
+        except Exception:
+            pass
+
     if request.method == 'POST':
         periodo_data = request.POST.get('periodo_data', '').strip()
         cliente_id = request.POST.get('cliente', '').strip()
         unidade_id = request.POST.get('unidade', '').strip()
         projeto = request.POST.get('projeto', '').strip()
         supervisor_back_id = request.POST.get('supervisor_back', '').strip()
+        ordem_servico_id = request.POST.get('ordem_servico', '').strip()
         
         servico_concluido = request.POST.get('servico_concluido', '').strip()
         servico_em_andamento = request.POST.get('servico_em_andamento', '').strip()
@@ -68,6 +79,7 @@ def handover_criar(request):
         cliente = Cliente.objects.filter(id=cliente_id).first() if cliente_id else None
         unidade = Unidade.objects.filter(id=unidade_id).first() if unidade_id else None
         supervisor_back = User.objects.filter(id=supervisor_back_id).first() if supervisor_back_id else None
+        ordem_servico = OrdemServico.objects.filter(id=ordem_servico_id).first() if ordem_servico_id else None
         
         try:
             handover = SupervisorHandover.objects.create(
@@ -77,6 +89,7 @@ def handover_criar(request):
                 projeto=projeto,
                 supervisor_atual=request.user,
                 supervisor_back=supervisor_back,
+                ordem_servico=ordem_servico,
                 servico_concluido=servico_concluido,
                 servico_em_andamento=servico_em_andamento,
                 orientacoes_observacoes=orientacoes_observacoes,
@@ -91,9 +104,11 @@ def handover_criar(request):
     return render(request, 'handover_form.html', {
         'clientes': clientes,
         'unidades': unidades,
+        'ordens_servico': ordens_servico,
         'usuarios': usuarios,
         'itens': itens_form,
         'is_edit': False,
+        'prefilled_os': prefilled_os,
         'synchro_active_module': 'handover',
     })
 
@@ -102,6 +117,7 @@ def handover_editar(request, pk):
     handover = get_object_or_404(SupervisorHandover, pk=pk)
     clientes = Cliente.objects.all()
     unidades = Unidade.objects.all()
+    ordens_servico = OrdemServico.objects.all().order_by('-numero_os')
     usuarios = User.objects.filter(is_active=True).order_by('first_name', 'last_name')
     
     if request.method == 'POST':
@@ -118,6 +134,9 @@ def handover_editar(request, pk):
         supervisor_back_id = request.POST.get('supervisor_back', '').strip()
         handover.supervisor_back = User.objects.filter(id=supervisor_back_id).first() if supervisor_back_id else None
         
+        ordem_servico_id = request.POST.get('ordem_servico', '').strip()
+        handover.ordem_servico = OrdemServico.objects.filter(id=ordem_servico_id).first() if ordem_servico_id else None
+
         handover.servico_concluido = request.POST.get('servico_concluido', '').strip()
         handover.servico_em_andamento = request.POST.get('servico_em_andamento', '').strip()
         handover.orientacoes_observacoes = request.POST.get('orientacoes_observacoes', '').strip()
@@ -147,6 +166,7 @@ def handover_editar(request, pk):
         'handover': handover,
         'clientes': clientes,
         'unidades': unidades,
+        'ordens_servico': ordens_servico,
         'usuarios': usuarios,
         'itens': handover.itens_equipamentos,
         'is_edit': True,

@@ -2309,3 +2309,10 @@
     flex: 1 1 100%;
   }
 }
+
+.sup-retorno-inline[hidden],
+.sup-retorno-inline__actions[hidden],
+.sup-retorno-inline__error[hidden] {
+  display: none !important;
+}
+

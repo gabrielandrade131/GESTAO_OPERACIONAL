@@ -127,13 +127,14 @@ def api_notificacoes_marcar_todas_lidas(request):
     )
 
 
-@superuser_ia_required
+@permissao_ia_rdo_required
 def listar_alertas(request):
     return assistente_rdo(request)
 
 
-@superuser_ia_required
+@permissao_ia_rdo_required
 def assistente_rdo(request):
+
     resultado = None
     acao = request.GET.get("acao")
     if acao == "nova_conversa":
