@@ -2777,7 +2777,8 @@ document.querySelectorAll(".btn_tabela[id^='btn_detalhes_']").forEach(botao => {
     });
 });
 
-document.querySelector("#detalhes_os .close-btn").addEventListener("click", fecharDetalhesModal);
+var detalhesCloseButton = document.querySelector("#detalhes_os .close-btn");
+if (detalhesCloseButton) detalhesCloseButton.addEventListener("click", fecharDetalhesModal);
 
 window.addEventListener("click", (e) => {
     if (e.target === detalhesModal) {
@@ -2792,14 +2793,6 @@ function fecharDetalhesModal() {
         detalhesModal.style.display = "none";
     }
 }
-
-document.querySelector("#detalhes_os .close-btn").addEventListener("click", fecharDetalhesModal);
-
-window.addEventListener("click", (e) => {
-    if (e.target === detalhesModal) {
-        fecharDetalhesModal();
-    }
-});
 
 // Filtro por status
 const filtroIcon = document.querySelector(".fa-filter");

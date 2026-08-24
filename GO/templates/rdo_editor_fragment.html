@@ -757,7 +757,7 @@
         </div>
         <div class="form-field">
             <label for="edit-observacoes-en">Observações (EN)</label>
-            <textarea id="edit-observacoes-en" rows="3" readonly>{{ r.observacoes_en|default:'' }}</textarea>
+            <textarea id="edit-observacoes-en" name="observacoes_en" rows="3" readonly>{{ r.observacoes_en|default:'' }}</textarea>
         </div>
     </div>
     <input type="hidden" name="equipe_source" value="{{ r.equipe_source|default:'manual' }}" />
