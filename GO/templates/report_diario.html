@@ -146,6 +146,7 @@ body.exporting-pdf .hh-list li{padding:7px 9px}
 body.exporting-pdf .hh-list .cat{font-size:.72rem;line-height:1.28}
 body.exporting-pdf .hh-list .val{font-size:.74rem}
 body.exporting-pdf .chart-card .card-body.pie-wrap{gap:12px}
+body.exporting-pdf .ch-wrap-sm:not(.hh-ativ-chart){height:180px}
 .filters-flow{display:flex;align-items:flex-start;gap:10px;margin-top:12px;padding:12px 14px;border-radius:16px;background:linear-gradient(180deg,#f7faf6,#f2f7f1);border:1px solid rgba(27,122,75,.08)}
 .filters-flow .material-icons{font-size:20px;color:#1b7a4b;flex-shrink:0}
 .filters-flow strong{display:block;font-size:.8rem;font-weight:800;color:#183429;margin-bottom:2px}
@@ -1149,8 +1150,16 @@ function computePdfLayout(canvasWidth,canvasHeight,maxPages,preferredFirstBreakP
   }
 
   function applyPreferredFirstBreak(layout){
-    if(!preferredFirstBreakPx||!layout||layout.pageHeightPx>=preferredFirstBreakPx)return layout;
-    var requiredDrawWidthMm=(layout.usableHeight*canvasWidth)/Math.max(1,preferredFirstBreakPx);
+    if(!preferredFirstBreakPx||!layout)return layout;
+    var requiredPageHeightPx=preferredFirstBreakPx;
+    // Em duas paginas, a segunda precisa comportar tudo o que vem depois do
+    // corte preferencial da primeira. Isso aproveita a area livre da pagina 2
+    // sem empurrar os graficos finais para uma terceira pagina.
+    if(maxPages===2){
+      requiredPageHeightPx=Math.max(requiredPageHeightPx,canvasHeight-preferredFirstBreakPx);
+    }
+    if(layout.pageHeightPx>=requiredPageHeightPx)return layout;
+    var requiredDrawWidthMm=(layout.usableHeight*canvasWidth)/Math.max(1,requiredPageHeightPx);
     if(!isFinite(requiredDrawWidthMm)||requiredDrawWidthMm<=0)return layout;
     return buildLayout(layout.entry,Math.min(layout.usableWidth,requiredDrawWidthMm));
   }
@@ -1510,18 +1519,21 @@ function exportDashboardToPdf(){
       var doc=new JsPDF({orientation:layout.orientation,unit:'mm',format:'a4'});
       var renderedPx=0;
       var pageIndex=0;
-      var pageLimit=Math.max(1,layout.pageCount||maxPages);
 
-      while(renderedPx<canvas.height&&pageIndex<pageLimit){
+      // layout.pageCount considera paginas com a altura maxima. Como os cortes
+      // abaixo podem ser antecipados para nao dividir um card, usa-lo como
+      // limite descartava silenciosamente o fim do dashboard. Continue ate
+      // consumir todo o canvas; maxPages segue sendo apenas a meta de escala.
+      while(renderedPx<canvas.height){
         var maxSliceHeightPx=Math.min(layout.pageHeightPx,canvas.height-renderedPx);
         var sliceHeightPx=maxSliceHeightPx;
         var targetBottom=renderedPx+maxSliceHeightPx;
         var minSliceHeightPx=Math.round(maxSliceHeightPx*(pageIndex===0 ? 0.72 : 0.58));
         var desiredBreakBottom=0;
 
-        if(pageIndex===0&&preferredFirstBreakCanvas&&preferredFirstBreakCanvas>renderedPx+minSliceHeightPx&&preferredFirstBreakCanvas<=targetBottom){
+        if(pageIndex===0&&preferredFirstBreakCanvas&&preferredFirstBreakCanvas>renderedPx&&preferredFirstBreakCanvas<=targetBottom){
           desiredBreakBottom=preferredFirstBreakCanvas;
-        }else{
+        }else if(targetBottom<canvas.height){
           breakCandidatesCanvas.forEach(function(candidate){
             if(candidate>renderedPx+minSliceHeightPx&&candidate<=targetBottom){
               desiredBreakBottom=candidate;
