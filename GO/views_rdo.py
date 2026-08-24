@@ -1506,7 +1506,6 @@ _TANK_SHARED_STRUCTURE_FIELDS = (
     'patamares',
     'volume_tanque_exec',
     'servico_exec',
-    'metodo_exec',
 )
 
 _TANK_COMPLETION_FIELDS = (

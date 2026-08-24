@@ -175,7 +175,7 @@ def handover_editar(request, pk):
 
 @login_required
 def handover_pdf(request, pk):
-    handover = get_object_or_400(SupervisorHandover, pk=pk)
+    handover = get_object_or_404(SupervisorHandover, pk=pk)
     
     try:
         from weasyprint import HTML

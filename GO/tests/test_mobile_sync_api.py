@@ -22,6 +22,7 @@ from GO.models import (
     RDOMembroEquipe,
     RdoEquipamentoRetornoPrevisto,
     RdoTanque,
+    SupervisorHandover,
     Unidade,
 )
 
@@ -66,6 +67,13 @@ class MobileSyncApiIdempotencyTest(TestCase):
             'payload': {
                 'rdo_id': str(rdo.id),
                 'observacoes': 'Primeiro envio mobile',
+                'metodo_exec': 'Mecanizada',
+                'retorno_equipamentos': '0',
+                'atividade_nome[]': ['dds'],
+                'atividade_inicio[]': ['07:00'],
+                'atividade_fim[]': ['07:30'],
+                'atividade_comentario_pt[]': ['DDS inicial'],
+                'atividade_comentario_en[]': [''],
             },
         }
         response1 = self.client.post(
@@ -82,6 +90,9 @@ class MobileSyncApiIdempotencyTest(TestCase):
 
         rdo.refresh_from_db()
         self.assertEqual(rdo.observacoes_rdo_pt, 'Primeiro envio mobile')
+        self.assertEqual(rdo.metodo_exec, 'Mecanizada')
+        self.assertEqual(rdo.atividades_rdo.count(), 1)
+        self.assertEqual(rdo.atividades_rdo.first().atividade, 'dds')
 
         second_body = {
             'client_uuid': '4a91fb4c-69ef-44a0-aee7-f04fc799f7d7',
@@ -240,6 +251,62 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertTrue(data2.get('idempotent'))
         self.assertEqual(RdoTanque.objects.filter(rdo=rdo).count(), 1)
         self.assertEqual(MobileSyncEvent.objects.filter(client_uuid='57f3cbf1-a48b-4d8b-9ed5-f8f34fd55be4').count(), 1)
+
+    def test_mobile_handover_create_is_idempotent_and_keeps_official_items(self):
+        cliente = Cliente.objects.create(nome='Cliente Handover Mobile')
+        unidade = Unidade.objects.create(nome='Unidade Handover Mobile')
+        os_obj = OrdemServico.objects.create(
+            numero_os=8912,
+            data_inicio=date.today(),
+            dias_de_operacao=1,
+            servico='LIMPEZA',
+            metodo='Manual',
+            pob=1,
+            volume_tanque=Decimal('10.00'),
+            Cliente=cliente,
+            Unidade=unidade,
+            tipo_operacao='Onshore',
+            solicitante='Teste',
+            supervisor=self.user,
+        )
+        body = {
+            'client_uuid': '83a01ef1-3d6b-4b42-a93e-a9458d3db334',
+            'operation': 'handover.create',
+            'payload': {
+                'ordem_servico_id': str(os_obj.id),
+                'periodo_data': '24/08/2026',
+                'servico_concluido': 'Limpeza iniciada',
+                'servico_em_andamento': 'Lavagem do tanque',
+                'orientacoes_observacoes': 'Acompanhar detector de gás.',
+                'itens_equipamentos': [
+                    {'item': 1, 'quantidade': '2', 'comentario': 'No convés', 'descricao': 'Não aceitar alteração'},
+                ],
+            },
+        }
+        response1 = self.client.post(
+            '/api/mobile/v1/rdo/sync/',
+            data=json.dumps(body),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+        self.assertEqual(response1.status_code, 200)
+        self.assertTrue(response1.json().get('success'))
+        handover = SupervisorHandover.objects.get()
+        self.assertEqual(handover.ordem_servico, os_obj)
+        self.assertEqual(handover.cliente, cliente)
+        self.assertEqual(handover.unidade, unidade)
+        self.assertEqual(handover.itens_equipamentos[0]['descricao'], 'Container')
+        self.assertEqual(handover.itens_equipamentos[0]['quantidade'], '2')
+
+        response2 = self.client.post(
+            '/api/mobile/v1/rdo/sync/',
+            data=json.dumps(body),
+            content_type='application/json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+        self.assertEqual(response2.status_code, 200)
+        self.assertTrue(response2.json().get('idempotent'))
+        self.assertEqual(SupervisorHandover.objects.count(), 1)
 
     def test_token_auth_works_without_session(self):
         rdo = RDO.objects.create(rdo='RDO-MOBILE-TOKEN')

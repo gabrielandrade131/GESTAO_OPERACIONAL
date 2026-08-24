@@ -24,6 +24,8 @@ from .models import (
     Pessoa,
     RDO,
     RdoTanque,
+    SupervisorHandover,
+    default_handover_items,
 )
 from .views_rdo import (
     _configured_tank_candidate_keys,
@@ -834,7 +836,79 @@ def _dispatch_operation(source_request, operation, payload):
             )
         return add_tank_ajax(request_for_view, rdo_id)
 
+    if op in {'handover.create', 'handover_create', 'create_handover'}:
+        return _create_mobile_handover(source_request, payload)
+
     return JsonResponse({'success': False, 'error': f'Operação não suportada: {operation}'}, status=400)
+
+
+def _create_mobile_handover(source_request, payload):
+    """Cria uma passagem de serviço usando o mesmo canal idempotente do app.
+
+    O formulário mobile envia somente dados que podem ser coletados offline.
+    Cliente, unidade e projeto são derivados da OS no servidor para impedir que
+    uma fila antiga associe a passagem à operação errada.
+    """
+    os_id = _coerce_int(payload.get('ordem_servico_id') or payload.get('os_id'))
+    if os_id is None:
+        return JsonResponse(
+            {'success': False, 'error': 'ordem_servico_id é obrigatório para a passagem de serviço.'},
+            status=400,
+        )
+
+    ordem_servico = OrdemServico.objects.filter(pk=os_id).first()
+    if ordem_servico is None:
+        return JsonResponse({'success': False, 'error': 'Ordem de serviço não encontrada.'}, status=404)
+
+    periodo_data = str(payload.get('periodo_data') or '').strip()
+    if not periodo_data:
+        return JsonResponse({'success': False, 'error': 'periodo_data é obrigatório.'}, status=400)
+
+    defaults = default_handover_items()
+    raw_items = payload.get('itens_equipamentos')
+    raw_by_item = {}
+    if isinstance(raw_items, list):
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                continue
+            item_number = _coerce_int(raw.get('item'))
+            if item_number is not None:
+                raw_by_item[item_number] = raw
+
+    itens_equipamentos = []
+    for default in defaults:
+        raw = raw_by_item.get(default['item'], {})
+        itens_equipamentos.append({
+            'item': default['item'],
+            'descricao': default['descricao'],
+            'quantidade': str(raw.get('quantidade') or '').strip()[:100],
+            'comentario': str(raw.get('comentario') or '').strip()[:1000],
+        })
+
+    handover = SupervisorHandover.objects.create(
+        periodo_data=periodo_data[:100],
+        cliente=getattr(ordem_servico, 'Cliente', None),
+        unidade=getattr(ordem_servico, 'Unidade', None),
+        projeto=str(
+            getattr(ordem_servico, 'especificacao', '')
+            or getattr(ordem_servico, 'servico', '')
+            or ''
+        ).strip()[:150],
+        ordem_servico=ordem_servico,
+        supervisor_atual=source_request.user,
+        servico_concluido=str(payload.get('servico_concluido') or '').strip(),
+        servico_em_andamento=str(payload.get('servico_em_andamento') or '').strip(),
+        orientacoes_observacoes=str(payload.get('orientacoes_observacoes') or '').strip(),
+        itens_equipamentos=itens_equipamentos,
+    )
+    return JsonResponse(
+        {
+            'success': True,
+            'id': handover.id,
+            'handover': {'id': handover.id, 'ordem_servico_id': ordem_servico.id},
+            'message': 'Passagem de Serviço criada com sucesso.',
+        }
+    )
 
 
 def _sync_replay_response(event_obj):

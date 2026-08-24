@@ -509,18 +509,15 @@
                 }
             }catch(e){ console.warn('preenchimento servico failed', e); }
 
-            // Método: preencher e bloquear select `sup-metodo` quando disponível no detalhe do tanque
+            // Método é um lançamento diário do RDO. Nunca herdar nem bloquear
+            // o valor do último registro deste tanque.
             try{
                 var metodoSel = qs('sup-metodo');
                 if(metodoSel){
-                    if(t.metodo_exec || t.metodo){
-                        try{ metodoSel.value = t.metodo_exec || t.metodo; }catch(e){}
-                        var hidm = ensureHidden('metodo_exec', form);
-                        hidm.value = t.metodo_exec || t.metodo || '';
-                        metodoSel.disabled = true; metodoSel.setAttribute('data-locked','1');
-                    } else {
-                        metodoSel.disabled = false; var hidm2 = q1('input[name="metodo_exec"][data-hidden]', form); if(hidm2) hidm2.remove();
-                    }
+                    try{ metodoSel.value = ''; }catch(e){}
+                    metodoSel.disabled = false;
+                    metodoSel.removeAttribute('data-locked');
+                    var hidm = q1('input[name="metodo_exec"][data-hidden]', form); if(hidm) hidm.remove();
                 }
             }catch(e){ console.warn('preenchimento metodo failed', e); }
 
@@ -1851,20 +1848,15 @@
                     }
                 }catch(e){ console.warn('preenchimento servico failed', e); }
 
-                // Método: preencher e bloquear select `sup-metodo` quando disponível no detalhe do tanque
+                // Método é um lançamento diário do RDO. Nunca herdar nem bloquear
+                // o valor do último registro deste tanque.
                 try{
                     var metodoSel = qs('sup-metodo');
                     if(metodoSel){
-                        if(t.metodo_exec){
-                            try{ metodoSel.value = t.metodo_exec; }catch(e){}
-                            var hidm = ensureHidden('metodo_exec', form);
-                            hidm.value = t.metodo_exec || '';
-                            metodoSel.disabled = true;
-                            metodoSel.setAttribute('data-locked','1');
-                        } else {
-                            metodoSel.disabled = false;
-                            var hidm2 = q1('input[name="metodo_exec"][data-hidden]', form); if(hidm2) hidm2.remove();
-                        }
+                        try{ metodoSel.value = ''; }catch(e){}
+                        metodoSel.disabled = false;
+                        metodoSel.removeAttribute('data-locked');
+                        var hidm = q1('input[name="metodo_exec"][data-hidden]', form); if(hidm) hidm.remove();
                     }
                 }catch(e){ console.warn('preenchimento metodo failed', e); }
 
