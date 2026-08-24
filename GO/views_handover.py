@@ -14,7 +14,7 @@ User = get_user_model()
 # Lista de itens padrão para inicialização do formulário
 ITEMS_PADRAO = [
     "Container", "Caixa", "Skid", "Detector de gás", "Rádios",
-    "Luminárias (kit com 3)", "EEBD", "Ventilador", "Kit de resgate",
+    "Luminárias (kit com 3)", "EPRD", "Ventilador", "Kit de resgate",
     "Máquina de hidrojato", "Desincrustador de convés"
 ]
 

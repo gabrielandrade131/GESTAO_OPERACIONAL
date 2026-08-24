@@ -274,6 +274,8 @@
                     _setSupervisorTankDraftAvailability(false, 'Selecione um tanque configurado acima para liberar o preenchimento.');
                 }
             }catch(e){}
+            // Limpar qualquer bloqueio legado ao trocar/resetar o tanque.
+            try{ enableSubmissionButtons(); }catch(e){}
         }
 
         // helper seguro para appendChild (evita TypeError quando variáveis não são Nodes)
@@ -416,6 +418,10 @@
         function populateFromTankData(t, codigo){
             if(!t) return;
 
+            // Uma selecao valida nunca deve herdar o estado de duplicidade de
+            // uma consulta anterior ou de uma resposta assincrona atrasada.
+            try{ enableSubmissionButtons(); }catch(e){}
+
             // Muito importante: ao trocar o tanque, limpar campos do dia para não reaproveitar valores do tanque/RDO anterior.
             clearOperationalFields();
             syncPreviousCompartimentosPayload(form, t.previous_compartimentos || []);
@@ -509,15 +515,15 @@
                 }
             }catch(e){ console.warn('preenchimento servico failed', e); }
 
-            // Método é um lançamento diário do RDO. Nunca herdar nem bloquear
-            // o valor do último registro deste tanque.
+            // Método é um lançamento diário do RDO; nunca o herdar do tanque.
             try{
                 var metodoSel = qs('sup-metodo');
                 if(metodoSel){
                     try{ metodoSel.value = ''; }catch(e){}
                     metodoSel.disabled = false;
                     metodoSel.removeAttribute('data-locked');
-                    var hidm = q1('input[name="metodo_exec"][data-hidden]', form); if(hidm) hidm.remove();
+                    removeHidden('metodo_exec', form);
+                    try{ metodoSel.dispatchEvent(new Event('change', { bubbles: true })); }catch(e){}
                 }
             }catch(e){ console.warn('preenchimento metodo failed', e); }
 
@@ -628,6 +634,10 @@
                             }).catch(function(err){ resolve(false); });
                             return;
                         }
+                        // Existing tanks configured on the OS are valid choices.
+                        // Only the RDO-specific lookup above can flag a duplicate.
+                        resolve(false);
+                        return;
                         // fallback: check OS tanks list conservatively
                         if(osId){
                             var url2 = '/api/os/' + encodeURIComponent(osId) + '/tanks/?limit=200';
@@ -668,6 +678,14 @@
 
             function disableSubmissionButtons(){
                 try{
+                    // Keep every action clickable. The submit handler will show
+                    // a clear duplicate-tank message instead of making the form inert.
+                    form.setAttribute('data-rdo-duplicate-tank', '1');
+                    if(input){
+                        input.setAttribute('aria-invalid', 'true');
+                        input.setAttribute('data-rdo-duplicate-tank', '1');
+                    }
+                    return;
                     var els = Array.prototype.slice.call(form.querySelectorAll('button, input[type="submit"], input[type="button"]'));
                     els.forEach(function(el){
                         try{
@@ -708,9 +726,15 @@
 
             function enableSubmissionButtons(){
                 try{
+                    form.removeAttribute('data-rdo-duplicate-tank');
+                    if(input){
+                        input.removeAttribute('data-rdo-duplicate-tank');
+                        input.removeAttribute('aria-invalid');
+                    }
                     var els = Array.prototype.slice.call(form.querySelectorAll('[data-disabled-by-dup]'));
                     els.forEach(function(el){
                         try{ el.removeAttribute('data-disabled-by-dup'); }catch(e){}
+                        try{ el.removeAttribute('aria-disabled'); }catch(e){}
                         try{ el.disabled = false; }catch(e){}
                         try{ el.classList && el.classList.remove('disabled'); }catch(e){}
                         try{
@@ -737,6 +761,10 @@
                     });
                 }catch(e){}
             }
+
+            // Scrub defensivo: versoes anteriores desabilitavam todos os botoes
+            // (exceto Cancelar). Isto recupera o DOM mesmo em navegacao sem reload.
+            enableSubmissionButtons();
 
             function getOsId(){
                 var el = qs('sup-context-os');
@@ -1693,6 +1721,8 @@
                                 // input changed since we started the request; ignore this result
                                 return;
                             }
+                            var selectedNow = (hidTank && hidTank.value && String(hidTank.value).trim());
+                            if(selectedNow){ enableSubmissionButtons(); return; }
                             if(exists){ disableSubmissionButtons(); }
                             else { enableSubmissionButtons(); }
                         }catch(e){}
@@ -1848,15 +1878,15 @@
                     }
                 }catch(e){ console.warn('preenchimento servico failed', e); }
 
-                // Método é um lançamento diário do RDO. Nunca herdar nem bloquear
-                // o valor do último registro deste tanque.
+                // Método é um lançamento diário do RDO; nunca o herdar do tanque.
                 try{
                     var metodoSel = qs('sup-metodo');
                     if(metodoSel){
                         try{ metodoSel.value = ''; }catch(e){}
                         metodoSel.disabled = false;
                         metodoSel.removeAttribute('data-locked');
-                        var hidm = q1('input[name="metodo_exec"][data-hidden]', form); if(hidm) hidm.remove();
+                        removeHidden('metodo_exec', form);
+                        try{ metodoSel.dispatchEvent(new Event('change', { bubbles: true })); }catch(e){}
                     }
                 }catch(e){ console.warn('preenchimento metodo failed', e); }
 

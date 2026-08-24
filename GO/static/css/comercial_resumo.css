@@ -40,8 +40,9 @@ button {
 }
 
 .resumo-main {
-    width: min(1600px, calc(100% - 30px));
-    margin: 18px auto 28px;
+    /* Use the same content rail as the Comercial dashboard. */
+    width: min(1640px, calc(100% - 28px));
+    margin: 24px auto 28px;
     display: grid;
     gap: 12px;
 }
@@ -96,6 +97,12 @@ button {
     gap: 8px;
     font-size: 0.92rem;
     font-weight: 700;
+}
+
+.resumo-back-link--icon {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
 }
 
 .resumo-header h1 {
@@ -185,7 +192,7 @@ button {
 
 .resumo-indicators {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     overflow: hidden;
 }
 
@@ -483,7 +490,7 @@ button {
 
 .segment-compare__row {
     display: grid;
-    grid-template-columns: 58px minmax(0, 1fr) 104px;
+    grid-template-columns: 68px minmax(0, 1fr) 116px;
     gap: 10px;
     align-items: center;
 }
@@ -546,7 +553,7 @@ button {
 }
 
 .segment-compare__axis {
-    padding-left: 68px;
+    padding: 0 126px 0 78px;
     display: flex;
     justify-content: space-between;
     color: #617085;
@@ -829,7 +836,7 @@ button {
     }
 
     .segment-compare__axis {
-        padding-left: 0;
+        padding: 0;
     }
 }
 

@@ -57,6 +57,23 @@ from django.template.loader import render_to_string
 from types import SimpleNamespace
 
 
+def _translate_rdo_pt_or_original(value):
+    """Translate RDO text without ever persisting an empty EN counterpart."""
+    clean = str(value or '').strip()
+    if not clean:
+        return ''
+    try:
+        translated = translate_pt_to_en(clean)
+        if translated and str(translated).strip():
+            return str(translated).strip()
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            'Traducao automatica indisponivel ao salvar RDO: %s',
+            exc,
+        )
+    return clean
+
+
 def _guard_rdo_open_edit_json(request, action):
     user = getattr(request, 'user', None)
     if not _user_can_open_or_edit_rdo(user):
@@ -1922,7 +1939,6 @@ _TANK_SHARED_STRUCTURE_FIELD_LABELS = {
     'patamares': 'patamares',
     'volume_tanque_exec': 'volume',
     'servico_exec': 'serviço',
-    'metodo_exec': 'método',
 }
 
 
@@ -4852,10 +4868,15 @@ def translate_preview(request):
         return JsonResponse({'success': True, 'en': ''})
     try:
         en = translate_pt_to_en(clean)
-    except Exception:
+    except Exception as exc:
         logger = logging.getLogger(__name__)
-        logger.exception('Erro ao traduzir texto no translate_preview')
-        return JsonResponse({'success': False, 'en': '', 'error': 'Falha tradução'} , status=200)
+        logger.warning('Traducao indisponivel no translate_preview: %s', exc)
+        return JsonResponse({
+            'success': True,
+            'en': clean,
+            'translated': False,
+            'warning': 'Tradução automática indisponível; texto original preservado.',
+        }, status=200)
     return JsonResponse({'success': True, 'en': en})
 
 @login_required(login_url='/login/')
@@ -7270,7 +7291,6 @@ def salvar_supervisor(request):
             'gavetas': _to_int(get_in('gavetas')),
             'patamares': _to_int(get_in('patamar') or get_in('patamares')),
             'servico_exec': _clean(get_in('servico_exec')),
-            'metodo_exec': _clean(get_in('metodo_exec')),
         }
         try:
             raw_volume_exec = _norm_number_like(get_in('volume_tanque_exec'))
@@ -7302,6 +7322,11 @@ def salvar_supervisor(request):
                 _set_tank_shared_field_value(tank, shared_field_name, shared_value)
             except Exception:
                 pass
+
+        # O método descreve a execução deste dia, não a estrutura permanente do tanque.
+        metodo_exec = _clean(get_in('metodo_exec'))
+        if metodo_exec is not None:
+            tank.metodo_exec = metodo_exec
 
         comp_validation = None
         try:
@@ -8906,15 +8931,7 @@ def _apply_post_to_rdo(request, rdo_obj):
             if obs_en_direct:
                 rdo_obj.observacoes_rdo_en = obs_en_direct
             else:
-                try:
-                    from deep_translator import GoogleTranslator
-                    try:
-                        translated = GoogleTranslator(source='pt', target='en').translate(obs_pt)
-                        rdo_obj.observacoes_rdo_en = translated
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+                rdo_obj.observacoes_rdo_en = _translate_rdo_pt_or_original(obs_pt)
         elif obs_en_direct is not None:
             rdo_obj.observacoes_rdo_en = obs_en_direct
 
@@ -8925,16 +8942,7 @@ def _apply_post_to_rdo(request, rdo_obj):
             if plan_en_direct:
                 rdo_obj.planejamento_en = plan_en_direct
             else:
-                try:
-                    from deep_translator import GoogleTranslator
-                    try:
-                        translated_plan = GoogleTranslator(source='pt', target='en').translate(plan_pt)
-                        if translated_plan:
-                            rdo_obj.planejamento_en = translated_plan
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+                rdo_obj.planejamento_en = _translate_rdo_pt_or_original(plan_pt)
         elif plan_en_direct is not None:
             rdo_obj.planejamento_en = plan_en_direct
 
@@ -8942,16 +8950,11 @@ def _apply_post_to_rdo(request, rdo_obj):
             ciente_pt = _clean(request.POST.get('ciente_observacoes') or request.POST.get('ciente_observacoes_pt') or request.POST.get('ciente') or request.POST.get('ciente_pt'))
             if ciente_pt is not None:
                 rdo_obj.ciente_observacoes_pt = ciente_pt
-                try:
-                    from deep_translator import GoogleTranslator
-                    try:
-                        translated = GoogleTranslator(source='pt', target='en').translate(ciente_pt)
-                        if translated:
-                            rdo_obj.ciente_observacoes_en = translated
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+                ciente_en_direct = _clean(request.POST.get('ciente_observacoes_en'))
+                rdo_obj.ciente_observacoes_en = (
+                    ciente_en_direct
+                    or _translate_rdo_pt_or_original(ciente_pt)
+                )
         except Exception:
             logging.getLogger(__name__).exception('Erro processando campo ciente_observacoes')
 
@@ -9400,6 +9403,8 @@ def _apply_post_to_rdo(request, rdo_obj):
             fim_val = parse_time(atividades_fim[idx] if idx < len(atividades_fim) else None)
             comentario_val = _clean(comentarios_pt[idx]) if idx < len(comentarios_pt) else None
             comentario_en_val = _clean(comentarios_en[idx]) if idx < len(comentarios_en) else None
+            if comentario_val and not comentario_en_val:
+                comentario_en_val = _translate_rdo_pt_or_original(comentario_val)
             RDOAtividade.objects.create(
                 rdo=rdo_obj,
                 ordem=idx,
@@ -9414,6 +9419,11 @@ def _apply_post_to_rdo(request, rdo_obj):
             first_com_pt = _clean(comentarios_pt[0])
             if first_com_pt is not None:
                 rdo_obj.comentario_pt = first_com_pt
+                first_com_en = _clean(comentarios_en[0]) if comentarios_en else None
+                rdo_obj.comentario_en = (
+                    first_com_en
+                    or _translate_rdo_pt_or_original(first_com_pt)
+                )
 
         pt_abertura_raw = request.POST.get('pt_abertura')
         if pt_abertura_raw in ('sim', 'nao'):
@@ -11800,6 +11810,7 @@ def add_tank_ajax(request, rdo_id):
                 for fname in (
                     # Campos diários/operacionais NÃO devem ser carregados do RDO anterior
                     'espaco_confinado',
+                    'metodo_exec',
                     'operadores_simultaneos',
                     'h2s_ppm', 'lel', 'co_ppm', 'o2_percent',
                     'total_n_efetivo_confinado',
@@ -11836,7 +11847,7 @@ def add_tank_ajax(request, rdo_id):
             fixed_fields = (
                 'tanque_codigo', 'nome_tanque', 'tipo_tanque',
                 'numero_compartimentos', 'gavetas', 'patamares',
-                'volume_tanque_exec', 'servico_exec', 'metodo_exec',
+                'volume_tanque_exec', 'servico_exec',
                 'ensacamento_prev', 'icamento_prev', 'cambagem_prev', 'previsao_termino',
             )
             for fname in fixed_fields:
@@ -14777,9 +14788,19 @@ def exportar_rdo_excel(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
-@login_required(login_url='/login/')
 @require_GET
 def pending_os_json(request):
+    if not getattr(getattr(request, 'user', None), 'is_authenticated', False):
+        return JsonResponse(
+            {
+                'success': False,
+                'count': 0,
+                'data': [],
+                'os_list': [],
+                'error': 'Sessão expirada. Autenticação necessária.',
+            },
+            status=401,
+        )
     try:
         qs = OrdemServico.objects.select_related('Cliente', 'Unidade', 'supervisor').all()
         include_with_rdo = str(request.GET.get('include_with_rdo') or '').strip().lower() in (

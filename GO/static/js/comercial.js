@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
         { key: "contratadas", label: "Contratadas", description: "Fechadas / Contratadas", tone: "contracted" },
         { key: "canceladas", label: "Canceladas", description: "Propostas canceladas", tone: "cancelled" }
     ];
+    const PIPELINE_COLUMN_PREVIEW_LIMIT = 5;
 
     const REASON_REQUIRED_STATUSES = new Set(["Perdida/Recusada", "Cancelada", "Declínio"]);
     const RESPONSAVEIS = ["Carla Mendes", "Rafael Lima", "Juliana Costa", "Lucas Freitas", "Beatriz Nunes", "Marcos Silva"];
@@ -868,12 +869,12 @@ document.addEventListener("DOMContentLoaded", () => {
             renderPipeline();
         });
 
-        refs.filterCliente.addEventListener("input", (event) => {
+        refs.filterCliente.addEventListener("change", (event) => {
             state.filterCliente = event.target.value.trim().toLowerCase();
             renderPipeline();
         });
 
-        refs.filterUnidade.addEventListener("input", (event) => {
+        refs.filterUnidade.addEventListener("change", (event) => {
             state.filterUnidade = event.target.value.trim().toLowerCase();
             renderPipeline();
         });
@@ -1561,6 +1562,8 @@ document.addEventListener("DOMContentLoaded", () => {
         hideEmptyStates();
         refs.pipelineBoard.innerHTML = COLUMN_DEFINITIONS.map((column) => {
             const proposalsByColumn = getFilteredProposalsByColumn(column.key);
+            const previewProposals = proposalsByColumn.slice(0, PIPELINE_COLUMN_PREVIEW_LIMIT);
+            const hiddenProposals = Math.max(0, proposalsByColumn.length - previewProposals.length);
             return `
                 <section class="pipeline-column">
                     <header class="pipeline-column__header pipeline-column__header--${column.tone}">
@@ -1573,12 +1576,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         </div>
                         <span class="pipeline-count">${proposalsByColumn.length}</span>
                     </header>
-                    ${proposalsByColumn.map(renderProposalCard).join("")}
+                    ${previewProposals.map(renderProposalCard).join("")}
+                    ${hiddenProposals ? `<p class="pipeline-column__preview-note">Exibindo ${previewProposals.length} de ${proposalsByColumn.length} propostas.</p>` : ""}
                     <button class="pipeline-add-button" data-add-proposal-stage="${escapeHtml(column.key)}" type="button">
                         <span class="material-icons" aria-hidden="true">add</span>
                         Adicionar proposta
                     </button>
-                    ${proposalsByColumn.length ? `<button class="see-all-button" data-see-all-stage="${column.key}" type="button">Ver todas (${proposalsByColumn.length})</button>` : ""}
+                    ${hiddenProposals ? `<button class="see-all-button" data-see-all-stage="${column.key}" type="button">Ver todas (${proposalsByColumn.length})</button>` : ""}
                 </section>
             `;
         }).join("");
@@ -1859,7 +1863,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <p class="proposal-client">${escapeHtml(proposal.empresa)}</p>
                 <span class="proposal-badge proposal-badge--status is-${statusTone}">${escapeHtml(proposal.statusProposta || "Status não informado")}</span>
-                <p class="proposal-nature">${escapeHtml(proposal.tipoOperacao || proposal.natureza)}</p>
+                <p class="proposal-nature">${escapeHtml(proposal.tipoOperacao || "Opera\u00e7\u00e3o n\u00e3o informada")}</p>
                 <div class="proposal-meta-row">
                     <span class="proposal-meta">
                         <span class="material-icons" aria-hidden="true">calendar_today</span>
@@ -3859,6 +3863,14 @@ document.addEventListener("DOMContentLoaded", () => {
         refs.filterResponsavel.innerHTML = `
             <option value="">Todos</option>
             ${getUniqueValues((proposal) => proposal.responsavel).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+        `;
+        refs.filterCliente.innerHTML = `
+            <option value="">Todos</option>
+            ${getUniqueValues((proposal) => proposal.empresa).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+        `;
+        refs.filterUnidade.innerHTML = `
+            <option value="">Todas</option>
+            ${getUniqueValues((proposal) => proposal.unidade).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterUf.innerHTML = `
             <option value="">Todas</option>

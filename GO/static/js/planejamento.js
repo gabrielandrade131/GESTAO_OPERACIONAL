@@ -133,12 +133,27 @@
         return dateLabel || timeLabel || '-';
     }
 
-    function getMemberDisembarkInfo(member) {
+    function getMemberAgenda(member) {
+        const planejamento = currentPlanning() || {};
         return {
-            data: member && member.data_desembarque ? member.data_desembarque : '',
-            horario: member && member.horario_desembarque ? member.horario_desembarque : '',
-            local: member && member.local_desembarque_membro ? member.local_desembarque_membro : '',
-            observacao: member && member.observacao_desembarque ? member.observacao_desembarque : ''
+            dataInicio: member && member.data_inicio
+                ? member.data_inicio
+                : (planejamento.data_prevista_subida || ''),
+            observacao: member && member.observacao
+                ? member.observacao
+                : (planejamento.observacao || ''),
+            dataDesembarque: member && member.data_desembarque
+                ? member.data_desembarque
+                : (planejamento.data_prevista_desembarque || ''),
+            horarioDesembarque: member && member.horario_desembarque
+                ? member.horario_desembarque
+                : (planejamento.horario_previsto_desembarque || ''),
+            localDesembarque: member && member.local_desembarque_membro
+                ? member.local_desembarque_membro
+                : (planejamento.local_desembarque || ''),
+            observacaoDesembarque: member && member.observacao_desembarque
+                ? member.observacao_desembarque
+                : (planejamento.observacao_desembarque || '')
         };
     }
 
@@ -771,6 +786,7 @@
         const onClose = state.modalOnClose;
         state.modalOnClose = null;
         refs.modal.classList.remove('is-plan-edit');
+        refs.modal.classList.remove('is-replacement');
         refs.modal.querySelector('.planejamento-modal__dialog')?.classList.remove('plan-edit-modal-shell');
         refs.modal.querySelector('.planejamento-modal__header')?.classList.remove('is-hidden');
         refs.modalBody.classList.remove('is-plan-edit-body');
@@ -787,6 +803,7 @@
         refs.modalTitle.textContent = title;
         refs.modalBody.innerHTML = bodyHtml;
         refs.modal.classList.toggle('is-plan-edit', config.variant === 'plan-edit');
+        refs.modal.classList.toggle('is-replacement', config.variant === 'replacement');
         refs.modal.querySelector('.planejamento-modal__dialog')?.classList.toggle('plan-edit-modal-shell', config.variant === 'plan-edit');
         refs.modal.querySelector('.planejamento-modal__header')?.classList.toggle('is-hidden', config.hideDefaultHeader === true);
         refs.modalBody.classList.toggle('is-plan-edit-body', config.variant === 'plan-edit');
@@ -816,14 +833,6 @@
     function currentPlanningRequiresJustification() {
         const planejamento = currentPlanning();
         return Boolean(planejamento && planejamento.requer_justificativa_alteracao && !planejamento.motivo_bloqueio_edicao);
-    }
-
-    function planningHasMembers(planejamento) {
-        if (!planejamento) {
-            return false;
-        }
-        return ['membros_ativos', 'membros_substituidos', 'membros_cancelados']
-            .some((key) => Array.isArray(planejamento[key]) && planejamento[key].length > 0);
     }
 
     function canGeneratePlanningDocument(planejamento) {
@@ -1200,6 +1209,8 @@
     }
 
     function openConcludedAddMemberModal(context) {
+        const planejamento = currentPlanning();
+        const dataInicialPadrao = planejamento ? (planejamento.data_prevista_subida || '') : '';
         openModal(
             'Adicionar membro com justificativa',
             `
@@ -1227,7 +1238,7 @@
                             </div>
                             <div class="planejamento-field">
                                 <label for="workflowNovaDataInicio">Data início</label>
-                                <input id="workflowNovaDataInicio" type="date" class="planejamento-input" name="data_inicio">
+                                <input id="workflowNovaDataInicio" type="date" class="planejamento-input" name="data_inicio" value="${escapeHtml(dataInicialPadrao)}">
                             </div>
                             <div class="planejamento-field field-observacao">
                                 <label for="workflowNovaObservacao">Observação (opcional)</label>
@@ -1289,6 +1300,7 @@
     }
 
     function openConcludedEditMemberModal(context, member) {
+        const agenda = getMemberAgenda(member);
         openModal(
             'Editar membro com justificativa',
             `
@@ -1318,7 +1330,7 @@
                             </div>
                             <div class="planejamento-field planejamento-field--span-6">
                                 <label>Data início</label>
-                                <input type="date" class="planejamento-input" name="data_inicio" value="${escapeHtml(member.data_inicio || '')}">
+                                <input type="date" class="planejamento-input" name="data_inicio" value="${escapeHtml(agenda.dataInicio)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-6">
                                 <label>Ordem</label>
@@ -1326,26 +1338,26 @@
                             </div>
                             <div class="planejamento-field planejamento-field--span-12">
                                 <label>Observação</label>
-                                <textarea class="planejamento-textarea" name="observacao">${escapeHtml(member.observacao || '')}</textarea>
+                                <textarea class="planejamento-textarea" name="observacao">${escapeHtml(agenda.observacao)}</textarea>
                             </div>
                             <div class="planejamento-field planejamento-field--span-12">
                                 <label class="planejamento-field__group-title">Desembarque individual</label>
                             </div>
                             <div class="planejamento-field planejamento-field--span-3">
                                 <label>Data desembarque</label>
-                                <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(member.data_desembarque || '')}">
+                                <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(agenda.dataDesembarque)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-3">
                                 <label>Horário desembarque</label>
-                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(member.horario_desembarque || '')}">
+                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(agenda.horarioDesembarque)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-6">
                                 <label>Local desembarque</label>
-                                <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(member.local_desembarque_membro || '')}">
+                                <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(agenda.localDesembarque)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-12">
                                 <label>Observação desembarque</label>
-                                <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(member.observacao_desembarque || '')}</textarea>
+                                <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(agenda.observacaoDesembarque)}</textarea>
                             </div>
                         </div>
                         <div class="planejamento-action-row">
@@ -1391,6 +1403,113 @@
         });
     }
 
+    function buildReplacementFields(member, options) {
+        const config = options || {};
+        const agenda = getMemberAgenda(member);
+        const defaultAgenda = getMemberAgenda(null);
+        const nameInputId = config.nameInputId || 'replaceNome';
+        const functionInputId = config.functionInputId || 'replaceFuncao';
+
+        return `
+            <div class="planejamento-replacement-reason planejamento-field">
+                <label>Motivo da substituição</label>
+                <textarea class="planejamento-textarea" name="motivo_substituicao" placeholder="Explique brevemente o motivo da troca"></textarea>
+            </div>
+            <div class="planejamento-replacement-grid">
+                <section class="planejamento-replacement-card planejamento-replacement-card--outgoing">
+                    <header class="planejamento-replacement-card__header">
+                        <span class="planejamento-replacement-card__icon material-icons" aria-hidden="true">person_remove</span>
+                        <div>
+                            <span class="planejamento-replacement-card__eyebrow">Membro atual · saída</span>
+                            <strong>${escapeHtml(member.nome_snapshot || '-')}</strong>
+                            <small>${escapeHtml(member.funcao_planejada || '-')}</small>
+                        </div>
+                    </header>
+                    <div class="planejamento-replacement-card__body">
+                        <div class="planejamento-field">
+                            <label>Data final</label>
+                            <input type="date" class="planejamento-input" name="data_fim">
+                        </div>
+                        <div class="planejamento-replacement-subtitle">Dados de desembarque</div>
+                        <div class="planejamento-replacement-row">
+                            <div class="planejamento-field">
+                                <label>Data</label>
+                                <input type="date" class="planejamento-input" name="data_desembarque_antigo" value="${escapeHtml(agenda.dataDesembarque)}">
+                            </div>
+                            <div class="planejamento-field">
+                                <label>Horário</label>
+                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque_antigo" value="${escapeHtml(agenda.horarioDesembarque)}">
+                            </div>
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Local</label>
+                            <input class="planejamento-input" name="local_desembarque_membro_antigo" value="${escapeHtml(agenda.localDesembarque)}">
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Observação</label>
+                            <textarea class="planejamento-textarea" name="observacao_desembarque_antigo">${escapeHtml(agenda.observacaoDesembarque)}</textarea>
+                        </div>
+                    </div>
+                </section>
+                <section class="planejamento-replacement-card planejamento-replacement-card--incoming">
+                    <header class="planejamento-replacement-card__header">
+                        <span class="planejamento-replacement-card__icon material-icons" aria-hidden="true">person_add</span>
+                        <div>
+                            <span class="planejamento-replacement-card__eyebrow">Novo membro · entrada</span>
+                            <strong>Dados do substituto</strong>
+                            <small>Selecione a pessoa e confirme a agenda individual.</small>
+                        </div>
+                    </header>
+                    <div class="planejamento-replacement-card__body">
+                        <div class="planejamento-field">
+                            <label>Nome</label>
+                            ${renderPersonCombobox({
+                                inputId: nameInputId,
+                                targetFuncao: `#${functionInputId}`,
+                                placeholder: 'Pesquisar pessoa',
+                                required: true
+                            })}
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Função</label>
+                            <select id="${escapeHtml(functionInputId)}" class="planejamento-select" name="funcao_planejada" required>
+                                ${functionOptions('')}
+                            </select>
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Data inicial</label>
+                            <input type="date" class="planejamento-input" name="data_inicio" value="${escapeHtml(defaultAgenda.dataInicio)}">
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Observação do membro</label>
+                            <input class="planejamento-input" name="observacao" value="${escapeHtml(defaultAgenda.observacao)}">
+                        </div>
+                        <div class="planejamento-replacement-subtitle">Dados de desembarque</div>
+                        <div class="planejamento-replacement-row">
+                            <div class="planejamento-field">
+                                <label>Data</label>
+                                <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(defaultAgenda.dataDesembarque)}">
+                            </div>
+                            <div class="planejamento-field">
+                                <label>Horário</label>
+                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(defaultAgenda.horarioDesembarque)}">
+                            </div>
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Local</label>
+                            <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(defaultAgenda.localDesembarque)}">
+                        </div>
+                        <div class="planejamento-field">
+                            <label>Observação</label>
+                            <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(defaultAgenda.observacaoDesembarque)}</textarea>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            ${config.extraFields || ''}
+        `;
+    }
+
     function openConcludedReplaceMemberModal(context, member) {
         openModal(
             'Substituir membro com justificativa',
@@ -1401,83 +1520,11 @@
                             <p>Selecione o novo membro e confirme a substituição. O vínculo com o membro substituído será preservado.</p>
                         </div>
                         ${buildWorkflowIntro(context)}
-                        <div class="planejamento-picked-member">
-                            <span class="planejamento-picked-member__label">Membro substituído</span>
-                            <strong>${escapeHtml(member.nome_snapshot || '-')}</strong>
-                            <small>${escapeHtml(member.funcao_planejada || '-')} | Data início: ${escapeHtml(formatDate(member.data_inicio))}</small>
-                        </div>
-                        <div class="planejamento-form-grid">
-                            <div class="planejamento-field planejamento-field--span-6">
-                                <label>Novo nome</label>
-                                ${renderPersonCombobox({
-                                    inputId: 'workflowReplaceNome',
-                                    targetFuncao: '#workflowReplaceFuncao',
-                                    placeholder: 'Pesquisar pessoa',
-                                    required: true
-                                })}
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-6">
-                                <label>Nova função</label>
-                                <select id="workflowReplaceFuncao" class="planejamento-select" name="funcao_planejada" required>
-                                    ${functionOptions('')}
-                                </select>
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-4">
-                                <label>Data início do novo</label>
-                                <input type="date" class="planejamento-input" name="data_inicio">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-4">
-                                <label>Data fim do antigo</label>
-                                <input type="date" class="planejamento-input" name="data_fim">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-4">
-                                <label>Observação</label>
-                                <input class="planejamento-input" name="observacao">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-12">
-                                <label>Motivo da substituição</label>
-                                <textarea class="planejamento-textarea" name="motivo_substituicao"></textarea>
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-12">
-                                <label class="planejamento-field__group-title">Desembarque do membro substituído</label>
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-3">
-                                <label>Data desembarque do antigo</label>
-                                <input type="date" class="planejamento-input" name="data_desembarque_antigo" value="${escapeHtml(member.data_desembarque || '')}">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-3">
-                                <label>Horário desembarque do antigo</label>
-                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque_antigo" value="${escapeHtml(member.horario_desembarque || '')}">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-6">
-                                <label>Local desembarque do antigo</label>
-                                <input class="planejamento-input" name="local_desembarque_membro_antigo" value="${escapeHtml(member.local_desembarque_membro || '')}">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-12">
-                                <label>Observação desembarque do antigo</label>
-                                <textarea class="planejamento-textarea" name="observacao_desembarque_antigo">${escapeHtml(member.observacao_desembarque || '')}</textarea>
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-12">
-                                <label class="planejamento-field__group-title">Desembarque individual do novo membro</label>
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-3">
-                                <label>Data desembarque do novo</label>
-                                <input type="date" class="planejamento-input" name="data_desembarque">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-3">
-                                <label>Horário desembarque do novo</label>
-                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-6">
-                                <label>Local desembarque do novo</label>
-                                <input class="planejamento-input" name="local_desembarque_membro">
-                            </div>
-                            <div class="planejamento-field planejamento-field--span-12">
-                                <label>Observação desembarque do novo</label>
-                                <textarea class="planejamento-textarea" name="observacao_desembarque"></textarea>
-                            </div>
-                        </div>
-                        <div class="planejamento-action-row">
+                        ${buildReplacementFields(member, {
+                            nameInputId: 'workflowReplaceNome',
+                            functionInputId: 'workflowReplaceFuncao'
+                        })}
+                        <div class="planejamento-action-row planejamento-replacement-actions">
                             ${renderPlanButton({
                                 label: 'Cancelar',
                                 icon: 'close',
@@ -1511,7 +1558,9 @@
                 state.memberTab = 'ativos';
                 syncDetailFromResponse(data);
                 showAlert('Substituição registrada.', 'success');
-            }
+            },
+            null,
+            { variant: 'replacement' }
         );
         refs.modalBody.querySelector('[data-workflow-cancel]')?.addEventListener('click', function () {
             closeModal('cancel');
@@ -1522,6 +1571,7 @@
     }
 
     function openConcludedCancelMemberModal(context, member) {
+        const agenda = getMemberAgenda(member);
         openModal(
             'Cancelar membro com justificativa',
             `
@@ -1554,19 +1604,19 @@
                             </div>
                             <div class="planejamento-field planejamento-field--span-3">
                                 <label>Data desembarque</label>
-                                <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(member.data_desembarque || '')}">
+                                <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(agenda.dataDesembarque)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-3">
                                 <label>Horário desembarque</label>
-                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(member.horario_desembarque || '')}">
+                                <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(agenda.horarioDesembarque)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-6">
                                 <label>Local desembarque</label>
-                                <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(member.local_desembarque_membro || '')}">
+                                <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(agenda.localDesembarque)}">
                             </div>
                             <div class="planejamento-field planejamento-field--span-12">
                                 <label>Observação desembarque</label>
-                                <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(member.observacao_desembarque || '')}</textarea>
+                                <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(agenda.observacaoDesembarque)}</textarea>
                             </div>
                         </div>
                         <div class="planejamento-action-row">
@@ -1936,7 +1986,7 @@
 
     function renderMemberRow(member, planejamento, allowDirectActions) {
         const allowActions = allowDirectActions && normalize(member.status) === 'ativo';
-        const desembarque = getMemberDisembarkInfo(member);
+        const agenda = getMemberAgenda(member);
         const details = [];
         if (member.data_fim) {
             details.push({
@@ -1944,16 +1994,16 @@
                 value: formatDate(member.data_fim)
             });
         }
-        if (member.local_desembarque_membro) {
+        if (agenda.localDesembarque) {
             details.push({
                 label: 'Local desembarque',
-                value: member.local_desembarque_membro
+                value: agenda.localDesembarque
             });
         }
-        if (member.observacao_desembarque) {
+        if (agenda.observacaoDesembarque) {
             details.push({
                 label: 'Obs. desembarque',
-                value: member.observacao_desembarque
+                value: agenda.observacaoDesembarque
             });
         }
         if (member.motivo_substituicao) {
@@ -1983,11 +2033,11 @@
                 <div class="plan-member-card__meta">
                     <div class="plan-member-card__meta-item">
                         <span>Embarque</span>
-                        <strong>${escapeHtml(formatDate(member.data_inicio))}</strong>
+                        <strong>${escapeHtml(formatDate(agenda.dataInicio))}</strong>
                     </div>
                     <div class="plan-member-card__meta-item">
                         <span>Desembarque</span>
-                        <strong>${escapeHtml(formatDateTimeLabel(desembarque.data, desembarque.horario))}</strong>
+                        <strong>${escapeHtml(formatDateTimeLabel(agenda.dataDesembarque, agenda.horarioDesembarque))}</strong>
                     </div>
                 </div>
                 ${member.substitui_nome_snapshot ? `
@@ -2073,9 +2123,7 @@
             return '';
         }
         const planejamento = currentPlanning();
-        const dataInicialPadrao = planejamento && !planningHasMembers(planejamento)
-            ? (planejamento.data_prevista_subida || '')
-            : '';
+        const dataInicialPadrao = planejamento ? (planejamento.data_prevista_subida || '') : '';
         return `
             <section class="planejamento-detail-block">
                 <div class="planejamento-section__title">
@@ -2872,6 +2920,7 @@
 
     function openEditMemberModal(member) {
         const requiresJustification = currentPlanningRequiresJustification();
+        const agenda = getMemberAgenda(member);
         openModal(
             `Editar membro: ${member.nome_snapshot}`,
             `
@@ -2896,7 +2945,7 @@
                         </div>
                         <div class="planejamento-field planejamento-field--span-6">
                             <label>Data início</label>
-                            <input type="date" class="planejamento-input" name="data_inicio" value="${escapeHtml(member.data_inicio || '')}">
+                            <input type="date" class="planejamento-input" name="data_inicio" value="${escapeHtml(agenda.dataInicio)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-6">
                             <label>Ordem</label>
@@ -2904,26 +2953,26 @@
                         </div>
                         <div class="planejamento-field planejamento-field--span-12">
                             <label>Observação</label>
-                            <textarea class="planejamento-textarea" name="observacao">${escapeHtml(member.observacao || '')}</textarea>
+                            <textarea class="planejamento-textarea" name="observacao">${escapeHtml(agenda.observacao)}</textarea>
                         </div>
                         <div class="planejamento-field planejamento-field--span-12">
                             <label class="planejamento-field__group-title">Desembarque individual</label>
                         </div>
                         <div class="planejamento-field planejamento-field--span-3">
                             <label>Data desembarque</label>
-                            <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(member.data_desembarque || '')}">
+                            <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(agenda.dataDesembarque)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-3">
                             <label>Horário desembarque</label>
-                            <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(member.horario_desembarque || '')}">
+                            <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(agenda.horarioDesembarque)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-6">
                             <label>Local desembarque</label>
-                            <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(member.local_desembarque_membro || '')}">
+                            <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(agenda.localDesembarque)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-12">
                             <label>Observação desembarque</label>
-                            <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(member.observacao_desembarque || '')}</textarea>
+                            <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(agenda.observacaoDesembarque)}</textarea>
                         </div>
                         ${requiresJustification ? buildJustificationField('editJustificativa') : ''}
                     </div>
@@ -2961,79 +3010,12 @@
             `Substituir membro: ${member.nome_snapshot}`,
             `
                 <form>
-                    <div class="planejamento-form-grid">
-                        <div class="planejamento-field planejamento-field--span-6">
-                            <label>Novo nome</label>
-                            ${renderPersonCombobox({
-                                inputId: 'replaceNome',
-                                targetFuncao: '#replaceFuncao',
-                                placeholder: 'Pesquisar pessoa',
-                                required: true
-                            })}
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-6">
-                            <label>Nova função</label>
-                            <select id="replaceFuncao" class="planejamento-select" name="funcao_planejada" required>
-                                ${functionOptions('')}
-                            </select>
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-4">
-                            <label>Data início do novo</label>
-                            <input type="date" class="planejamento-input" name="data_inicio">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-4">
-                            <label>Data fim do antigo</label>
-                            <input type="date" class="planejamento-input" name="data_fim">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-4">
-                            <label>Observação</label>
-                            <input class="planejamento-input" name="observacao">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-12">
-                            <label>Motivo da substituição</label>
-                            <textarea class="planejamento-textarea" name="motivo_substituicao"></textarea>
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-12">
-                            <label class="planejamento-field__group-title">Desembarque do membro substituído</label>
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-3">
-                            <label>Data desembarque do antigo</label>
-                            <input type="date" class="planejamento-input" name="data_desembarque_antigo" value="${escapeHtml(member.data_desembarque || '')}">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-3">
-                            <label>Horário desembarque do antigo</label>
-                            <input type="time" step="60" class="planejamento-input" name="horario_desembarque_antigo" value="${escapeHtml(member.horario_desembarque || '')}">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-6">
-                            <label>Local desembarque do antigo</label>
-                            <input class="planejamento-input" name="local_desembarque_membro_antigo" value="${escapeHtml(member.local_desembarque_membro || '')}">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-12">
-                            <label>Observação desembarque do antigo</label>
-                            <textarea class="planejamento-textarea" name="observacao_desembarque_antigo">${escapeHtml(member.observacao_desembarque || '')}</textarea>
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-12">
-                            <label class="planejamento-field__group-title">Desembarque individual do novo membro</label>
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-3">
-                            <label>Data desembarque do novo</label>
-                            <input type="date" class="planejamento-input" name="data_desembarque">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-3">
-                            <label>Horário desembarque do novo</label>
-                            <input type="time" step="60" class="planejamento-input" name="horario_desembarque">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-6">
-                            <label>Local desembarque do novo</label>
-                            <input class="planejamento-input" name="local_desembarque_membro">
-                        </div>
-                        <div class="planejamento-field planejamento-field--span-12">
-                            <label>Observação desembarque do novo</label>
-                            <textarea class="planejamento-textarea" name="observacao_desembarque"></textarea>
-                        </div>
-                        ${requiresJustification ? buildJustificationField('replaceJustificativa') : ''}
-                    </div>
-                    <div class="planejamento-action-row">
+                    ${buildReplacementFields(member, {
+                        nameInputId: 'replaceNome',
+                        functionInputId: 'replaceFuncao',
+                        extraFields: requiresJustification ? buildJustificationField('replaceJustificativa') : ''
+                    })}
+                    <div class="planejamento-action-row planejamento-replacement-actions">
                         ${renderPlanButton({
                             label: 'Confirmar substituição',
                             icon: 'swap_horiz',
@@ -3058,12 +3040,15 @@
                 state.memberTab = 'ativos';
                 syncDetailFromResponse(data);
                 showAlert('Substituição registrada.', 'success');
-            }
+            },
+            null,
+            { variant: 'replacement' }
         );
     }
 
     function openCancelMemberModal(member) {
         const requiresJustification = currentPlanningRequiresJustification();
+        const agenda = getMemberAgenda(member);
         openModal(
             `Cancelar membro: ${member.nome_snapshot}`,
             `
@@ -3086,19 +3071,19 @@
                         </div>
                         <div class="planejamento-field planejamento-field--span-3">
                             <label>Data desembarque</label>
-                            <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(member.data_desembarque || '')}">
+                            <input type="date" class="planejamento-input" name="data_desembarque" value="${escapeHtml(agenda.dataDesembarque)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-3">
                             <label>Horário desembarque</label>
-                            <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(member.horario_desembarque || '')}">
+                            <input type="time" step="60" class="planejamento-input" name="horario_desembarque" value="${escapeHtml(agenda.horarioDesembarque)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-6">
                             <label>Local desembarque</label>
-                            <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(member.local_desembarque_membro || '')}">
+                            <input class="planejamento-input" name="local_desembarque_membro" value="${escapeHtml(agenda.localDesembarque)}">
                         </div>
                         <div class="planejamento-field planejamento-field--span-12">
                             <label>Observação desembarque</label>
-                            <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(member.observacao_desembarque || '')}</textarea>
+                            <textarea class="planejamento-textarea" name="observacao_desembarque">${escapeHtml(agenda.observacaoDesembarque)}</textarea>
                         </div>
                         ${requiresJustification ? buildJustificationField('cancelJustificativa') : ''}
                     </div>
@@ -3181,7 +3166,7 @@
                 ? headerForm.elements.data_prevista_subida
                 : null;
             const memberDateInput = addForm.elements ? addForm.elements.data_inicio : null;
-            if (planejamento && !planningHasMembers(planejamento) && headerDateInput && memberDateInput) {
+            if (planejamento && headerDateInput && memberDateInput) {
                 let memberDateWasEdited = false;
                 const syncInitialMemberDate = function () {
                     if (!memberDateWasEdited) {

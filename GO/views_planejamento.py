@@ -404,10 +404,12 @@ def _build_membro_from_request(request, planejamento, instance=None, allow_statu
     return membro
 
 
-def _aplicar_agenda_inicial_do_planejamento(membro, planejamento):
-    """Copia a agenda geral somente para a primeira alocacao da equipe."""
+def _aplicar_agenda_padrao_do_planejamento(membro, planejamento):
+    """Copia os dados gerais de agenda que nao foram informados para o membro."""
     if membro.data_inicio is None:
         membro.data_inicio = planejamento.data_prevista_subida
+    if not membro.observacao:
+        membro.observacao = planejamento.observacao or ''
     if membro.data_desembarque is None:
         membro.data_desembarque = planejamento.data_prevista_desembarque
     if not membro.horario_desembarque:
@@ -583,10 +585,8 @@ def api_planejamento_add_membro(request, planejamento_id):
         return JsonResponse({'success': False, 'error': block_reason}, status=400)
     try:
         _, justificativa = _require_justificativa_if_needed(request, planejamento)
-        primeira_alocacao = not planejamento.membros.exists()
         membro = _build_membro_from_request(request, planejamento)
-        if primeira_alocacao:
-            membro = _aplicar_agenda_inicial_do_planejamento(membro, planejamento)
+        membro = _aplicar_agenda_padrao_do_planejamento(membro, planejamento)
         membro.criado_por = request.user
         membro.atualizado_por = request.user
         membro.save()
@@ -670,6 +670,7 @@ def api_planejamento_substituir_membro(request, membro_id):
             membro_antigo.save()
 
             membro_novo = _build_membro_from_request(request, planejamento)
+            membro_novo = _aplicar_agenda_padrao_do_planejamento(membro_novo, planejamento)
             membro_novo.status = PlanejamentoEquipeMembro.STATUS_ATIVO
             membro_novo.substitui = membro_antigo
             membro_novo.motivo_substituicao = request.POST.get('motivo_substituicao')

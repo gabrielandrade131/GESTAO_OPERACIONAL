@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/comercial_resumo.css' %}?v=20260731a">
+    <link rel="stylesheet" href="{% static 'css/comercial_resumo.css' %}?v=20260821d">
     <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260812a">
 </head>
 <body class="comercial-resumo-body">
@@ -196,9 +196,8 @@
         <main class="resumo-main">
             <section class="resumo-header resumo-header--compact">
                 <div class="resumo-header__copy resumo-header__copy--compact">
-                    <a href="{% url 'comercial_propostas' %}" class="resumo-back-link">
+                    <a href="{% url 'comercial_propostas' %}" class="resumo-back-link resumo-back-link--icon" aria-label="Voltar ao Pipeline Comercial" title="Voltar ao Pipeline Comercial">
                         <span class="material-icons" aria-hidden="true">arrow_back</span>
-                        Voltar para o Pipeline Comercial
                     </a>
                 </div>
 
@@ -223,10 +222,6 @@
                         <button class="{% if resumo_modo == 'mensal' %}is-active{% endif %}" data-mode="mensal" type="button">Mensal</button>
                         <button class="{% if resumo_modo == 'acumulado' %}is-active{% endif %}" data-mode="acumulado" type="button">Acumulado no Ano</button>
                     </div>
-                    <button class="resumo-apply-button" id="resumoAplicar" type="button">
-                        <span class="material-icons" aria-hidden="true">filter_alt</span>
-                        Aplicar filtros
-                    </button>
                 </div>
             </section>
 
@@ -274,8 +269,8 @@
     </div>
 
     {{ resumo_bootstrap|json_script:"resumo-bootstrap-data" }}
-    <script src="{% static 'js/scripts.js' %}?v=20260430b"></script>
+    <script src="{% static 'js/scripts.js' %}?v=20260824a"></script>
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
-    <script src="{% static 'js/comercial_resumo.js' %}?v=20260721a"></script>
+    <script src="{% static 'js/comercial_resumo.js' %}?v=20260821d"></script>
 </body>
 </html>

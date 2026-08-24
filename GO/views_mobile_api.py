@@ -2096,10 +2096,18 @@ def mobile_translate_preview(request):
             },
             status=200,
         )
-    except Exception:
-        logger.exception('Erro ao traduzir texto no mobile_translate_preview')
+    except Exception as exc:
+        logger.warning(
+            'Traducao indisponivel no mobile_translate_preview: %s',
+            exc,
+        )
         return JsonResponse(
-            {'success': False, 'en': '', 'error': 'Falha tradução'},
+            {
+                'success': True,
+                'en': text,
+                'translated': False,
+                'warning': 'Tradução automática indisponível; texto original preservado.',
+            },
             status=200,
         )
 

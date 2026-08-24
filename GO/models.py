@@ -1,5 +1,5 @@
 from django.db import models
-from deep_translator import GoogleTranslator
+from .translation_utils import translate_pt_to_en
 from multiselectfield import MultiSelectField
 from django.conf import settings
 from django.db.models import SET_NULL, Q
@@ -2172,9 +2172,9 @@ class RDO(models.Model):
         if getattr(self, 'comentario_pt', None):
             try:
                 if not getattr(self, 'comentario_en', None) or not str(self.comentario_en).strip():
-                    self.comentario_en = GoogleTranslator(source='pt', target='en').translate(self.comentario_pt)
+                    self.comentario_en = translate_pt_to_en(self.comentario_pt)
             except Exception:
-                self.comentario_en = getattr(self, 'comentario_en', '')
+                self.comentario_en = getattr(self, 'comentario_en', '') or str(self.comentario_pt)
         if self.tipo_tanque == 'Salão':
                 self.numero_compartimentos = None
                 self.gavetas = None
@@ -2182,15 +2182,15 @@ class RDO(models.Model):
         if self.observacoes_rdo_pt:
             try:
                 if not getattr(self, 'observacoes_rdo_en', None) or not str(self.observacoes_rdo_en).strip():
-                    self.observacoes_rdo_en = GoogleTranslator(source='pt', target='en').translate(self.observacoes_rdo_pt)
+                    self.observacoes_rdo_en = translate_pt_to_en(self.observacoes_rdo_pt)
             except Exception:
-                self.observacoes_rdo_en = getattr(self, 'observacoes_rdo_en', None)
+                self.observacoes_rdo_en = getattr(self, 'observacoes_rdo_en', None) or str(self.observacoes_rdo_pt)
         if self.planejamento_pt:
             try:
                 if not getattr(self, 'planejamento_en', None) or not str(self.planejamento_en).strip():
-                    self.planejamento_en = GoogleTranslator(source='pt', target='en').translate(self.planejamento_pt)
+                    self.planejamento_en = translate_pt_to_en(self.planejamento_pt)
             except Exception:
-                self.planejamento_en = getattr(self, 'planejamento_en', None)
+                self.planejamento_en = getattr(self, 'planejamento_en', None) or str(self.planejamento_pt)
 
         try:
             has_daily = False
@@ -2668,11 +2668,10 @@ class RDOAtividade(models.Model):
     def save(self, *args, **kwargs):
         if getattr(self, 'comentario_pt', None):
             try:
-                from deep_translator import GoogleTranslator
                 if not getattr(self, 'comentario_en', None) or not str(self.comentario_en).strip():
-                    self.comentario_en = GoogleTranslator(source='pt', target='en').translate(self.comentario_pt)
+                    self.comentario_en = translate_pt_to_en(self.comentario_pt)
             except Exception:
-                self.comentario_en = getattr(self, 'comentario_en', '')
+                self.comentario_en = getattr(self, 'comentario_en', '') or str(self.comentario_pt)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -4590,8 +4589,12 @@ class ResponsavelCoordenadorAuditoria(models.Model):
 
 
 class Financeiro(models.Model):
-    proposta = models.IntegerField(primary_key=True)
+    # The commercial number is not a globally unique database identity: historical
+    # records may reuse it for different opportunities.
+    id = models.BigAutoField(primary_key=True)
+    proposta = models.IntegerField(db_index=True)
     revisao = models.IntegerField()
+    importado_historico = models.BooleanField(default=False, db_index=True)
     data_emissao = models.DateField(blank=True, null=True)
     data_solicitacao_proposta = models.DateField()
     data_fechamento_proposta = models.DateField(blank=True, null=True)
@@ -4606,6 +4609,8 @@ class Financeiro(models.Model):
             ('Contrato Novo', 'Contrato Novo'),
             ('Renovação', 'Renovação'),
         ],
+        blank=True,
+        null=True,
     )
     heat_map = models.IntegerField(choices=[(0, '0'), (1, '1'), (2, '2'), (3, '3')])
     motivo_perda = models.CharField(
@@ -4642,6 +4647,8 @@ class Financeiro(models.Model):
         'GO.OrdemServico',
         on_delete=models.PROTECT,
         related_name='financeiro_clientes',
+        blank=True,
+        null=True,
     )
     unidade = models.ForeignKey(
         'GO.OrdemServico',
@@ -4703,6 +4710,8 @@ class Financeiro(models.Model):
             ('Enviada', 'Enviada'),
             ('Em Negociação', 'Em Negociação'),
         ],
+        blank=True,
+        null=True,
     )
     cordenador = models.ForeignKey(
         'GO.OrdemServico',
@@ -4783,8 +4792,10 @@ class Financeiro(models.Model):
             ('SE', 'SE'),
             ('TO', 'TO'),
         ],
+        blank=True,
+        null=True,
     )
-    estimativo_receita = models.DecimalField(max_digits=12, decimal_places=2)
+    estimativo_receita = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     fonte_lead = models.CharField(
         max_length=50,
         choices=[
@@ -4794,6 +4805,8 @@ class Financeiro(models.Model):
             ('Convite Direto', 'Convite Direto'),
             ('Prospecção Ativa', 'Prospecção Ativa'),
         ],
+        blank=True,
+        null=True,
     )
     segmento_cliente = models.CharField(
         max_length=50,
@@ -4862,6 +4875,8 @@ class Financeiro(models.Model):
             ('Vidro', 'Vidro'),
             ('Marítmo', 'Marítmo'),
         ],
+        blank=True,
+        null=True,
     )
 
     class Meta:
@@ -5407,7 +5422,7 @@ def default_handover_items():
         {"item": 4, "descricao": "Detector de gás", "quantidade": "", "comentario": ""},
         {"item": 5, "descricao": "Rádios", "quantidade": "", "comentario": ""},
         {"item": 6, "descricao": "Luminárias (kit com 3)", "quantidade": "", "comentario": ""},
-        {"item": 7, "descricao": "EEBD", "quantidade": "", "comentario": ""},
+        {"item": 7, "descricao": "EPRD", "quantidade": "", "comentario": ""},
         {"item": 8, "descricao": "Ventilador", "quantidade": "", "comentario": ""},
         {"item": 9, "descricao": "Kit de resgate", "quantidade": "", "comentario": ""},
         {"item": 10, "descricao": "Máquina de hidrojato", "quantidade": "", "comentario": ""},
@@ -5420,7 +5435,6 @@ class SupervisorHandover(models.Model):
     cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
     unidade = models.ForeignKey('Unidade', on_delete=models.SET_NULL, null=True, blank=True)
     projeto = models.CharField(max_length=150, blank=True, default='')
-    ordem_servico = models.ForeignKey('OrdemServico', on_delete=models.SET_NULL, null=True, blank=True, related_name='handovers')
 
     supervisor_atual = models.ForeignKey(
         settings.AUTH_USER_MODEL,
