@@ -179,7 +179,7 @@
                     <td>{{ handover.unidade.nome|default:"—" }}</td>
                     <td>{{ handover.projeto|default:"—" }}</td>
                     <td>{{ handover.supervisor_atual.get_full_name|default:handover.supervisor_atual.username }}</td>
-                    <td>{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username|default:"—" }}</td>
+                    <td>{% if handover.supervisor_back %}{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username }}{% else %}—{% endif %}</td>
                     <td>
                         <div class="actions-cell">
                             <a href="{% url 'handover_editar' handover.pk %}" class="btn-action btn-edit" title="Editar Passagem de Serviço">

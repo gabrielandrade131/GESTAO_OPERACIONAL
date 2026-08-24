@@ -292,7 +292,6 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertEqual(response1.status_code, 200)
         self.assertTrue(response1.json().get('success'))
         handover = SupervisorHandover.objects.get()
-        self.assertEqual(handover.ordem_servico, os_obj)
         self.assertEqual(handover.cliente, cliente)
         self.assertEqual(handover.unidade, unidade)
         self.assertEqual(handover.itens_equipamentos[0]['descricao'], 'Container')

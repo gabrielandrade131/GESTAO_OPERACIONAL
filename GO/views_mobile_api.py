@@ -847,7 +847,9 @@ def _create_mobile_handover(source_request, payload):
 
     O formulário mobile envia somente dados que podem ser coletados offline.
     Cliente, unidade e projeto são derivados da OS no servidor para impedir que
-    uma fila antiga associe a passagem à operação errada.
+    uma fila antiga associe a passagem à operação errada. O modelo de handover
+    não mantém mais uma FK para a OS; a referência é usada apenas para esse
+    preenchimento seguro.
     """
     os_id = _coerce_int(payload.get('ordem_servico_id') or payload.get('os_id'))
     if os_id is None:
@@ -894,7 +896,6 @@ def _create_mobile_handover(source_request, payload):
             or getattr(ordem_servico, 'servico', '')
             or ''
         ).strip()[:150],
-        ordem_servico=ordem_servico,
         supervisor_atual=source_request.user,
         servico_concluido=str(payload.get('servico_concluido') or '').strip(),
         servico_em_andamento=str(payload.get('servico_em_andamento') or '').strip(),
@@ -905,7 +906,7 @@ def _create_mobile_handover(source_request, payload):
         {
             'success': True,
             'id': handover.id,
-            'handover': {'id': handover.id, 'ordem_servico_id': ordem_servico.id},
+            'handover': {'id': handover.id},
             'message': 'Passagem de Serviço criada com sucesso.',
         }
     )
