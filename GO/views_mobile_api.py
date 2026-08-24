@@ -1961,6 +1961,26 @@ def mobile_bootstrap(request):
         row.pop('_planning_active_count', None)
         data.append(row)
 
+    latest_handover = None
+    try:
+        handover = (
+            SupervisorHandover.objects
+            .filter(supervisor_atual=request.user)
+            .order_by('-criado_em', '-id')
+            .first()
+        )
+        if handover is not None:
+            latest_handover = {
+                'periodo_data': handover.periodo_data or '',
+                'servico_concluido': handover.servico_concluido or '',
+                'servico_em_andamento': handover.servico_em_andamento or '',
+                'orientacoes_observacoes': handover.orientacoes_observacoes or '',
+                'itens_equipamentos': handover.itens_equipamentos or [],
+                'criado_em': handover.criado_em.isoformat() if handover.criado_em else None,
+            }
+    except Exception:
+        logger.exception('Falha ao carregar a última passagem de serviço no bootstrap mobile')
+
     return JsonResponse(
         {
             'success': True,
@@ -1982,6 +2002,7 @@ def mobile_bootstrap(request):
                 {'value': 'tarde', 'label': 'Tarde'},
                 {'value': 'noite', 'label': 'Noite'},
             ],
+            'latest_handover': latest_handover,
         }
     )
 

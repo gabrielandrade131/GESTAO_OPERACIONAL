@@ -307,6 +307,30 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertTrue(response2.json().get('idempotent'))
         self.assertEqual(SupervisorHandover.objects.count(), 1)
 
+    def test_bootstrap_returns_latest_handover_of_authenticated_supervisor(self):
+        SupervisorHandover.objects.create(
+            periodo_data='23/08/2026',
+            supervisor_atual=self.other_supervisor,
+            servico_concluido='Não deve aparecer',
+        )
+        SupervisorHandover.objects.create(
+            periodo_data='24/08/2026',
+            supervisor_atual=self.user,
+            servico_concluido='Teste mais recente',
+            itens_equipamentos=[
+                {'item': 1, 'descricao': 'Container', 'quantidade': '2', 'comentario': 'Convés'},
+            ],
+        )
+
+        response = self.client.get(
+            '/api/mobile/v1/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+        self.assertEqual(response.status_code, 200)
+        latest = response.json().get('latest_handover')
+        self.assertEqual(latest.get('servico_concluido'), 'Teste mais recente')
+        self.assertEqual(latest.get('itens_equipamentos')[0]['quantidade'], '2')
+
     def test_token_auth_works_without_session(self):
         rdo = RDO.objects.create(rdo='RDO-MOBILE-TOKEN')
         token_client = Client()
