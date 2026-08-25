@@ -79,7 +79,8 @@ def handover_criar(request):
         cliente = Cliente.objects.filter(id=cliente_id).first() if cliente_id else None
         unidade = Unidade.objects.filter(id=unidade_id).first() if unidade_id else None
         supervisor_back = User.objects.filter(id=supervisor_back_id).first() if supervisor_back_id else None
-        ordem_servico = OrdemServico.objects.filter(id=ordem_servico_id).first() if ordem_servico_id else None
+        # A OS é usada pelo formulário para pré-preencher os dados, mas o
+        # modelo atual de passagem de serviço não mantém esse vínculo.
         
         try:
             handover = SupervisorHandover.objects.create(
@@ -89,7 +90,6 @@ def handover_criar(request):
                 projeto=projeto,
                 supervisor_atual=request.user,
                 supervisor_back=supervisor_back,
-                ordem_servico=ordem_servico,
                 servico_concluido=servico_concluido,
                 servico_em_andamento=servico_em_andamento,
                 orientacoes_observacoes=orientacoes_observacoes,
@@ -134,9 +134,6 @@ def handover_editar(request, pk):
         supervisor_back_id = request.POST.get('supervisor_back', '').strip()
         handover.supervisor_back = User.objects.filter(id=supervisor_back_id).first() if supervisor_back_id else None
         
-        ordem_servico_id = request.POST.get('ordem_servico', '').strip()
-        handover.ordem_servico = OrdemServico.objects.filter(id=ordem_servico_id).first() if ordem_servico_id else None
-
         handover.servico_concluido = request.POST.get('servico_concluido', '').strip()
         handover.servico_em_andamento = request.POST.get('servico_em_andamento', '').strip()
         handover.orientacoes_observacoes = request.POST.get('orientacoes_observacoes', '').strip()
