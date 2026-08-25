@@ -135,32 +135,29 @@
         {% endfor %}
     </colgroup>
 
-    <!-- Header Table Row -->
+    <!-- Header/Meta Info Rows -->
     <tr>
-        <td colspan="18" class="logo-cell">
+        <td rowspan="3" colspan="20" class="logo-cell">
             <span style="font-weight: bold;">ambipar</span><span class="circle">®</span>
         </td>
-        <td colspan="57" class="title-cell">
+        <td colspan="55" class="title-cell">
             SISTEMA DE GESTÃO INTEGRADA
-            <div>Registro - Passagem de Serviço</div>
+            <div style="font-size: 8px; font-weight: bold; margin-top: 2px;">Registro - Passagem de Serviço</div>
         </td>
         <td colspan="25" class="doc-code-cell">
-            REG-PK-PLAN-001-01
+            REG-PR-PLAN-001-01
         </td>
     </tr>
-
-    <!-- Meta Info Row 1: Headers -->
     <tr>
-        <td colspan="25" class="meta-header">DATA</td>
-        <td colspan="25" class="meta-header">REVISÃO</td>
-        <td colspan="25" class="meta-header">ACESSO</td>
+        <td colspan="20" class="meta-header">DATA</td>
+        <td colspan="15" class="meta-header">REVISÃO</td>
+        <td colspan="20" class="meta-header">ACESSO</td>
         <td colspan="25" class="meta-header">PÁGINA</td>
     </tr>
-    <!-- Meta Info Row 2: Values -->
     <tr>
-        <td colspan="25" class="meta-value">{{ handover.criado_em|date:"d/m/Y" }}</td>
-        <td colspan="25" class="meta-value">01</td>
-        <td colspan="25" class="meta-value">IRRESTRITO</td>
+        <td colspan="20" class="meta-value">{{ handover.criado_em|date:"d/m/Y" }}</td>
+        <td colspan="15" class="meta-value">01</td>
+        <td colspan="20" class="meta-value">IRRESTRITO</td>
         <td colspan="25" class="meta-value">Página 1 de 1</td>
     </tr>
 
@@ -189,18 +186,10 @@
     <!-- General Info Row 3 -->
     <tr>
         <td colspan="18" class="label-cell">SUPERVISOR BACK:</td>
-        <td colspan="32">{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username|default:"—" }}</td>
+        <td colspan="32">{% if handover.supervisor_back %}{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username }}{% else %}—{% endif %}</td>
         <td colspan="18" class="label-cell">PROJETO:</td>
         <td colspan="32">{{ handover.projeto|default:"—" }}</td>
     </tr>
-    {% if handover.ordem_servico %}
-    <!-- General Info Row 4 (OS if exists) -->
-    <tr>
-        <td colspan="18" class="label-cell">OS Nº:</td>
-        <td colspan="82">{{ handover.ordem_servico.numero_os }}</td>
-    </tr>
-    {% endif %}
-
     <!-- Concluded Services Header -->
     <tr>
         <td colspan="100" class="section-bar">SERVIÇO CONCLUÍDO NO PERÍODO</td>
