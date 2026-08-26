@@ -3,7 +3,7 @@ from django import forms
 from decimal import Decimal, ROUND_HALF_UP
 from .models import OrdemServico, RDO, RDOAtividade, Cliente, Unidade, Pessoa, Funcao, PlanejamentoEquipeOS, PlanejamentoEquipeMembro
 from .models import Equipamentos, EquipamentoFoto, Formulario_de_inspeção, Modelo, TipoEquipamento, FabricanteEquipamento
-from .models import RdoTanque, MobileSyncEvent, MobileApiToken, SupervisorAccessHeartbeat, RDOChannelEvent
+from .models import RdoTanque, MobileSyncEvent, MobileApiToken, SupervisorAccessHeartbeat, RDOChannelEvent, SupervisorHandover
 try:
 	from .models import CoordenadorCanonical
 except Exception:
@@ -24,6 +24,30 @@ class RDOChannelEventAdmin(admin.ModelAdmin):
 	search_fields = ('user__username', 'user__first_name', 'user__last_name', 'source_path')
 	list_filter = ('channel', 'event_type', 'occurred_at')
 	date_hierarchy = 'occurred_at'
+
+
+@admin.register(SupervisorHandover)
+class SupervisorHandoverAdmin(admin.ModelAdmin):
+	list_display = (
+		'periodo_data',
+		'cliente',
+		'unidade',
+		'projeto',
+		'supervisor_atual',
+		'supervisor_back',
+		'criado_em',
+	)
+	search_fields = (
+		'periodo_data',
+		'cliente__nome',
+		'unidade__nome',
+		'projeto',
+		'supervisor_atual__username',
+		'supervisor_back__username',
+	)
+	list_filter = ('cliente', 'unidade', 'criado_em')
+	date_hierarchy = 'criado_em'
+	readonly_fields = ('criado_em', 'atualizado_em')
 
 class RdoTanqueInline(admin.TabularInline):
 	model = RdoTanque

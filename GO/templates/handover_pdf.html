@@ -16,19 +16,15 @@
             padding: 0;
             line-height: 1.25;
         }
-        .outer-border {
-            border: 2px solid #000;
-            width: 100%;
-            box-sizing: border-box;
-        }
         
-        /* Grid-based table structure to replicate form */
-        table {
-            width: 100%;
+        .main-table {
+            width: 190mm;
             border-collapse: collapse;
             table-layout: fixed;
+            border: 2px solid #000;
         }
-        th, td {
+        
+        .main-table td {
             border: 1px solid #000;
             padding: 4px 6px;
             vertical-align: middle;
@@ -36,7 +32,6 @@
 
         /* Logo and SGI Header */
         .logo-cell {
-            width: 18%;
             text-align: center;
             font-weight: bold;
             font-size: 16px;
@@ -54,7 +49,6 @@
             font-size: 8px;
         }
         .title-cell {
-            width: 57%;
             text-align: center;
             font-weight: bold;
             font-size: 10px;
@@ -64,7 +58,6 @@
             font-weight: normal;
         }
         .doc-code-cell {
-            width: 25%;
             text-align: center;
             font-weight: bold;
             font-size: 8px;
@@ -107,17 +100,13 @@
         .label-cell {
             font-weight: bold;
             background-color: #f8fafc;
-            width: 18%;
             font-size: 8px;
-        }
-        .value-cell {
-            width: 32%;
         }
 
         /* Description Boxes */
         .content-box {
             padding: 6px 8px;
-            min-height: 125px;
+            height: 125px;
             vertical-align: top;
             white-space: pre-wrap; /* Keeps linebreaks */
             word-wrap: break-word;
@@ -131,20 +120,6 @@
             text-align: center;
             font-size: 8px;
         }
-        .col-item-no {
-            width: 6%;
-            text-align: center;
-        }
-        .col-item-desc {
-            width: 38%;
-        }
-        .col-item-qty {
-            width: 18%;
-            text-align: center;
-        }
-        .col-item-comment {
-            width: 38%;
-        }
         .center-text {
             text-align: center;
         }
@@ -152,132 +127,119 @@
 </head>
 <body>
 
-<div class="outer-border">
-    <!-- Header Table -->
-    <table>
-        <tr>
-            <td rowspan="3" class="logo-cell" style="width: 20%;">
-                <span style="font-weight: bold;">ambipar</span><span class="circle">®</span>
-            </td>
-            <td colspan="3" class="title-cell" style="width: 55%;">
-                SISTEMA DE GESTÃO INTEGRADA
-                <div style="font-size: 8px; font-weight: bold; margin-top: 2px;">Registro - Passagem de Serviço</div>
-            </td>
-            <td class="doc-code-cell" style="width: 25%;">
-                REG-PR-PLAN-001-01
-            </td>
-        </tr>
-        <tr>
-            <td class="meta-header" style="width: 20%;">DATA</td>
-            <td class="meta-header" style="width: 15%;">REVISÃO</td>
-            <td class="meta-header" style="width: 20%;">ACESSO</td>
-            <td class="meta-header" style="width: 25%;">PÁGINA</td>
-        </tr>
-        <tr>
-            <td class="meta-value">{{ handover.criado_em|date:"d/m/Y" }}</td>
-            <td class="meta-value">01</td>
-            <td class="meta-value">IRRESTRITO</td>
-            <td class="meta-value">Página 1 de 1</td>
-        </tr>
-    </table>
+<table class="main-table">
+    <!-- Colgroup to define grid -->
+    <colgroup>
+        {% for i in "x"|rjust:"100" %}
+        <col style="width: 1%;">
+        {% endfor %}
+    </colgroup>
 
-    <!-- Section Title -->
-    <table>
-        <tr>
-            <td class="section-bar">
-                PASSAGEM DE SERVIÇO DE SUPERVISORES
-                <div>HANDOVER</div>
-            </td>
-        </tr>
-    </table>
+    <!-- Header/Meta Info Rows -->
+    <tr>
+        <td rowspan="3" colspan="20" class="logo-cell">
+            <span style="font-weight: bold;">ambipar</span><span class="circle">®</span>
+        </td>
+        <td colspan="55" class="title-cell">
+            SISTEMA DE GESTÃO INTEGRADA
+            <div style="font-size: 8px; font-weight: bold; margin-top: 2px;">Registro - Passagem de Serviço</div>
+        </td>
+        <td colspan="25" class="doc-code-cell">
+            REG-PR-PLAN-001-01
+        </td>
+    </tr>
+    <tr>
+        <td colspan="20" class="meta-header">DATA</td>
+        <td colspan="15" class="meta-header">REVISÃO</td>
+        <td colspan="20" class="meta-header">ACESSO</td>
+        <td colspan="25" class="meta-header">PÁGINA</td>
+    </tr>
+    <tr>
+        <td colspan="20" class="meta-value">{{ handover.criado_em|date:"d/m/Y" }}</td>
+        <td colspan="15" class="meta-value">01</td>
+        <td colspan="20" class="meta-value">IRRESTRITO</td>
+        <td colspan="25" class="meta-value">Página 1 de 1</td>
+    </tr>
 
-    <!-- General Info Grid -->
-    <table>
-        <tr>
-            <td class="label-cell">PERÍODO / DATA:</td>
-            <td class="value-cell">{{ handover.periodo_data }}</td>
-            <td class="label-cell">CLIENTE:</td>
-            <td class="value-cell">{{ handover.cliente.nome|default:"—" }}</td>
-        </tr>
-        <tr>
-            <td class="label-cell">SUPERVISOR ATUAL:</td>
-            <td class="value-cell">{{ handover.supervisor_atual.get_full_name|default:handover.supervisor_atual.username }}</td>
-            <td class="label-cell">UNIDADE:</td>
-            <td class="value-cell">{{ handover.unidade.nome|default:"—" }}</td>
-        </tr>
-        <tr>
-            <td class="label-cell">SUPERVISOR BACK:</td>
-            <td class="value-cell">{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username|default:"—" }}</td>
-            <td class="label-cell">PROJETO:</td>
-            <td class="value-cell">{{ handover.projeto|default:"—" }}</td>
-        </tr>
-        {% if handover.ordem_servico %}
-        <tr>
-            <td class="label-cell">OS Nº:</td>
-            <td class="value-cell" colspan="3">{{ handover.ordem_servico.numero_os }}</td>
-        </tr>
-        {% endif %}
-    </table>
+    <!-- Section Title: PASSAGEM DE SERVIÇO -->
+    <tr>
+        <td colspan="100" class="section-bar">
+            PASSAGEM DE SERVIÇO DE SUPERVISORES
+            <div>HANDOVER</div>
+        </td>
+    </tr>
 
-    <!-- Concluded Services Section -->
-    <table>
-        <tr>
-            <td class="section-bar">SERVIÇO CONCLUÍDO NO PERÍODO</td>
-        </tr>
-        <tr>
-            <td class="content-box">{{ handover.servico_concluido|default:"Nenhum serviço registrado." }}</td>
-        </tr>
-    </table>
+    <!-- General Info Row 1 -->
+    <tr>
+        <td colspan="18" class="label-cell">PERÍODO / DATA:</td>
+        <td colspan="32">{{ handover.periodo_data }}</td>
+        <td colspan="18" class="label-cell">CLIENTE:</td>
+        <td colspan="32">{{ handover.cliente.nome|default:"—" }}</td>
+    </tr>
+    <!-- General Info Row 2 -->
+    <tr>
+        <td colspan="18" class="label-cell">SUPERVISOR ATUAL:</td>
+        <td colspan="32">{{ handover.supervisor_atual.get_full_name|default:handover.supervisor_atual.username }}</td>
+        <td colspan="18" class="label-cell">UNIDADE:</td>
+        <td colspan="32">{{ handover.unidade.nome|default:"—" }}</td>
+    </tr>
+    <!-- General Info Row 3 -->
+    <tr>
+        <td colspan="18" class="label-cell">SUPERVISOR BACK:</td>
+        <td colspan="32">{% if handover.supervisor_back %}{{ handover.supervisor_back.get_full_name|default:handover.supervisor_back.username }}{% else %}—{% endif %}</td>
+        <td colspan="18" class="label-cell">PROJETO:</td>
+        <td colspan="32">{{ handover.projeto|default:"—" }}</td>
+    </tr>
+    <!-- Concluded Services Header -->
+    <tr>
+        <td colspan="100" class="section-bar">SERVIÇO CONCLUÍDO NO PERÍODO</td>
+    </tr>
+    <!-- Concluded Services Content -->
+    <tr>
+        <td colspan="100" class="content-box">{{ handover.servico_concluido|default:"Nenhum serviço registrado." }}</td>
+    </tr>
 
-    <!-- In Progress Services Section -->
-    <table>
-        <tr>
-            <td class="section-bar">SERVIÇO EM ANDAMENTO (NO QUAL O PRÓXIMO SUPERVISOR IRÁ PROSSEGUIR)</td>
-        </tr>
-        <tr>
-            <td class="content-box">{{ handover.servico_em_andamento|default:"Nenhum serviço registrado." }}</td>
-        </tr>
-    </table>
+    <!-- In Progress Services Header -->
+    <tr>
+        <td colspan="100" class="section-bar">SERVIÇO EM ANDAMENTO (NO QUAL O PRÓXIMO SUPERVISOR IRÁ PROSSEGUIR)</td>
+    </tr>
+    <!-- In Progress Services Content -->
+    <tr>
+        <td colspan="100" class="content-box">{{ handover.servico_em_andamento|default:"Nenhum serviço registrado." }}</td>
+    </tr>
 
-    <!-- Instructions / Observations Section -->
-    <table>
-        <tr>
-            <td class="section-bar">ORIENTAÇÕES PARA O PRÓXIMO SUPERVISOR / OBSERVAÇÕES GERAIS</td>
-        </tr>
-        <tr>
-            <td class="content-box">{{ handover.orientacoes_observacoes|default:"Nenhuma observação registrada." }}</td>
-        </tr>
-    </table>
+    <!-- Instructions / Observations Header -->
+    <tr>
+        <td colspan="100" class="section-bar">ORIENTAÇÕES PARA O PRÓXIMO SUPERVISOR / OBSERVAÇÕES GERAIS</td>
+    </tr>
+    <!-- Instructions / Observations Content -->
+    <tr>
+        <td colspan="100" class="content-box">{{ handover.orientacoes_observacoes|default:"Nenhuma observação registrada." }}</td>
+    </tr>
 
-    <!-- Equipment Table Title -->
-    <table>
-        <tr>
-            <td class="section-bar">INFORMAÇÕES DE ITENS/EQUIPAMENTOS A BORDO AO FIM DE SUA QUINZENA</td>
-        </tr>
-    </table>
+    <!-- Equipment Table Header Title -->
+    <tr>
+        <td colspan="100" class="section-bar">INFORMAÇÕES DE ITENS/EQUIPAMENTOS A BORDO AO FIM DE SUA QUINZENA</td>
+    </tr>
 
-    <!-- Equipment Table -->
-    <table>
-        <thead>
-            <tr>
-                <td class="items-header col-item-no">ITEM</td>
-                <td class="items-header col-item-desc">DESCRIÇÃO (FIXO, NÃO ALTERAR)</td>
-                <td class="items-header col-item-qty">QUANTIDADE TOTAL A BORDO</td>
-                <td class="items-header col-item-comment">COMENTÁRIO</td>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in itens %}
-            <tr>
-                <td class="col-item-no center-text">{{ item.item }}</td>
-                <td class="col-item-desc">{{ item.descricao }}</td>
-                <td class="col-item-qty center-text">{{ item.quantidade|default:"—" }}</td>
-                <td class="col-item-comment">{{ item.comentario|default:"—" }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+    <!-- Equipment Table Sub-Headers -->
+    <tr>
+        <td colspan="6" class="items-header">ITEM</td>
+        <td colspan="38" class="items-header">DESCRIÇÃO (FIXO, NÃO ALTERAR)</td>
+        <td colspan="18" class="items-header">QUANTIDADE TOTAL A BORDO</td>
+        <td colspan="38" class="items-header">COMENTÁRIO</td>
+    </tr>
+
+    <!-- Equipment Table Rows -->
+    {% for item in itens %}
+    <tr>
+        <td colspan="6" class="center-text">{{ item.item }}</td>
+        <td colspan="38">{{ item.descricao }}</td>
+        <td colspan="18" class="center-text">{{ item.quantidade|default:"—" }}</td>
+        <td colspan="38">{{ item.comentario|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+</table>
 
 </body>
 </html>

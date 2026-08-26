@@ -37,6 +37,8 @@ def localize_metric_datetime(value):
     if value is None:
         return None
     try:
+        if timezone.is_naive(value):
+            value = timezone.make_aware(value, timezone.utc)
         return timezone.localtime(value, DISPLAY_TIMEZONE)
     except Exception:
         return value

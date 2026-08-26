@@ -249,7 +249,17 @@ body .modal > .modal-panel {
    modais. A tela de boas-vindas, por sua vez, é uma experiência exclusiva e
    não deve revelar nenhum elemento do shell antes de terminar. */
 .notification-container {
-    z-index:20000 !important;
+    z-index:70000 !important;
+}
+
+/* Shared notification surfaces must stay above all module-specific modal layers. */
+.commercial-notifications,
+.commercial-toast-bottom,
+.admin-toast,
+#toast-container,
+#rdo-toast-container,
+.ai-notification-center__toast {
+    z-index:70000 !important;
 }
 
 .loading-screen {

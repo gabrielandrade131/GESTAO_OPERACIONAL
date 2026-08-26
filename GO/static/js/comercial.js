@@ -746,6 +746,13 @@ document.addEventListener("DOMContentLoaded", () => {
         commercialBottomToast: document.getElementById("commercialBottomToast")
     };
 
+    // Notifications must escape every modal stacking context so feedback remains visible.
+    [refs.commercialNotifications, refs.commercialBottomToast].forEach((container) => {
+        if (container && container.parentElement !== document.body) {
+            document.body.appendChild(container);
+        }
+    });
+
     const commercialBootstrap = readCommercialBootstrap();
 
     const modalFieldsByStep = {
@@ -1166,11 +1173,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderFollowupAgenda();
             } else if (action === "select-day") {
                 selectAgendaDay(agendaAction.dataset.date);
+            } else if (action === "previous-month" || action === "next-month") {
+                changeAgendaMonth(action === "previous-month" ? -1 : 1);
             } else if (action === "view-day") {
                 state.agendaDayFocus = state.agendaSelectedDate;
                 state.agendaPage = 1;
                 renderFollowupAgenda();
             } else if (action === "previous-month" || action === "next-month") {
+                changeAgendaMonth(action === "previous-month" ? -1 : 1);
+                return;
                 showToast("Calendário mensal mockado fixado em Julho de 2026 nesta versão.");
             }
             return;
@@ -1391,6 +1402,21 @@ document.addEventListener("DOMContentLoaded", () => {
             state.agendaPerPage = Number(field.value) || 10;
             state.agendaPage = 1;
             renderFollowupAgenda();
+        }
+
+        if (field.id === "agendaCreateProposal") {
+            const selectedProposal = proposals.find((proposal) => String(proposal.id) === field.value);
+            const ownerField = document.getElementById("agendaCreateOwner");
+            const responsible = String(selectedProposal?.responsavel || "").trim();
+
+            if (!ownerField || !responsible) {
+                return;
+            }
+
+            if (!Array.from(ownerField.options).some((option) => option.value === responsible)) {
+                ownerField.add(new Option(responsible, responsible));
+            }
+            ownerField.value = responsible;
         }
 
         if (field.matches("[data-focused-page-size]")) {
@@ -2319,6 +2345,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function selectAgendaDay(date) {
         state.agendaSelectedDate = date;
+        renderFollowupAgenda();
+    }
+
+    function changeAgendaMonth(offset) {
+        const selectedDate = new Date(`${state.agendaSelectedDate || state.todayIso}T00:00:00`);
+        const nextMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + offset, 1);
+        const lastDayOfMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
+        const nextDay = Math.min(selectedDate.getDate(), lastDayOfMonth);
+
+        state.agendaSelectedDate = [
+            nextMonth.getFullYear(),
+            String(nextMonth.getMonth() + 1).padStart(2, "0"),
+            String(nextDay).padStart(2, "0")
+        ].join("-");
+        state.agendaDayFocus = "";
         renderFollowupAgenda();
     }
 
@@ -7629,6 +7670,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderFollowupAgenda();
             } else if (action === "select-day") {
                 selectAgendaDay(agendaAction.dataset.date);
+            } else if (action === "previous-month" || action === "next-month") {
+                changeAgendaMonth(action === "previous-month" ? -1 : 1);
             } else if (action === "view-day") {
                 state.agendaDayFocus = state.agendaSelectedDate;
                 state.agendaPage = 1;
@@ -8031,6 +8074,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const firstDayIndex = firstDay.getDay();
         const days = [];
         const markers = new Set((state.agendaCalendarDays || []).map((item) => item.date));
+        window.requestAnimationFrame(() => {
+            const calendarNav = refs.fullFollowupAgendaModal?.querySelector(".agenda-calendar__nav");
+            if (!calendarNav || calendarNav.dataset.enhanced === "true") return;
+
+            calendarNav.dataset.enhanced = "true";
+            calendarNav.innerHTML = `
+                <button data-agenda-action="previous-month" type="button" aria-label="Mês anterior" title="Mês anterior">
+                    <span class="material-icons" aria-hidden="true">chevron_left</span>
+                </button>
+                <span>${escapeHtml(formatAgendaMonthLabel(state.agendaSelectedDate || state.todayIso))}</span>
+                <button data-agenda-action="next-month" type="button" aria-label="Próximo mês" title="Próximo mês">
+                    <span class="material-icons" aria-hidden="true">chevron_right</span>
+                </button>`;
+        });
         for (let i = 0; i < firstDayIndex; i += 1) days.push(`<span class="agenda-calendar__day is-muted"></span>`);
         for (let day = 1; day <= totalDays; day += 1) {
             const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -8294,6 +8351,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const agendaTitle = state.agendaCanViewAll ? "Acompanhamentos Comerciais" : "Meus Follow-ups";
         const agendaSubtitle = state.agendaCanViewAll ? "Visualize, filtre e registre os acompanhamentos comerciais." : "Visualize, filtre e registre os seus acompanhamentos comerciais.";
+        if (state.agendaCreateOpen) {
+            refs.fullFollowupAgendaModal.innerHTML = `
+                <div class="agenda-modal__card agenda-modal__card--create">
+                    <div class="agenda-modal__header">
+                        <div class="agenda-modal__title-wrap">
+                            <span class="agenda-modal__title-icon">
+                                <span class="material-icons" aria-hidden="true">edit_calendar</span>
+                            </span>
+                            <div>
+                                <h2 id="agendaModalTitle">Registrar acompanhamento</h2>
+                                <p>Registre uma atualização comercial vinculada a uma proposta.</p>
+                            </div>
+                        </div>
+                        <button class="agenda-modal__close" data-agenda-action="cancel-new-followup" type="button" aria-label="Voltar para acompanhamentos">
+                            <span class="material-icons" aria-hidden="true">close</span>
+                        </button>
+                    </div>
+                    <div class="agenda-modal__body agenda-modal__body--create">
+                        <div class="agenda-create-view">
+                            ${renderAgendaCreateForm()}
+                        </div>
+                    </div>
+                    <div class="agenda-modal__footer">
+                        <button class="agenda-button agenda-button--secondary" data-agenda-action="cancel-new-followup" type="button">Voltar</button>
+                        <button class="agenda-button agenda-button--primary" data-agenda-action="save-new-followup" type="button">Salvar acompanhamento</button>
+                    </div>
+                </div>`;
+            return;
+        }
         refs.fullFollowupAgendaModal.innerHTML = `<div class="agenda-modal__card"><div class="agenda-modal__header"><div class="agenda-modal__title-wrap"><span class="agenda-modal__title-icon"><span class="material-icons" aria-hidden="true">calendar_month</span></span><div><h2 id="agendaModalTitle">${agendaTitle}</h2><p>${agendaSubtitle}</p></div></div><button class="agenda-modal__close" data-agenda-action="close" type="button" aria-label="Fechar"><span class="material-icons" aria-hidden="true">close</span></button></div><div class="agenda-modal__body"><section class="agenda-summary-cards">${renderAgendaSummaryCard("today", "Hoje", `${summary.hoje}`, "acompanhamentos")}${renderAgendaSummaryCard("date_range", "Esta semana", `${summary.esta_semana}`, "acompanhamentos")}${renderAgendaSummaryCard("schedule", "Pendentes de retorno", `${summary.pendentes}`, "acompanhamentos")}</section><section class="agenda-filters"><label class="agenda-filter-field agenda-filter-field--search"><span>Buscar acompanhamento</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">search</span><input data-agenda-input="search" type="search" value="${escapeHtml(state.agendaSearch)}" placeholder="Buscar por proposta, cliente ou assunto"></div></label><label class="agenda-filter-field"><span>Período</span><div class="agenda-filter-input"><span class="material-icons" aria-hidden="true">calendar_today</span><input data-agenda-input="period" type="text" inputmode="numeric" value="${escapeHtml(formatAgendaPeriodLabel(state.agendaPeriod))}" placeholder="dd/mm/aaaa | dd/mm/aaaa"></div></label><label class="agenda-filter-field"><span>Status</span><select data-agenda-select="status">${state.agendaStatusOptions.map((item) => `<option value="${escapeHtml(item)}" ${item === state.agendaStatus ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><div class="agenda-filters__actions"><button class="agenda-button agenda-button--secondary" data-agenda-action="clear-filters" type="button">Limpar filtros</button><button class="agenda-button agenda-button--primary" data-agenda-action="apply-filters" type="button">Aplicar filtros</button></div></section>${renderAgendaCreateForm()}<div class="agenda-layout"><section class="agenda-main"><div class="agenda-list-card"><div class="agenda-list-card__header"><div class="agenda-list-card__title"><h3>Acompanhamentos por data</h3><span class="agenda-list-card__badge">${pagedItems.total} itens</span></div></div><div class="agenda-groups">${state.agendaLoading ? `<div class="agenda-empty agenda-empty--loading"><span class="material-icons" aria-hidden="true">hourglass_top</span><p>Carregando acompanhamentos...</p></div>` : groups.length ? groups.map(renderAgendaGroup).join("") : renderAgendaEmptyState()}</div>${pagedItems.total ? `<div class="agenda-pagination"><span class="agenda-pagination__text">Mostrando ${pagedItems.start} a ${pagedItems.end} de ${pagedItems.total} itens</span><div class="agenda-pagination__controls"><button class="agenda-page-btn" data-agenda-action="prev-page" type="button" ${state.agendaPage === 1 ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_left</span></button>${renderAgendaPageButtons(pagedItems.totalPages)}<button class="agenda-page-btn" data-agenda-action="next-page" type="button" ${state.agendaPage === pagedItems.totalPages ? "disabled" : ""}><span class="material-icons" aria-hidden="true">chevron_right</span></button></div><select class="agenda-pagination__select" data-agenda-select="per-page">${[10, 20, 30].map((size) => `<option value="${size}" ${size === state.agendaPerPage ? "selected" : ""}>${size} por página</option>`).join("")}</select></div>` : ""}</div></section><aside class="agenda-side"><section class="agenda-side-card"><div class="agenda-side-card__header"><h3>Calendário</h3><div class="agenda-calendar__nav"><span>${escapeHtml(formatAgendaMonthLabel(state.agendaSelectedDate || state.todayIso))}</span></div></div>${renderAgendaCalendar()}</section><section class="agenda-side-card"><div class="agenda-side-card__header"><div><h3>Acompanhamentos do dia</h3><p>${escapeHtml(formatAgendaSummaryDay(state.agendaSelectedDate || state.todayIso))}</p></div><span class="agenda-side-card__badge">${selectedDayItems.length} itens</span></div><div class="agenda-day-summary">${selectedDayItems.length ? selectedDayItems.map((item) => `<article class="agenda-day-summary__item"><span class="agenda-day-summary__dot"></span><div><strong>${escapeHtml(item.hora)} — ${escapeHtml(item.titulo || item.assunto || item.comentario || "")}</strong><p>${escapeHtml(item.numeroProposta || item.numero_proposta || "")} • ${escapeHtml(item.cliente)}</p></div></article>`).join("") : `<p class="agenda-day-summary__empty">Sem acompanhamentos para este dia.</p>`}</div></section></aside></div></div><div class="agenda-modal__footer"><button class="agenda-button agenda-button--secondary" data-agenda-action="new-followup" type="button"><span class="material-icons" aria-hidden="true">add</span>Registrar acompanhamento</button><button class="agenda-button agenda-button--primary" data-agenda-action="close" type="button">Fechar</button></div></div>`;
     }
 

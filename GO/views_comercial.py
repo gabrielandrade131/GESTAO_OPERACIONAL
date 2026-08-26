@@ -986,14 +986,19 @@ def _load_commercial_bundle(financeiro):
         ]
         raw_overrides = parsed.get("overrides", {})
         if isinstance(raw_overrides, dict):
-            bundle["overrides"] = {
-                "empresa": _clean_text(raw_overrides.get("empresa")),
-                "unidade": _clean_text(raw_overrides.get("unidade")),
+            override_fields = (
+                "empresa",
+                "unidade",
                 # Historical imports keep these commercial values in the bundle
                 # because legacy technical foreign keys can only store one value.
-                "embarcacao_local": _clean_text(raw_overrides.get("embarcacao_local")),
-                "tipo_operacao": _clean_text(raw_overrides.get("tipo_operacao")),
-                "servico": _clean_text(raw_overrides.get("servico")),
+                "embarcacao_local",
+                "tipo_operacao",
+                "servico",
+            )
+            bundle["overrides"] = {
+                field: _clean_text(raw_overrides.get(field))
+                for field in override_fields
+                if field in raw_overrides
             }
         return bundle
 

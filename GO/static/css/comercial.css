@@ -4275,12 +4275,38 @@ body.comercial-proposal-modal-open .synchro-header {
     border: 1px solid #d9e2ee;
     background: #ffffff;
     color: #22324c;
+    cursor: pointer;
+    transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 
 .agenda-button--primary {
     background: var(--commercial-lime);
     border-color: var(--commercial-lime);
     color: #111827;
+}
+
+.agenda-modal__close:hover,
+.agenda-button:not(:disabled):hover {
+    transform: translateY(-1px);
+    border-color: #b9c7da;
+    background: #f5f8fc;
+    box-shadow: 0 7px 16px rgba(31, 50, 76, 0.12);
+}
+
+.agenda-button--primary:not(:disabled):hover {
+    background: #d4f600;
+    border-color: #d4f600;
+    box-shadow: 0 8px 18px rgba(166, 208, 0, 0.28);
+}
+
+.agenda-modal__close:focus-visible,
+.agenda-button:focus-visible {
+    outline: 3px solid rgba(183, 255, 0, 0.36);
+    outline-offset: 2px;
+}
+
+.agenda-button:disabled {
+    cursor: not-allowed;
 }
 
 .agenda-summary-cards {
@@ -4615,9 +4641,29 @@ body.comercial-proposal-modal-open .synchro-header {
     width: 32px;
     height: 32px;
     border-radius: 10px;
-    border: 0;
-    background: transparent;
+    border: 1px solid #dce5f0;
+    background: #ffffff;
     color: #344054;
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.agenda-calendar__nav button:hover {
+    border-color: #a7bdcf;
+    background: #f6f9fc;
+    box-shadow: 0 4px 10px rgba(31, 50, 76, 0.12);
+    transform: translateY(-1px);
+}
+
+.agenda-calendar__nav button:focus-visible {
+    outline: 3px solid rgba(183, 255, 0, 0.38);
+    outline-offset: 2px;
+}
+
+.agenda-calendar__nav button .material-icons {
+    font-size: 19px;
 }
 
 .agenda-calendar__weekdays,
@@ -5170,6 +5216,30 @@ body.comercial-proposal-modal-open .synchro-header {
     gap: 12px;
 }
 
+/* The creation flow replaces the agenda content instead of stacking a second
+   dialog/card above it. Its actions live in the modal's fixed footer. */
+.agenda-modal__body--create {
+    padding: 26px 32px;
+}
+
+.agenda-create-view {
+    width: min(100%, 1080px);
+    margin: 0 auto;
+}
+
+.agenda-create-view .agenda-create-card {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.agenda-create-view .agenda-create-card__header,
+.agenda-create-view .agenda-create-card__actions {
+    display: none;
+}
+
 @media (max-width: 1180px) {
     .agenda-summary-cards {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5314,7 +5384,7 @@ body.comercial-proposal-modal-open .synchro-header {
     position: fixed;
     top: 86px;
     right: 24px;
-    z-index: 120;
+    z-index: 70000;
     width: min(360px, calc(100vw - 24px));
     display: grid;
     gap: 14px;
@@ -5453,7 +5523,7 @@ body.comercial-proposal-modal-open .synchro-header {
     position: fixed;
     left: 50%;
     bottom: 24px;
-    z-index: 118;
+    z-index: 70000;
     min-width: 320px;
     max-width: min(540px, calc(100vw - 28px));
     padding: 14px 16px;

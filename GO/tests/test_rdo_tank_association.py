@@ -48,6 +48,8 @@ class RdoTankAssociationReusePlaceholderTest(TestCase):
             '/api/rdo/%s/add_tank/' % dst_rdo.id,
             {
                 'tank_id': str(src_tank.id),
+                # Método é diário: pode diferir do último RDO do mesmo tanque.
+                'metodo_exec': 'Mecanizada',
             },
         )
         req.user = self.user
@@ -61,18 +63,47 @@ class RdoTankAssociationReusePlaceholderTest(TestCase):
         target = rows.first()
         self.assertEqual(target.id, placeholder.id)
 
-        # Campos fixos vêm do tanque associado.
+        # Os campos estruturais vêm do tanque associado.
         self.assertEqual(target.tanque_codigo, '2P')
         self.assertEqual(target.nome_tanque, '2P')
         self.assertEqual(target.tipo_tanque, 'Compartimento')
         self.assertEqual(target.numero_compartimentos, 10)
         self.assertEqual(str(target.volume_tanque_exec), '200.000')
         self.assertEqual(target.servico_exec, 'LIMPEZA DE TANQUE DE ÓLEO')
-        self.assertEqual(target.metodo_exec, 'Manual')
+        self.assertEqual(target.metodo_exec, 'Mecanizada')
 
         # KPI diário existente no RDO atual é preservado.
         self.assertEqual(target.ensacamento_dia, 7)
         self.assertEqual(target.total_n_efetivo_confinado, 41)
+
+    def test_associate_accepts_a_different_method_for_the_current_day(self):
+        src_rdo = RDO.objects.create(rdo='SRC-RDO-METHOD')
+        dst_rdo = RDO.objects.create(rdo='DST-RDO-METHOD')
+        src_tank = RdoTanque.objects.create(
+            rdo=src_rdo,
+            tanque_codigo='2P',
+            nome_tanque='2P',
+            tipo_tanque='Compartimento',
+            numero_compartimentos=10,
+            metodo_exec='Manual',
+        )
+
+        req = self.rf.post(
+            '/api/rdo/%s/add_tank/' % dst_rdo.id,
+            {
+                'tank_id': str(src_tank.id),
+                'metodo_exec': 'Mecanizada',
+            },
+        )
+        req.user = self.user
+
+        res = add_tank_ajax(req, dst_rdo.id)
+
+        self.assertEqual(res.status_code, 200)
+        target = RdoTanque.objects.get(rdo=dst_rdo, tanque_codigo='2P')
+        self.assertEqual(target.metodo_exec, 'Mecanizada')
+        dst_rdo.refresh_from_db()
+        self.assertEqual(dst_rdo.metodo_exec, 'Mecanizada')
 
     def test_associate_reconciles_duplicate_preferring_unidentified_row(self):
         src_rdo = RDO.objects.create(rdo='SRC-RDO-DUP')

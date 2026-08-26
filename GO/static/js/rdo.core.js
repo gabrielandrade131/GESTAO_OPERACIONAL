@@ -324,8 +324,12 @@
         if (!addBtn.dataset.origTitle) {
           addBtn.dataset.origTitle = addBtn.getAttribute('title') || 'Salvar e adicionar outro tanque';
         }
-        addBtn.disabled = reached;
-        addBtn.setAttribute('aria-disabled', reached ? 'true' : 'false');
+        // Nao use o atributo nativo `disabled` aqui. Um botao desabilitado nao
+        // dispara click e, portanto, deixava o usuario sem qualquer explicacao.
+        // A validacao em _canAddSupervisorTank mantem o limite e exibe a causa.
+        addBtn.disabled = false;
+        addBtn.setAttribute('aria-disabled', 'false');
+        addBtn.setAttribute('data-tank-limit-reached', reached ? '1' : '0');
         if (reached) addBtn.setAttribute('title', 'Limite de tanques atingido para esta OS');
         else addBtn.setAttribute('title', addBtn.dataset.origTitle || 'Salvar e adicionar outro tanque');
       });
@@ -1443,6 +1447,65 @@
       return false;
     } catch(_){
       return false;
+    }
+  }
+
+  function _validateRdoFormBeforeSubmit(form){
+    try {
+      if (!form || !form.elements) return true;
+      if (form.getAttribute('data-rdo-duplicate-tank') === '1') {
+        var duplicateInput = form.querySelector('[data-rdo-duplicate-tank="1"]') || form.querySelector('#sup-tanque-cod');
+        showToast('Este tanque já está associado ao RDO. Selecione ou carregue o tanque existente.', 'error');
+        setTimeout(function(){
+          try { duplicateInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(_){ }
+          try { duplicateInput.focus({ preventScroll: true }); } catch(_){ try { duplicateInput.focus(); } catch(__){ } }
+        }, 30);
+        return false;
+      }
+      var invalid = null;
+      Array.prototype.some.call(form.elements, function(el){
+        try {
+          if (!el || !el.willValidate || el.checkValidity()) return false;
+          invalid = el;
+          return true;
+        } catch(_){ return false; }
+      });
+      if (!invalid) return true;
+
+      var section = invalid.closest && invalid.closest('.rdo-section, .form-section, details');
+      if (section) {
+        try { section.hidden = false; } catch(_){ }
+        try { section.classList.add('open'); } catch(_){ }
+        try { if (section.tagName && section.tagName.toLowerCase() === 'details') section.open = true; } catch(_){ }
+      }
+
+      var label = '';
+      try { label = invalid.getAttribute('aria-label') || ''; } catch(_){ }
+      try {
+        if (!label && invalid.id) {
+          var explicitLabel = form.querySelector('label[for="' + invalid.id.replace(/"/g, '\\"') + '"]');
+          if (explicitLabel) label = String(explicitLabel.textContent || '').trim();
+        }
+      } catch(_){ }
+      try {
+        if (!label) {
+          var field = invalid.closest && invalid.closest('.form-field');
+          var nearbyLabel = field && field.querySelector('label');
+          if (nearbyLabel) label = String(nearbyLabel.textContent || '').trim();
+        }
+      } catch(_){ }
+      if (!label) label = invalid.name || 'campo obrigatório';
+
+      try { invalid.setAttribute('aria-invalid', 'true'); } catch(_){ }
+      showToast('Preencha o campo obrigatório: ' + label + '.', 'error');
+      setTimeout(function(){
+        try { invalid.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(_){ }
+        try { invalid.focus({ preventScroll: true }); } catch(_){ try { invalid.focus(); } catch(__){ } }
+        try { invalid.reportValidity(); } catch(_){ }
+      }, 30);
+      return false;
+    } catch(_){
+      return true;
     }
   }
 
@@ -2855,6 +2918,7 @@
 
   function _validateSupervisorRetornoEquipamentosBeforeSubmit(form){
     if (!form) return true;
+<<<<<<< HEAD
     var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
     var refs = _getSupervisorRetornoInlineRefs();
     var allowed = Object.create(null);
@@ -2863,6 +2927,20 @@
       if (isFinite(id) && id > 0) allowed[id] = true;
     });
     if (!items.length) {
+=======
+    var refs = _getSupervisorRetornoInlineRefs();
+    var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
+    var isRequired = !!(
+      refs.root &&
+      refs.root.hidden !== true &&
+      refs.root.dataset.required === 'true' &&
+      items.length > 0
+    );
+    // A pergunta so existe quando a OS possui equipamentos vinculados. Antes,
+    // o estado vazio de uma secao oculta bloqueava o envio e focava um radio
+    // invisivel, fazendo o botao parecer completamente inerte.
+    if (!isRequired) {
+>>>>>>> a59f3143ed335b654c7d4ef8053bc81036d7c95e
       _setSupervisorRetornoInlineError('');
       return true;
     }
@@ -5352,10 +5430,31 @@
     }catch(e){ try{ console.warn('computeEditorPercentuais error', e); }catch(_){ } }
   }
 
+  function _recoverSupervisorSubmitAfterUnhandledError(form, err){
+    try { if (form) form.__rdoCoreSubmitting = false; } catch(_){ }
+    try {
+      var btn = document.getElementById('btn-rdo');
+      if (btn) {
+        btn.disabled = false;
+        btn.setAttribute('aria-disabled', 'false');
+        if (/salvando/i.test(String(btn.textContent || ''))) btn.textContent = 'Enviar';
+      }
+    } catch(_){ }
+    try { hideUploadProgress(0); } catch(_){ }
+    try {
+      if (window.NotificationManager && typeof window.NotificationManager.hideLoading === 'function') {
+        window.NotificationManager.hideLoading();
+      }
+    } catch(_){ }
+    try { _syncSupervisorSubmitGuard(form); } catch(_){ }
+    showToast((err && err.message) || 'Erro inesperado ao preparar o envio do RDO.', 'error');
+  }
+
   async function submitSupervisorForm(ev){
     if (ev && ev.preventDefault) ev.preventDefault();
     var form = qs('#form-supervisor');
     if (!form) return;
+    if (!_validateRdoFormBeforeSubmit(form)) return;
     if (form.__rdoCoreSubmitting) { try { console.warn('submitSupervisorForm already running — skipping duplicate call'); } catch(_){}; return; }
 
   form.__rdoCoreSubmitting = true;
@@ -5373,6 +5472,9 @@
     try { showToast((e && e.message) ? e.message : 'Falha ao validar retorno de equipamentos.', 'error'); } catch(_){ }
     form.__rdoCoreSubmitting = false;
     return;
+  }
+  try { await _ensureRdoTranslationsBeforeSubmit(form); } catch(e) {
+    try { console.warn('Falha ao concluir traducoes antes do envio; backend fara o fallback.', e); } catch(_){ }
   }
   var payload = buildSupervisorFormData(form);
   try {
@@ -5820,6 +5922,9 @@
   }
   async function saveSupervisorCreateReturnId(form){
     if (!form) form = qs('#form-supervisor');
+    try { await _ensureRdoTranslationsBeforeSubmit(form); } catch(e) {
+      try { console.warn('Falha ao concluir traducoes antes de salvar; backend fara o fallback.', e); } catch(_){ }
+    }
     var payload = buildSupervisorFormData(form);
 
     try { if (typeof payload.delete === 'function') { payload.delete('entrada_confinado[]'); payload.delete('entrada_confinado'); payload.delete('saida_confinado[]'); payload.delete('saida_confinado'); } } catch(_){ }
@@ -5907,12 +6012,20 @@
     } catch(e){ console.warn('lockNonTankFields failed', e); }
   }
   document.addEventListener('click', async function(ev){
+    var btn = null;
+    var addAnotherOrigText = '';
     try {
-      var btn = ev.target && ev.target.closest && ev.target.closest('#btn-rdo-add-another, #btn-add-tanque');
+      btn = ev.target && ev.target.closest && ev.target.closest('#btn-rdo-add-another, #btn-add-tanque');
       if (!btn) return;
+      addAnotherOrigText = String(btn.textContent || '').trim();
       try { ev.__rdoCanonicalAddTankHandled = true; } catch(_){ }
       ev.preventDefault();
       var form = qs('#form-supervisor'); if (!form) return;
+      var selectedTankIdEl = form.querySelector('input[name="tanque_id"]');
+      var hasSelectedTankId = !!String((selectedTankIdEl && selectedTankIdEl.value) || '').trim();
+      // Um tanque ja configurado na OS pode ser associado ao RDO mesmo quando
+      // todos os slots da OS estao ocupados; o limite so barra criacao livre.
+      if (!hasSelectedTankId && !_canAddSupervisorTank(form)) return;
       var hid = document.getElementById('sup-rdo-id');
       var rdoId = hid && hid.value ? hid.value : '';
       if (!rdoId) {
@@ -5928,7 +6041,8 @@
 
         showToast('RDO criado — agora você pode adicionar tanques', 'success');
       }
-      if (!_canAddSupervisorTank(form)) return;
+      hasSelectedTankId = !!String((selectedTankIdEl && selectedTankIdEl.value) || '').trim();
+      if (!hasSelectedTankId && !_canAddSupervisorTank(form)) return;
       if (!_ensureConfiguredTankSelection(form)) return;
   var tankNames = ['tanque_codigo','tanque_nome','nome_tanque','tipo_tanque','numero_compartimento','numero_compartimentos','gavetas','patamar','patamares','volume_tanque_exec','servico_exec','metodo_exec','espaco_confinado','operadores_simultaneos','h2s_ppm','lel','co_ppm','o2_percent','total_n_efetivo_confinado','tempo_bomba','ensacamento_dia','icamento_dia','cambagem_dia','sentido_limpeza','ensacamento_prev','icamento_prev','cambagem_prev','ensacamento_concluido','icamento_concluido','cambagem_concluido','ensacamento_cumulativo','icamento_cumulativo','cambagem_cumulativo','tambores_dia','tambores_cumulativo','tambores_acu','residuos_solidos','residuos_totais','bombeio','total_liquido','total_liquido_acu','residuos_solidos_acu','avanco_limpeza','avanco_limpeza_fina','compartimentos_avanco_json','limpeza_mecanizada_diaria','limpeza_mecanizada_cumulativa','limpeza_fina_diaria','limpeza_fina_cumulativa','limpeza_manual_diaria_tanque','limpeza_manual_cumulativa_tanque','limpeza_fina_cumulativa_tanque','percentual_limpeza_fina','percentual_limpeza_diario','percentual_limpeza_fina_diario','percentual_limpeza_cumulativo','percentual_limpeza_fina_cumulativo','percentual_ensacamento','percentual_icamento','percentual_cambagem','percentual_avanco','limpeza_acu','limpeza_fina_acu'];
       var fd = new FormData();
@@ -6016,8 +6130,18 @@
         try { _consumeTankLimitFromResponse(form, data); } catch(_){ }
         showToast((data && (data.error || data.message)) || 'Falha ao adicionar tanque', 'error');
       }
-      try { btn.disabled = false; btn.textContent = 'Salvar e adicionar outro tanque'; } catch(_){ }
-    } catch(e){ console.warn('add-another handler failed', e); showToast('Erro ao adicionar tanque', 'error'); }
+    } catch(e){
+      console.warn('add-another handler failed', e);
+      showToast((e && e.message) || 'Erro ao adicionar tanque', 'error');
+    } finally {
+      try {
+        if (btn) {
+          btn.disabled = false;
+          btn.setAttribute('aria-disabled', 'false');
+          btn.textContent = addAnotherOrigText || 'Salvar e adicionar outro tanque';
+        }
+      } catch(_){ }
+    }
   }, false);
 
   // Atualiza linha/ cartão do RDO quando um tanque é associado (se API retornar dados mínimos do RDO)
@@ -6104,7 +6228,7 @@
             if (typeof effPatamares !== 'undefined') setCol('PATAMARES', effPatamares);
             if (typeof effVolume !== 'undefined') setCol('VOLUME DO TANQUE', effVolume);
             if (typeof payload.servico_exec !== 'undefined') setCol('SERVIÇO', payload.servico_exec);
-            if (typeof payload.metodo_exec !== 'undefined') setCol('MÉTODO', payload.metodo_exec);
+            if (typeof payload.metodo_exec !== 'undefined') setCol('MÉTODO DO DIA', payload.metodo_exec);
           }catch(_){ }
         }
 
@@ -6246,6 +6370,10 @@
     }
     var form = qs('#form-editor');
     if (!form) return;
+    if (!_validateRdoFormBeforeSubmit(form)) return;
+    try { await _ensureRdoTranslationsBeforeSubmit(form); } catch(e) {
+      try { console.warn('Falha ao concluir traducoes no editor; backend fara o fallback.', e); } catch(_){ }
+    }
     try { if (typeof computeAndSetTopLevelSummaries === 'function') computeAndSetTopLevelSummaries(form); } catch(_){ }
 
     var hid = document.getElementById('edit-rdo-id');
@@ -6437,17 +6565,209 @@
   function ensureEditorSubmitBound(){
     var form = qs('#form-editor');
     if (!form) return;
+    form.noValidate = true;
     if (form.__rdoEditorSubmitBound) return;
     form.addEventListener('submit', submitEditorForm);
     form.__rdoEditorSubmitBound = true;
     try { syncPobWithEquipe(form); } catch(_){ }
   }
 
+  function _supervisorDraftKey(form){
+    var os = '';
+    var rdo = '';
+    try {
+      os = String(((form.querySelector('#sup-ordem-id') || {}).value || '')).trim();
+      if (!os) {
+        var osCtx = document.getElementById('sup-context-os');
+        os = String((osCtx && (osCtx.getAttribute('data-os-id') || osCtx.textContent)) || '').trim();
+      }
+      rdo = String(((form.querySelector('#sup-rdo-id') || {}).value || '')).trim();
+      if (!rdo) rdo = String(((form.querySelector('#sup-rdo') || {}).value || 'new')).trim();
+    } catch(_){ }
+    return 'rdo_draft::' + (os || 'no-os') + '::' + (rdo || 'new');
+  }
+
+  function _serializeSupervisorDraft(form){
+    var positions = Object.create(null);
+    var data = [];
+    Array.prototype.forEach.call(form.elements || [], function(el){
+      try {
+        if (!el || !el.name) return;
+        var type = String(el.type || '').toLowerCase();
+        if (type === 'file' || type === 'password' || type === 'button' || type === 'submit' || type === 'reset') return;
+        if (el.name === 'csrfmiddlewaretoken' || el.name === 'rdo_id' || el.name === 'ordem_servico_id' || el.name.indexOf('__sup_') === 0) return;
+        var pos = positions[el.name] || 0;
+        positions[el.name] = pos + 1;
+        var item = { name: el.name, position: pos, type: type };
+        if (type === 'checkbox' || type === 'radio') item.checked = !!el.checked;
+        else if (el.multiple && el.options) {
+          item.values = Array.prototype.filter.call(el.options, function(opt){ return opt.selected; }).map(function(opt){ return opt.value; });
+        } else item.value = el.value;
+        data.push(item);
+      } catch(_){ }
+    });
+    return data;
+  }
+
+  function _restoreSupervisorDraft(form, data){
+    if (!Array.isArray(data)) return false;
+    var groups = Object.create(null);
+    Array.prototype.forEach.call(form.elements || [], function(el){
+      if (!el || !el.name) return;
+      if (!groups[el.name]) groups[el.name] = [];
+      groups[el.name].push(el);
+    });
+    data.forEach(function(item){
+      try {
+        var group = groups[item.name] || [];
+        var el = group[item.position || 0];
+        if (!el) return;
+        var type = String(el.type || '').toLowerCase();
+        if (type === 'checkbox' || type === 'radio') el.checked = !!item.checked;
+        else if (el.multiple && el.options && Array.isArray(item.values)) {
+          Array.prototype.forEach.call(el.options, function(opt){ opt.selected = item.values.indexOf(opt.value) !== -1; });
+        } else if (Object.prototype.hasOwnProperty.call(item, 'value')) el.value = item.value == null ? '' : item.value;
+        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch(_){ }
+        try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch(_){ }
+      } catch(_){ }
+    });
+    try { computeModalAggregates(); } catch(_){ }
+    try { syncPobWithEquipe(form); } catch(_){ }
+    try { _syncSupervisorSubmitGuard(form); } catch(_){ }
+    return true;
+  }
+
+  function _updateSupervisorDraftBanner(form){
+    var banner = document.getElementById('sup-draft-banner');
+    if (!banner || !form) return;
+    var exists = false;
+    try { exists = !!localStorage.getItem(_supervisorDraftKey(form)); } catch(_){ }
+    banner.style.display = exists ? 'block' : 'none';
+  }
+
+  function ensureSupervisorFooterActionsBound(form){
+    if (!form) return;
+    _updateSupervisorDraftBanner(form);
+    if (form.__rdoFooterActionsBound) return;
+
+    var submitBtn = document.getElementById('btn-rdo');
+    var menuBtn = document.getElementById('btn-draft-menu');
+    var popover = document.getElementById('draft-popover');
+    var saveBtn = document.getElementById('btn-save-draft');
+    var clearBtn = document.getElementById('btn-clear-draft');
+    var loadBtn = document.getElementById('btn-load-draft');
+    var ignoreBtn = document.getElementById('btn-ignore-draft');
+
+    function closeDraftMenu(){
+      if (popover) popover.setAttribute('aria-hidden', 'true');
+      if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    function saveDraft(notifyUser){
+      var key = _supervisorDraftKey(form);
+      try {
+        localStorage.setItem(key, JSON.stringify({ version: 2, savedAt: Date.now(), data: _serializeSupervisorDraft(form) }));
+        form.__rdoDraftLastKey = key;
+        if (notifyUser) {
+          _updateSupervisorDraftBanner(form);
+          showToast('Rascunho salvo localmente.', 'success');
+        }
+        return true;
+      } catch(err){
+        if (notifyUser) showToast('Nao foi possivel salvar o rascunho neste navegador.', 'error');
+        return false;
+      }
+    }
+
+    if (submitBtn) submitBtn.addEventListener('click', function(ev){
+      // O click precisa ser tratado diretamente: a validacao nativa do HTML
+      // pode impedir o evento submit sem produzir erro no console.
+      ev.preventDefault();
+      if (form.__rdoCoreSubmitting) {
+        showToast('O RDO ja esta sendo enviado. Aguarde.', 'info');
+        return;
+      }
+      Promise.resolve(submitSupervisorForm(ev)).catch(function(err){
+        _recoverSupervisorSubmitAfterUnhandledError(form, err);
+      });
+    });
+
+    if (menuBtn && popover) menuBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      var willOpen = popover.getAttribute('aria-hidden') !== 'false';
+      popover.setAttribute('aria-hidden', willOpen ? 'false' : 'true');
+      menuBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+
+    if (saveBtn) saveBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      saveDraft(true);
+      closeDraftMenu();
+    });
+    if (clearBtn) clearBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      var key = _supervisorDraftKey(form);
+      try { localStorage.removeItem(key); } catch(_){ }
+      if (form.__rdoDraftLastKey === key) form.__rdoDraftLastKey = '';
+      _updateSupervisorDraftBanner(form);
+      closeDraftMenu();
+      showToast('Rascunho excluido.', 'info');
+    });
+    if (loadBtn) loadBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      var obj = null;
+      try { obj = JSON.parse(localStorage.getItem(_supervisorDraftKey(form)) || 'null'); } catch(_){ obj = null; }
+      if (!obj || !_restoreSupervisorDraft(form, obj.data)) {
+        showToast('Nenhum rascunho valido foi encontrado.', 'error');
+        return;
+      }
+      var banner = document.getElementById('sup-draft-banner');
+      if (banner) banner.style.display = 'none';
+      showToast('Rascunho carregado.', 'success');
+    });
+    if (ignoreBtn) ignoreBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      var banner = document.getElementById('sup-draft-banner');
+      if (banner) banner.style.display = 'none';
+    });
+
+    document.addEventListener('click', function(ev){
+      if (!popover || popover.getAttribute('aria-hidden') !== 'false') return;
+      if (popover.contains(ev.target) || ev.target === menuBtn) return;
+      closeDraftMenu();
+    });
+    document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') closeDraftMenu(); });
+
+    form.addEventListener('input', function(){
+      if (form.__rdoDraftTimer) clearTimeout(form.__rdoDraftTimer);
+      form.__rdoDraftTimer = setTimeout(function(){
+        form.__rdoDraftTimer = null;
+        saveDraft(false);
+      }, 1200);
+    }, true);
+
+    document.addEventListener('rdo:saved', function(){
+      var keys = [_supervisorDraftKey(form), form.__rdoDraftLastKey];
+      keys.forEach(function(key){ if (key) try { localStorage.removeItem(key); } catch(_){ } });
+      form.__rdoDraftLastKey = '';
+      _updateSupervisorDraftBanner(form);
+    });
+
+    form.__rdoFooterActionsBound = true;
+  }
+
   function ensureSubmitBound(){
     var form = qs('#form-supervisor');
     if (!form) return;
+    form.noValidate = true;
+    ensureSupervisorFooterActionsBound(form);
     if (form.__rdoCoreSubmitBound) return;
-    form.addEventListener('submit', submitSupervisorForm);
+    form.addEventListener('submit', function(ev){
+      Promise.resolve(submitSupervisorForm(ev)).catch(function(err){
+        _recoverSupervisorSubmitAfterUnhandledError(form, err);
+      });
+    });
     try {
       if (!form.__rdoTankDraftWatchBound) {
         var onTankDraftChange = function(ev){
@@ -6477,6 +6797,9 @@
       _syncSupervisorSubmitGuard(form);
     } catch(_){ }
   }
+  onReady(function(){
+    try { ensureSupervisorFooterActionsBound(qs('#form-supervisor')); } catch(_){ }
+  });
   function bindSupervisorActivityControls(){
     try {
       var wrapper = document.getElementById('atividades-wrapper');
@@ -9215,11 +9538,16 @@
   }
   function _debounce(fn, wait){
     var t = null;
-    return function(){
+    var debounced = function(){
       var ctx = this, args = arguments;
       clearTimeout(t);
       t = setTimeout(function(){ try{ fn.apply(ctx, args); } catch(_){} }, wait || 300);
     };
+    debounced.cancel = function(){
+      if (t) clearTimeout(t);
+      t = null;
+    };
+    return debounced;
   }
   function _bindActivityTimeLinking(){
     try {
@@ -9322,7 +9650,7 @@
       if (!text || !text.toString().trim()) return '';
       if (!__rdo_translate_available) {
         if (!__rdo_translate_warned) { __rdo_translate_warned = true; showToast('Tradução automática indisponível', 'info'); }
-        return '';
+        return null;
       }
   var url = '/api/rdo/translate/preview/';
       var payload = JSON.stringify({ text: String(text) });
@@ -9344,17 +9672,20 @@
           __rdo_translate_available = false;
           if (!__rdo_translate_warned) { __rdo_translate_warned = true; showToast('Tradução automática indisponível (endpoint não encontrado)', 'error'); }
         }
-        return '';
+        return null;
       }
       var data = null; try { data = await resp.json(); } catch(e){ console.warn('translate_preview: invalid json', e); }
       console.debug('translate_preview: response', data);
-      if (!data) return '';
+      if (!data) return null;
       if (data && (data.en || data.en === '')) {
         if (!data.success) console.warn('translate_preview: returned success=false', data.error || 'no error');
         return data.en || '';
       }
-      return '';
-    } catch(e){ return ''; }
+      return null;
+    } catch(e){
+      try { console.warn('translate_preview: request failed', e); } catch(_){ }
+      return null;
+    }
   }
 
   function _showTranslatingIndicator(target){
@@ -9384,6 +9715,30 @@
     }catch(e){}
   }
 
+  async function _translateIntoTarget(source, target){
+    if (!source || !target) return null;
+    var snapshot = String(source.value || '').trim();
+    var requestId = (target.__rdoTranslationRequestId || 0) + 1;
+    target.__rdoTranslationRequestId = requestId;
+    if (!snapshot) {
+      target.value = '';
+      target.dataset.rdoTranslatedSource = '';
+      target.dataset.rdoTranslationDirty = '0';
+      return '';
+    }
+    _showTranslatingIndicator(target);
+    var translated = await _translatePreview(snapshot);
+    if (target.__rdoTranslationRequestId === requestId) _hideTranslatingIndicator(target);
+    if (target.__rdoTranslationRequestId !== requestId) return null;
+    if (String(source.value || '').trim() !== snapshot) return null;
+    if (translated !== null) {
+      target.value = String(translated || '');
+      target.dataset.rdoTranslatedSource = snapshot;
+      target.dataset.rdoTranslationDirty = '0';
+    }
+    return translated;
+  }
+
   try {
     if (!document.getElementById('rdo-translate-spinner-styles')) {
       var st = document.createElement('style'); st.id = 'rdo-translate-spinner-styles';
@@ -9392,6 +9747,20 @@
       document.head.appendChild(st);
     }
   } catch(_){ }
+
+  function _bindTranslationPair(source, target, delay){
+    if (!source || !target || source.__translateBound) return;
+    source.addEventListener('input', function(){
+      try { target.dataset.rdoTranslationDirty = '1'; } catch(_){ }
+    });
+    var handler = _debounce(async function(){
+      try { await _translateIntoTarget(source, target); }
+      catch(_){ try { _hideTranslatingIndicator(target); } catch(__){ } }
+    }, delay);
+    source.__rdoTranslateDebounced = handler;
+    source.addEventListener('input', handler);
+    source.__translateBound = true;
+  }
 
   function _bindTranslationHandlers(scope){
     try {
@@ -9404,17 +9773,7 @@
           var row = el.closest('.activities-row');
           var target = row ? row.querySelector('.atividade-comentario-en') : null;
           if (!target) { el.__translateBound = true; return; }
-          var handler = _debounce(async function(ev){
-            try {
-              var txt = el.value || '';
-              var spinner = _showTranslatingIndicator(target);
-              var trans = await _translatePreview(txt);
-              _hideTranslatingIndicator(target);
-              if (trans != null) { target.value = trans; }
-            } catch(_){ try{ _hideTranslatingIndicator(target); }catch(_){} }
-          }, 450);
-          el.addEventListener('input', handler);
-          el.__translateBound = true;
+          _bindTranslationPair(el, target, 450);
         } catch(_){}
       });
       try {
@@ -9422,17 +9781,7 @@
         var obsEn = ctx.querySelector('#edit-observacoes-en, #sup-observacoes-en');
         if (obsPt && obsEn && !obsPt.__translateBound){
           try { console.debug && console.debug('rdo.core: binding observacoes'); } catch(_){ }
-          var h = _debounce(async function(){
-              try{
-                var t = obsPt.value||'';
-                var spinner = _showTranslatingIndicator(obsEn);
-                var tr = await _translatePreview(t);
-                _hideTranslatingIndicator(obsEn);
-                if (tr != null) obsEn.value = tr;
-              }catch(_){ try{ _hideTranslatingIndicator(obsEn); }catch(_){} }
-            }, 700);
-            obsPt.addEventListener('input', h);
-          obsPt.__translateBound = true;
+          _bindTranslationPair(obsPt, obsEn, 700);
         }
       } catch(_){ }
       try {
@@ -9440,17 +9789,7 @@
         var planEn = ctx.querySelector('#edit-planejamento-en, #sup-planejamento-en');
         if (planPt && planEn && !planPt.__translateBound){
           try { console.debug && console.debug('rdo.core: binding planejamento'); } catch(_){ }
-          var h2 = _debounce(async function(){
-              try{
-                var t = planPt.value||'';
-                var spinner = _showTranslatingIndicator(planEn);
-                var tr = await _translatePreview(t);
-                _hideTranslatingIndicator(planEn);
-                if (tr != null) planEn.value = tr;
-              }catch(_){ try{ _hideTranslatingIndicator(planEn); }catch(_){} }
-            }, 700);
-            planPt.addEventListener('input', h2);
-          planPt.__translateBound = true;
+          _bindTranslationPair(planPt, planEn, 700);
         }
       } catch(_){ }
       try {
@@ -9458,20 +9797,65 @@
         var cienteEn = ctx.querySelector('#edit-ciente-observacoes-en, #sup-ciente-observacoes-en');
         if (cientePt && cienteEn && !cientePt.__translateBound){
           try { console.debug && console.debug('rdo.core: binding ciente_observacoes'); } catch(_){ }
-          var h3 = _debounce(async function(){
-            try{
-              var t = cientePt.value||'';
-              var spinner = _showTranslatingIndicator(cienteEn);
-              var tr = await _translatePreview(t);
-              _hideTranslatingIndicator(cienteEn);
-              if (tr != null) cienteEn.value = tr;
-            }catch(_){ try{ _hideTranslatingIndicator(cienteEn); }catch(_){} }
-          }, 700);
-          cientePt.addEventListener('input', h3);
-          cientePt.__translateBound = true;
+          _bindTranslationPair(cientePt, cienteEn, 700);
         }
       } catch(_){ }
     } catch(_){}
+  }
+
+  async function _ensureRdoTranslationsBeforeSubmit(form){
+    if (!form) return;
+    var pairs = [];
+    function addPair(source, target){
+      if (!source || !target) return;
+      if (pairs.some(function(pair){ return pair.target === target; })) return;
+      pairs.push({ source: source, target: target });
+    }
+
+    addPair(
+      form.querySelector('#sup-observacoes-pt, #edit-observacoes-pt'),
+      form.querySelector('#sup-observacoes-en, #edit-observacoes-en')
+    );
+    addPair(
+      form.querySelector('#sup-planejamento-pt, #edit-planejamento-pt'),
+      form.querySelector('#sup-planejamento-en, #edit-planejamento-en')
+    );
+    addPair(
+      form.querySelector('#sup-ciente-observacoes-pt, #edit-ciente-observacoes-pt'),
+      form.querySelector('#sup-ciente-observacoes-en, #edit-ciente-observacoes-en')
+    );
+    Array.prototype.forEach.call(form.querySelectorAll('.activities-row'), function(row){
+      addPair(
+        row.querySelector('.atividade-comentario-pt'),
+        row.querySelector('.atividade-comentario-en')
+      );
+    });
+
+    await Promise.all(pairs.map(async function(pair){
+      var source = pair.source;
+      var target = pair.target;
+      var sourceText = String(source.value || '').trim();
+      if (!sourceText) {
+        target.value = '';
+        target.dataset.rdoTranslationDirty = '0';
+        target.dataset.rdoTranslatedSource = '';
+        return;
+      }
+      var isDirty = target.dataset.rdoTranslationDirty === '1';
+      var translatedSource = String(target.dataset.rdoTranslatedSource || '');
+      if (String(target.value || '').trim() && !isDirty && (!translatedSource || translatedSource === sourceText)) return;
+      try {
+        if (source.__rdoTranslateDebounced && typeof source.__rdoTranslateDebounced.cancel === 'function') {
+          source.__rdoTranslateDebounced.cancel();
+        }
+      } catch(_){ }
+      var translated = await _translateIntoTarget(source, target);
+      // Deixe vazio em falha para o backend executar o fallback canonico. Isso
+      // evita enviar uma traducao antiga pertencente a outro texto em PT.
+      if (translated === null && String(source.value || '').trim() === sourceText) {
+        target.value = '';
+      }
+    }));
   }
 
   function ensureSupervisorTranslationsBound(){
@@ -10611,6 +10995,16 @@
           console.debug && console.debug('rdo: fetchPending - response status', resp.status, resp.statusText);
           if (!resp.ok) {
             console.warn && console.warn('rdo: fetchPending - non-ok response', resp.status);
+            if (resp.status === 401 || resp.status === 403) {
+              try {
+                window.__rdo_pending_last_error = 'session-expired';
+                if (!window.__rdo_session_expired_warned) {
+                  window.__rdo_session_expired_warned = true;
+                  showToast('Sua sessão expirou. Recarregue a página e entre novamente.', 'error');
+                }
+              } catch(_){ }
+              return [];
+            }
             if (url !== fallbackUrl) {
               try { console.debug && console.debug('rdo: fetchPending - retrying fallback', fallbackUrl); } catch(_){ }
               try {
@@ -10621,8 +11015,32 @@
             }
             if (!resp.ok) return [];
           }
+          var responseContentType = '';
+          try { responseContentType = String(resp.headers.get('content-type') || '').toLowerCase(); } catch(_){ }
+          if (responseContentType.indexOf('application/json') === -1) {
+            var redirectedToLogin = false;
+            try { redirectedToLogin = !!resp.redirected && /\/login(?:\/|\?|$)/i.test(String(resp.url || '')); } catch(_){ }
+            try {
+              window.__rdo_pending_last_error = redirectedToLogin ? 'session-expired' : 'non-json-response';
+              if (redirectedToLogin && !window.__rdo_session_expired_warned) {
+                window.__rdo_session_expired_warned = true;
+                showToast('Sua sessão expirou. Recarregue a página e entre novamente.', 'error');
+              } else if (!redirectedToLogin) {
+                console.warn && console.warn(
+                  'rdo: fetchPending - resposta não JSON ignorada',
+                  resp.status,
+                  responseContentType || 'sem content-type'
+                );
+              }
+            } catch(_){ }
+            return [];
+          }
           var data = null;
-          try { data = await resp.json(); } catch(e) { console.warn && console.warn('rdo: fetchPending - failed to parse JSON', e); data = null; }
+          try { data = await resp.json(); } catch(e) {
+            try { window.__rdo_pending_last_error = 'invalid-json'; } catch(_){ }
+            console.warn && console.warn('rdo: fetchPending - JSON inválido ignorado');
+            data = null;
+          }
           var list = (data && (data.data || data.items || data.list)) || [];
           var arr = _dedupePendingItems(Array.isArray(list) ? list : []);
           console.debug && console.debug('rdo: fetchPending - parsed list length', arr.length, 'raw:', list);

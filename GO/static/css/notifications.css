@@ -2,7 +2,8 @@
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 9999;
+    /* Must remain visible above every application modal and preview overlay. */
+    z-index: 70000;
 }
 
 .notification {

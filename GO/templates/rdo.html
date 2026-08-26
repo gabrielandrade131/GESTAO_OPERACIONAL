@@ -11,7 +11,7 @@
      <link rel="stylesheet" href="{% static 'css/rdo.report.css' %}">
      <link rel="stylesheet" href="{% static 'css/notifications.css' %}?v=20260727a">
      {# O formulário Gerar RDO é compartilhado por supervisores e administradores. #}
-     <link rel="stylesheet" href="{% static 'css/rdo.supervisor.css' %}?v=20260810b">
+     <link rel="stylesheet" href="{% static 'css/rdo.supervisor.css' %}?v=20260824c">
      {% if is_supervisor %}
      <link rel="stylesheet" href="{% static 'css/rdo.mobile.css' %}?v=20260406b">
      {% endif %}
@@ -565,7 +565,7 @@
                             <th>Nº COMPARTIMENTOS</th>
                             <th>VOLUME DO TANQUE</th>
                             <th style="text-align:center">SERVIÇO</th>
-                            <th>MÉTODO</th>
+                            <th>MÉTODO DO DIA</th>
                             <th>QUANTOS O.P SIMULTÂNEOS NO TANQUE</th>
                             <th style="text-align:center">DATA</th>
                             <th>RDO</th>
@@ -942,7 +942,7 @@
                         <span class="material-icons" aria-hidden="true">close</span>
                     </button>
                 </div>
-                <form id="form-supervisor" action="#" method="post" enctype="multipart/form-data">
+                <form id="form-supervisor" action="#" method="post" enctype="multipart/form-data" novalidate>
                     {% csrf_token %}
                     <input type="hidden" name="rdo_id" id="sup-rdo-id" />
                     <input type="hidden" name="retorno_equipamentos" id="sup-retorno-equipamentos" value="" />
@@ -1211,7 +1211,7 @@
                                         </div>
                                     </div>
                                     <div class="form-field">
-                                        <label for="sup-metodo">Método</label>
+                                        <label for="sup-metodo">Método do dia</label>
                                         <select id="sup-metodo" name="metodo_exec">
                                             <option value="">Selecionar...</option>
                                             {% for val,label in metodo_choices %}
@@ -1449,7 +1449,7 @@
                                     </div>
                                 <div class="form-field">
                                             <label for="sup-observacoes-en">Observações (EN)</label>
-                                            <textarea id="sup-observacoes-en" rows="3" placeholder="Gerado automaticamente"
+                                            <textarea id="sup-observacoes-en" name="observacoes_en" rows="3" placeholder="Gerado automaticamente"
                                                 readonly aria-describedby="sup-translate-hint"></textarea>
                                     </div>
                                 </div>
@@ -1545,7 +1545,7 @@
                                 </div>
                                 <div class="form-field">
                                     <label for="sup-planejamento-en">Planejamento (EN)</label>
-                                    <textarea id="sup-planejamento-en" rows="3" placeholder="Gerado automaticamente" readonly aria-describedby="sup-translate-hint"></textarea>
+                                    <textarea id="sup-planejamento-en" name="planejamento_en" rows="3" placeholder="Gerado automaticamente" readonly aria-describedby="sup-translate-hint"></textarea>
                                 </div>
                                 <!-- Hint explaining translation behavior -->
                                 <div id="sup-translate-hint" class="rdo-translate-hint" role="status">
@@ -1639,7 +1639,7 @@
                     </button>
                 </div>
             </div>
-            <form id="form-editor" action="#" method="post" enctype="multipart/form-data">
+            <form id="form-editor" action="#" method="post" enctype="multipart/form-data" novalidate>
                 {% csrf_token %}
                 <input type="hidden" name="rdo_id" id="edit-rdo-id" />
                 <input type="hidden" name="tanque_id" id="edit-tanque-id" />
@@ -1996,7 +1996,7 @@
                                 </div>
                                 <div class="form-field">
                                     <label for="edit-observacoes-en">Observações (EN)</label>
-                                    <textarea id="edit-observacoes-en" rows="3" readonly></textarea>
+                                    <textarea id="edit-observacoes-en" name="observacoes_en" rows="3" readonly></textarea>
                                 </div>
                             </div>
                             {% load lists_tags %}
@@ -2051,7 +2051,7 @@
                             </div>
                             <div class="form-field">
                                 <label for="edit-planejamento-en">Planejamento (EN)</label>
-                                <textarea id="edit-planejamento-en" rows="3" readonly></textarea>
+                                <textarea id="edit-planejamento-en" name="planejamento_en" rows="3" readonly></textarea>
                             </div>
                         </section>
                     </div>
@@ -2099,7 +2099,7 @@
     </main>
 
     <script src="{% static 'js/notifications.js' %}?v=20260727a"></script>
-    <script src="{% static 'js/scripts.js' %}"></script>
+    <script src="{% static 'js/scripts.js' %}?v=20260824a"></script>
     <script src="{% static 'js/supervisor_formdata.js' %}"></script>
     <script src="{% static 'js/rdo.compartment.js' %}?v=20260810d"></script>
     <script>
@@ -2123,7 +2123,11 @@
     </script>
     <script src="/static/vendor/rdo-pdf/html2canvas.min.js?v=1.4.1"></script>
     <script src="/static/vendor/rdo-pdf/jspdf.umd.min.js?v=2.5.1"></script>
+<<<<<<< HEAD
     <script src="{% static 'js/rdo.core.js' %}?v=20260826b"></script>
+=======
+    <script src="{% static 'js/rdo.core.js' %}?v=20260824g"></script>
+>>>>>>> a59f3143ed335b654c7d4ef8053bc81036d7c95e
     <script src="{% static 'js/rdo_approval.js' %}?v=20260805a"></script>
     {% if not is_supervisor %}
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
@@ -2132,7 +2136,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{% static 'js/rdo.mobile.js' %}?v=20260406c"></script>
     <script src="{% static 'js/page_rdo.js' %}?v=20260810a"></script>
-    <script src="{% static 'js/rdo.tank_lookup.js' %}?v=20260422e"></script>
+    <script src="{% static 'js/rdo.tank_lookup.js' %}?v=20260824c"></script>
     <script src="{% static 'js/dropdown_select.js' %}?v=20260529a"></script>
     {% if not is_supervisor %}
     <script>
