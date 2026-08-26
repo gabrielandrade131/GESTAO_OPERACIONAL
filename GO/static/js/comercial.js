@@ -7670,6 +7670,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderFollowupAgenda();
             } else if (action === "select-day") {
                 selectAgendaDay(agendaAction.dataset.date);
+            } else if (action === "previous-month" || action === "next-month") {
+                changeAgendaMonth(action === "previous-month" ? -1 : 1);
             } else if (action === "view-day") {
                 state.agendaDayFocus = state.agendaSelectedDate;
                 state.agendaPage = 1;
