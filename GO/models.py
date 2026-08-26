@@ -5417,6 +5417,11 @@ class UserPasswordChangeStatus(models.Model):
     def is_change_required(self):
         return self.needs_password_change and self.password_change_counter > 1
 
+    def save(self, *args, **kwargs):
+        if self.needs_password_change and self.password_change_counter < 2:
+            self.password_change_counter = 2
+        super().save(*args, **kwargs)
+
 
 def default_handover_items():
     return [

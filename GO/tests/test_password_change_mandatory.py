@@ -10,7 +10,8 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.client = Client()
         self.username = 'testuser'
         self.password = 'OldPass123!'
-        self.user = User.objects.create_user(username=self.username, password=self.password, email='test@example.com')
+        self.email = 'test@example.com'
+        self.user = User.objects.create_user(username=self.username, password=self.password, email=self.email)
         # Setup status
         self.status, _ = UserPasswordChangeStatus.objects.get_or_create(user=self.user)
         self.factory = RequestFactory()
@@ -38,7 +39,7 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.assertEqual(response.status_code, 302) # Redirects to login
 
     def test_mandatory_change_success(self):
-        self.client.login(username=self.username, password=self.password)
+        self.client.login(username=self.email, password=self.password)
         url = reverse('change_password_mandatory')
         
         # Valid password change
@@ -62,7 +63,7 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.assertTrue(self.user.check_password(new_pass))
 
     def test_mandatory_change_validation_errors(self):
-        self.client.login(username=self.username, password=self.password)
+        self.client.login(username=self.email, password=self.password)
         url = reverse('change_password_mandatory')
 
         # 1. Wrong current password
@@ -129,7 +130,7 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.assertIn('A nova senha e a confirmação não coincidem.', response.json()['errors'])
 
     def test_password_change_counter_decrement_and_removal(self):
-        self.client.login(username=self.username, password=self.password)
+        self.client.login(username=self.email, password=self.password)
         url = reverse('change_password_mandatory')
 
         self.status.password_change_counter = 2

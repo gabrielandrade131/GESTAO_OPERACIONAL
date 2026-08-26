@@ -71,7 +71,11 @@
 
 <body{% if not is_supervisor %} class="rdo-admin-body"{% endif %}>
 
-            {% if not is_supervisor %}{% include '_synchro_shell.html' %}{% endif %}
+            {% if not is_supervisor %}
+                {% include '_synchro_shell.html' %}
+            {% else %}
+                {% include '_password_change_modal.html' %}
+            {% endif %}
 
             <nav class="drawer-nav" id="drawer-nav">
                 <a href="/" class="menu-btn">

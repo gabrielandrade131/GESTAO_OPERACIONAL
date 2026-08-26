@@ -1970,14 +1970,13 @@ def mobile_bootstrap(request):
         row.pop('_planning_active_count', None)
         data.append(row)
 
-<<<<<<< HEAD
     from .models import UserPasswordChangeStatus
     try:
         status_obj, _ = UserPasswordChangeStatus.objects.get_or_create(user=request.user)
         password_change_required = status_obj.is_change_required()
     except Exception:
         password_change_required = False
-=======
+
     latest_handover = None
     try:
         handover = (
@@ -1997,7 +1996,6 @@ def mobile_bootstrap(request):
             }
     except Exception:
         logger.exception('Falha ao carregar a última passagem de serviço no bootstrap mobile')
->>>>>>> a59f3143ed335b654c7d4ef8053bc81036d7c95e
 
     return JsonResponse(
         {
