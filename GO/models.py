@@ -5404,6 +5404,7 @@ class UserPasswordChangeStatus(models.Model):
         related_name='password_change_status',
     )
     needs_password_change = models.BooleanField(default=True)
+    password_change_counter = models.IntegerField(default=2)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -5413,6 +5414,9 @@ class UserPasswordChangeStatus(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - needs change: {self.needs_password_change}"
+
+    def is_change_required(self):
+        return self.needs_password_change and self.password_change_counter > 1
 
 
 def default_handover_items():

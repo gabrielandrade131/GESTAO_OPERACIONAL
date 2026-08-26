@@ -156,6 +156,7 @@ urlpatterns = [
     path('api/rdo/tank/<str:codigo>/', views_rdo.rdo_tank_detail, name='api_rdo_tank_detail'),
     path('api/mobile/v1/auth/token/', views_mobile_api.mobile_auth_token, name='api_mobile_auth_token'),
     path('api/mobile/v1/auth/revoke/', views_mobile_api.mobile_auth_revoke, name='api_mobile_auth_revoke'),
+    path('api/mobile/v1/auth/change-password/', views_mobile_api.mobile_change_password, name='api_mobile_change_password'),
     path('api/mobile/v1/bootstrap/', views_mobile_api.mobile_bootstrap, name='api_mobile_bootstrap'),
     path('api/mobile/v1/app/update/', views_mobile_api.mobile_app_update, name='api_mobile_app_update'),
     path('api/mobile/v1/translate/preview/', views_mobile_api.mobile_translate_preview, name='api_mobile_translate_preview'),
