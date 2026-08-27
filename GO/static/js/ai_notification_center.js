@@ -20,6 +20,7 @@
     const subtitle = document.getElementById("ai-notification-center-subtitle");
     const toast = document.getElementById("ai-notification-toast");
     const tabs = Array.from(center.querySelectorAll("[data-ai-tab]"));
+    const correctionMetrics = document.getElementById("ai-notification-correction-metrics");
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const state = {
         open: false,
@@ -106,12 +107,21 @@
         const counts = payload.counts || {};
         center.querySelectorAll("[data-ai-count]").forEach(function (node) {
             const name = node.dataset.aiCount;
-            const map = { all: "all", pending: "pending", read: "read" };
+            const map = { all: "all", pending: "pending", read: "read", corrected: "corrected" };
             node.textContent = String(counts[map[name]] || 0);
         });
         const unread = Number(payload.unread_count || 0);
         subtitle.textContent = unread + (unread === 1 ? " notificação pendente" : " notificações pendentes");
         markAllButton.disabled = unread === 0;
+        const metrics = payload.corrected_metrics || {};
+        if (correctionMetrics) {
+            correctionMetrics.hidden = state.tab !== "corrigidas";
+            correctionMetrics.querySelectorAll("[data-ai-correction-metric]").forEach(function (node) {
+                const name = node.dataset.aiCorrectionMetric;
+                const value = metrics[name];
+                node.textContent = value === undefined || value === null || value === "" ? "—" : String(value);
+            });
+        }
     }
 
     function updateBellBadge(unread) {
@@ -161,6 +171,7 @@
         if (state.query || state.priority || state.alertType) return ["Nenhum alerta encontrado com os filtros selecionados.", "Limpar filtros"];
         if (state.tab === "pendentes") return ["Você não possui notificações pendentes.", "Novos alertas da IA aparecerão aqui."];
         if (state.tab === "lidas") return ["Nenhuma notificação lida.", ""];
+        if (state.tab === "corrigidas") return ["Nenhum alerta com correção confirmada.", "As correções validadas pela IA aparecerão aqui."];
         return ["Nenhuma notificação disponível.", ""];
     }
 
@@ -200,16 +211,21 @@
         button.setAttribute("aria-current", item.key === state.selectedKey ? "true" : "false");
         button.classList.toggle("ai-notification-center__item--unread", !item.is_read);
         button.classList.toggle("ai-notification-center__item--active", item.key === state.selectedKey);
+        button.classList.toggle("ai-notification-center__item--corrected", Boolean(item.is_corrected));
 
         const top = element("div", "ai-notification-center__item-top");
         const titleWrap = element("div", "ai-notification-center__item-title");
         if (!item.is_read) titleWrap.append(element("span", "ai-notification-center__unread-dot"));
         titleWrap.append(element("strong", "", item.title));
-        top.append(titleWrap, element("time", "", item.created_time));
+        top.append(titleWrap, element("time", "", item.is_corrected ? item.corrected_time : item.created_time));
         const client = item.client ? "Cliente: " + item.client : (item.unit ? "Unidade: " + item.unit : item.type_label);
         const summary = element("p", "ai-notification-center__item-summary", item.summary || item.message);
         const bottom = element("div", "ai-notification-center__item-bottom");
-        bottom.append(element("span", "ai-notification-center__priority " + priorityClass(item.priority), item.priority_label));
+        if (item.is_corrected) {
+            bottom.append(element("span", "ai-notification-center__corrected-badge", "Corrigida"));
+        } else {
+            bottom.append(element("span", "ai-notification-center__priority " + priorityClass(item.priority), item.priority_label));
+        }
         const readLabel = item.is_read ? "Marcar como não lido" : "Marcar como lido";
         const read = element("button", "ai-notification-center__read-action");
         read.type = "button";
@@ -273,8 +289,13 @@
         details.append(back);
 
         const meta = element("div", "ai-notification-center__details-meta");
-        meta.append(element("span", "ai-notification-center__priority " + priorityClass(item.priority), item.priority_label));
-        meta.append(element("time", "", item.created_date + " às " + item.created_time));
+        if (item.is_corrected) {
+            meta.append(element("span", "ai-notification-center__corrected-badge", "Correção confirmada"));
+            meta.append(element("time", "", item.corrected_date + " às " + item.corrected_time));
+        } else {
+            meta.append(element("span", "ai-notification-center__priority " + priorityClass(item.priority), item.priority_label));
+            meta.append(element("time", "", item.created_date + " às " + item.created_time));
+        }
         details.append(meta, element("h3", "", item.title));
         if (item.client) details.append(element("p", "ai-notification-center__details-client", item.client));
 
@@ -282,7 +303,16 @@
         [
             detailRow("OS", item.os_number), detailRow("RDO", item.rdo_number),
             detailRow("Unidade / local", item.unit), detailRow("Tipo", item.type_label),
-            detailRow("Origem", item.origin), detailRow("Estado", item.is_read ? "Lida" : "Pendente")
+            detailRow("Origem", item.origin),
+            detailRow("Situação", item.lifecycle_label),
+            detailRow("Leitura", item.is_read ? "Lida" : "Não lida"),
+            detailRow("Detectado em", item.created_date + " às " + item.created_time),
+            detailRow("Corrigido em", item.is_corrected ? item.corrected_date + " às " + item.corrected_time : ""),
+            detailRow("Corrigido por", item.corrected_by),
+            detailRow("Origem da correção", item.is_corrected ? item.correction_origin : ""),
+            detailRow("Consulta antes da correção", item.is_corrected ? (item.corrected_without_prior_read ? "Não" : "Sim") : ""),
+            detailRow("Tempo até a correção", item.resolution_time),
+            detailRow("Detecções do problema", item.occurrence_count > 1 ? item.occurrence_count : "")
         ].filter(Boolean).forEach(function (row) { grid.append(row); });
         if (grid.childElementCount) details.append(grid);
 
@@ -351,7 +381,7 @@
             if (!state.initialized) {
                 state.initialized = true;
                 if (state.tab === "pendentes" && Number(payload.counts.pending || 0) === 0 && Number(payload.counts.all || 0) > 0) {
-                    state.tab = "todas";
+                    state.tab = Number(payload.counts.corrected || 0) > 0 ? "corrigidas" : "todas";
                     tabs.forEach(function (tab) {
                         tab.setAttribute("aria-selected", tab.dataset.aiTab === state.tab ? "true" : "false");
                     });

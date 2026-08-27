@@ -4414,7 +4414,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const renderReference = (value = "") => `<div class="document-review__line"><input data-pt-reference value="${escapeHtml(value)}" placeholder="Documento, e-mail ou referência do cliente"><button type="button" data-pt-reference-remove>Remover</button></div>`;
         const renderHistogramRow = (row = {}) => `<div class="document-review__line document-review__histogram-line"><input data-pt-histogram-function value="${escapeHtml(row.funcao || "")}" placeholder="Função"><input type="number" min="1" step="1" inputmode="numeric" data-pt-histogram-quantity value="${escapeHtml(row.quantidade || "")}" placeholder="Qtd."><button type="button" data-pt-histogram-remove>Remover</button></div>`;
         const renderEquipmentHistogramRow = (description = "") => `<div class="document-review__line document-review__equipment-histogram-line"><input data-pt-equipment-description value="${escapeHtml(description)}" placeholder="Descrição do equipamento"><button type="button" data-pt-equipment-remove>Remover</button></div>`;
-        const revisionSection = currentRevision > 0
+        const revisionSection = true
             ? `<section class="document-review__section document-review__revision-board"><h3>Quadro de revisões</h3><table><thead><tr><th>Revisão</th><th>Data</th><th>Descrição</th></tr></thead><tbody>${revisionRows.map((row) => `<tr><td>${escapeHtml(row.revisao)}</td><td>${escapeHtml(row.data || "-")}</td><td>${escapeHtml(row.descricao || "-")}</td></tr>`).join("")}</tbody></table><div class="document-review__line-fields"><label>REV<input value="${String(currentRevision).padStart(2, "0")}" readonly></label><label>Data da revisão<input type="date" data-pt-revision-date value="${escapeHtml(content.data_revisao || "")}"></label><label>Descrição da revisão<input data-pt-revision-description value="${escapeHtml(content.descricao_revisao || "")}" placeholder="Descreva a alteração desta revisão"></label></div></section>`
             : `<section class="document-review__section document-review__revision-board"><h3>Quadro de revisões</h3><table><thead><tr><th>Revisão</th><th>Data</th><th>Descrição</th></tr></thead><tbody>${revisionRows.map((row) => `<tr><td>${escapeHtml(row.revisao)}</td><td>${escapeHtml(row.data || "-")}</td><td>${escapeHtml(row.descricao || "Emissão Inicial.")}</td></tr>`).join("")}</tbody></table></section>`;
         modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Técnica Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(payload.proposta.rev || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados automáticos <small>Origem: proposta comercial</small></h3><div class="document-review__readonly-grid"><span><b>Número da proposta</b>${escapeHtml(payload.proposta.numeroProposta || "Não informado")}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo || "Não informado")}</span><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa || "Não informado")}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section>${revisionSection}<section class="document-review__section"><h3>Resumo sobre a planta do cliente</h3><label><textarea data-pt-summary placeholder="Descreva resumidamente a planta do cliente.">${escapeHtml(content.resumo_planta || "")}</textarea></label></section><section class="document-review__section"><h3>Referências</h3><label class="document-review__checkbox"><input type="checkbox" data-pt-no-references ${content.sem_referencias ? "checked" : ""}> Não existem referências específicas</label><div class="document-review__lines" data-pt-reference-lines>${(references.length ? references : [""]).map(renderReference).join("")}</div><button type="button" data-pt-reference-add>+ Adicionar referência</button></section><section class="document-review__section"><h3>Histograma de mão de obra</h3><p class="document-review__notice">Informe a função e a quantidade inteira de cada profissional.</p><div class="document-review__lines" data-pt-histogram-lines>${(histogramRows.length ? histogramRows : [{}]).map(renderHistogramRow).join("")}</div><button type="button" data-pt-histogram-add>+ Adicionar função</button></section><section class="document-review__section"><h3>Histograma de equipamentos</h3><p class="document-review__notice">Informe a descrição de cada equipamento que deve constar no histograma.</p><div class="document-review__lines" data-pt-equipment-histogram-lines>${(equipmentHistogramRows.length ? equipmentHistogramRows : [""]).map(renderEquipmentHistogramRow).join("")}</div><button type="button" data-pt-equipment-add>+ Adicionar equipamento</button></section><section class="document-review__section"><h3>Prazo e jornada</h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pt-deadline value="${escapeHtml(content.prazo_execucao || "")}" placeholder="Ex.: 30 dias"></label><label>Jornada<input data-pt-journey value="${escapeHtml(content.jornada || "07:00 às 17:00.")}" placeholder="Ex.: 07:00 às 17:00."></label><label>Data de emissão<input type="date" data-pt-emission-date value="${escapeHtml(content.data_emissao || "")}"></label></div></section><section class="document-review__section"><h3>Conferência documental</h3><p class="document-review__notice">A revisão mostra somente os conteúdos variáveis destacados no documento oficial. Os demais textos e elementos permanecem inalterados.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
@@ -4536,7 +4536,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const quantity = row.querySelector("[data-pt-histogram-quantity]").value.trim();
                 return Boolean(functionName || quantity) && (!functionName || !/^\d+$/.test(quantity) || Number(quantity) < 1);
             });
-            if (!summary || !deadline || !journey || !emissionDate || (!hasReferences && !noReferences) || (hasReferences && noReferences) || invalidHistogram || (currentRevision > 0 && (!revisionDate || !revisionDescription))) {
+            if (!summary || !deadline || !journey || !emissionDate || (!hasReferences && !noReferences) || (hasReferences && noReferences) || invalidHistogram || !revisionDate || !revisionDescription) {
                 showNotification({
                     type: "warning",
                     title: "Revise os campos destacados",
@@ -4632,6 +4632,34 @@ document.addEventListener("DOMContentLoaded", () => {
         const documentRevision = review.revisaoDocumental || payload.proposta.rev || "00";
         modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>${reviewTitle}</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(documentRevision)} • ${operationLabel}</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais</h3><p><strong>Cliente:</strong> ${escapeHtml(payload.proposta.empresa)} &nbsp; <strong>Unidade:</strong> ${escapeHtml(payload.proposta.unidade)} &nbsp; <strong>Serviço:</strong> ${escapeHtml(payload.proposta.escopo || payload.proposta.servico)}</p></section><p class="document-review__notice">Conteúdo carregado do modelo oficial. Revise e confirme cada seção antes da emissão.</p><label>Introdução e objetivo<textarea data-document-introduction>${escapeHtml(review.introducao || "")}</textarea></label><label>Título do procedimento<input data-document-procedure-title value="${escapeHtml(review.procedimentoTitulo || "")}"></label>${renderLines("PROCEDIMENTO", "Procedimento")}${renderLines("EQUIPE", "Equipe", true)}${renderLines("EQUIPAMENTO", "Equipamentos", true)}${renderLines("PREMISSA", "Premissas")}${renderLines("OBRIGACAO", "Obrigações da contratante")}<section class="document-review__section"><h3>Proposta financeira</h3><p>Origem: dados oficiais da proposta comercial.</p>${(review.financeiro || []).map((item) => `<div>${escapeHtml(item.descricao)} — R$ ${escapeHtml(item.preco_unitario)} × ${escapeHtml(item.quantidade)}</div>`).join("")}</section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Continuar para pré-visualização</button></footer></div>`;
         document.body.appendChild(modal);
+        const financialChoices = Array.isArray(commercialBootstrap?.metadata?.financeiroCampoChoices)
+            ? commercialBootstrap.metadata.financeiroCampoChoices : [];
+        const renderFinancialOptions = (selectedName = "") => `<option value="">Selecione o item</option>${financialChoices.map((choice) => `<option value="${escapeHtml(choice.value)}" ${choice.value === selectedName ? "selected" : ""}>${escapeHtml(choice.label)}</option>`).join("")}`;
+        const renderFinancialRow = (item = {}) => {
+            const quantity = Math.max(1, Math.round(Number(String(item.quantidade || "1").replace(",", ".")) || 1));
+            return `<tr data-offshore-financial-row data-offshore-financial-id="${escapeHtml(String(item.id || ""))}"><td><select data-offshore-financial-name>${renderFinancialOptions(item.nome || "")}</select></td><td><input type="number" min="0" step="0.01" inputmode="decimal" data-offshore-financial-price value="${escapeHtml(String(item.preco_unitario || ""))}" placeholder="0,00"></td><td><input type="number" min="1" step="1" inputmode="numeric" data-offshore-financial-quantity value="${escapeHtml(String(quantity))}" placeholder="1"></td><td><strong data-offshore-financial-subtotal>R$ 0,00</strong></td><td><button type="button" class="document-review__financial-remove" data-offshore-financial-remove aria-label="Remover item">Remover</button></td></tr>`;
+        };
+        const financialSection = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.trim() === "Proposta financeira");
+        if (financialSection) {
+            financialSection.classList.add("document-review__section--offshore-financial");
+            financialSection.innerHTML = `<div class="document-review__financial-heading"><div><h3>Proposta financeira</h3><p>Edite os itens abaixo. As alterações atualizam a proposta e o PDF oficial.</p></div><strong data-offshore-financial-total>R$ 0,00</strong></div><div class="document-review__financial-table-wrap"><table class="document-review__financial-table"><thead><tr><th>Item / equipamento</th><th>Preço unitário</th><th>Quantidade</th><th>Subtotal</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody data-offshore-financial-rows>${(review.financeiro || []).map(renderFinancialRow).join("") || renderFinancialRow()}</tbody></table></div><div class="document-review__section-actions"><button type="button" data-offshore-financial-add>+ Adicionar item</button></div>`;
+        }
+        const parseFinancialValue = (value) => {
+            let normalized = String(value || "").trim();
+            if (normalized.includes(",")) normalized = normalized.replace(/\./g, "").replace(",", ".");
+            return Number(normalized) || 0;
+        };
+        const refreshFinancialTotals = () => {
+            let total = 0;
+            modal.querySelectorAll("[data-offshore-financial-row]").forEach((row) => {
+                const subtotal = parseFinancialValue(row.querySelector("[data-offshore-financial-price]")?.value) * parseFinancialValue(row.querySelector("[data-offshore-financial-quantity]")?.value);
+                row.querySelector("[data-offshore-financial-subtotal]").textContent = formatCurrencyDisplay(subtotal);
+                total += subtotal;
+            });
+            const totalNode = modal.querySelector("[data-offshore-financial-total]");
+            if (totalNode) totalNode.textContent = formatCurrencyDisplay(total);
+        };
+        refreshFinancialTotals();
         const documentNotice = modal.querySelector(".document-review__notice");
         const introductionField = modal.querySelector("[data-document-introduction]")?.closest("label");
         const procedureTitleField = modal.querySelector("[data-document-procedure-title]")?.closest("label");
@@ -4641,6 +4669,7 @@ document.addEventListener("DOMContentLoaded", () => {
             overviewSection.className = "document-review__section document-review__section--offshore-overview";
             overviewSection.innerHTML = "<h3>Introdução e procedimento</h3>";
             documentNotice.classList.add("document-review__notice--offshore");
+            documentNotice.textContent = "Sugestão contextual do Synchro AI baseada no serviço e na unidade da proposta. Revise e ajuste o conteúdo antes da emissão.";
             overviewSection.append(documentNotice, introductionField, procedureTitleField);
             generalSection.after(overviewSection);
         }
@@ -4670,6 +4699,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 confirmacoes[key] = block.querySelector("[data-document-confirm]").checked;
             });
 
+            const itensFinanceiros = [...modal.querySelectorAll("[data-offshore-financial-row]")].map((row) => ({
+                id: row.dataset.offshoreFinancialId || null,
+                nome: row.querySelector("[data-offshore-financial-name]")?.value || "",
+                preco_unitario: row.querySelector("[data-offshore-financial-price]")?.value || "",
+                quantidade: row.querySelector("[data-offshore-financial-quantity]")?.value || "",
+            })).filter((item) => item.nome || item.preco_unitario);
+
             const response = await fetchJson(
                 buildEndpoint(state.endpoints.documentReviewSavePattern, proposalId),
                 {
@@ -4680,6 +4716,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         procedimentoTitulo: modal.querySelector("[data-document-procedure-title]").value,
                         linhas: linhasPayload,
                         confirmacoes,
+                        itens_financeiros: itensFinanceiros,
                     }),
                 },
             );
@@ -4694,8 +4731,32 @@ document.addEventListener("DOMContentLoaded", () => {
             return response;
         };
 
+        modal.addEventListener("input", (event) => {
+            if (event.target.matches("[data-offshore-financial-price], [data-offshore-financial-quantity]")) {
+                refreshFinancialTotals();
+            }
+        });
+
         modal.addEventListener("click", async (event) => {
             if (event.target.closest("[data-document-close]")) return close();
+            if (event.target.closest("[data-offshore-financial-add]")) {
+                modal.querySelector("[data-offshore-financial-rows]")?.insertAdjacentHTML("beforeend", renderFinancialRow());
+                refreshFinancialTotals();
+                return;
+            }
+            if (event.target.closest("[data-offshore-financial-remove]")) {
+                const row = event.target.closest("[data-offshore-financial-row]");
+                const rows = modal.querySelectorAll("[data-offshore-financial-row]");
+                if (rows.length === 1) {
+                    row.querySelector("[data-offshore-financial-name]").value = "";
+                    row.querySelector("[data-offshore-financial-price]").value = "";
+                    row.querySelector("[data-offshore-financial-quantity]").value = "1";
+                } else {
+                    row.remove();
+                }
+                refreshFinancialTotals();
+                return;
+            }
             const section = event.target.closest("[data-document-kind]");
             if (event.target.closest("[data-document-add]")) section.querySelector(".document-review__lines").insertAdjacentHTML("beforeend", `<div class="document-review__line"><input placeholder="Descreva o conteúdo"><input class="document-review__quantity ${section.dataset.documentKind === "EQUIPE" || section.dataset.documentKind === "EQUIPAMENTO" ? "" : "is-hidden"}" placeholder="Qtd./POB"><button type="button" data-document-remove>Remover</button></div>`);
             if (event.target.closest("[data-document-remove]")) event.target.closest(".document-review__line").remove();

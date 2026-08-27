@@ -3,6 +3,7 @@ from urllib.parse import urlencode
 
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.functions import Coalesce
 from django.urls import reverse
 from django.utils import timezone
 
@@ -55,27 +56,47 @@ def _is_supervisor(user):
     )
 
 
-def accessible_alert_querysets(user, *, daily_only=False):
+def accessible_alert_querysets(
+    user,
+    *,
+    daily_only=False,
+    include_corrected=False,
+    corrected_only=False,
+):
     """Return both AI alert sources, optionally restricted to the daily preview."""
     period = _period_filter() if daily_only else {}
+    if corrected_only:
+        status_filter = Q(status="resolvido", motivo_encerramento="correcao_confirmada")
+    elif include_corrected:
+        status_filter = Q(status="pendente") | Q(
+            status="resolvido",
+            motivo_encerramento="correcao_confirmada",
+        )
+    else:
+        status_filter = Q(status="pendente")
+
     rdo_qs = (
-        AlertaInteligente.objects.filter(status="pendente", **period)
+        AlertaInteligente.objects.filter(status_filter, **period)
         .select_related(
             "rdo",
             "rdo__ordem_servico",
             "rdo__ordem_servico__Cliente",
             "rdo__ordem_servico__Unidade",
+            "corrigido_por",
         )
-        .order_by("-criado_em", "-id")
+        .annotate(notification_sort_at=Coalesce("corrigido_em", "criado_em"))
+        .order_by("-notification_sort_at", "-id")
     )
     operational_qs = (
-        AlertaOperacionalInteligente.objects.filter(status="pendente", **period)
+        AlertaOperacionalInteligente.objects.filter(status_filter, **period)
         .select_related(
             "ordem_servico",
             "ordem_servico__Cliente",
             "ordem_servico__Unidade",
+            "corrigido_por",
         )
-        .order_by("-criado_em", "-id")
+        .annotate(notification_sort_at=Coalesce("corrigido_em", "criado_em"))
+        .order_by("-notification_sort_at", "-id")
     )
     # Supervisors already see only their own operational context on the RDO
     # screen. Preserve that restriction in the notification APIs as well.
@@ -91,8 +112,16 @@ def _with_read_state(queryset, user, source):
         "lido": True,
         "alerta_rdo_id" if source == "rdo" else "alerta_operacional_id": OuterRef("pk"),
     }
+    any_prior_read_filter = {
+        "lido": True,
+        "lido_em__lte": OuterRef("corrigido_em"),
+        "alerta_rdo_id" if source == "rdo" else "alerta_operacional_id": OuterRef("pk"),
+    }
     return queryset.annotate(
-        user_has_read=Exists(LeituraAlertaIA.objects.filter(**receipt_filter))
+        user_has_read=Exists(LeituraAlertaIA.objects.filter(**receipt_filter)),
+        was_read_before_correction=Exists(
+            LeituraAlertaIA.objects.filter(**any_prior_read_filter)
+        ),
     )
 
 
@@ -158,6 +187,70 @@ def _safe_name(value):
     return str(getattr(value, "nome", None) or value)
 
 
+def _user_display_name(user):
+    if not user:
+        return ""
+    try:
+        full_name = user.get_full_name().strip()
+    except Exception:
+        full_name = ""
+    return full_name or getattr(user, "username", "") or str(user)
+
+
+def _format_elapsed(start, end):
+    if not start or not end:
+        return ""
+    seconds = max(0, int((end - start).total_seconds()))
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, _ = divmod(remainder, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}min")
+    return " ".join(parts)
+
+
+def _corrected_metrics(rdo_qs, operational_qs):
+    corrected_rdo = rdo_qs.filter(
+        status="resolvido",
+        motivo_encerramento="correcao_confirmada",
+    )
+    corrected_operational = operational_qs.filter(
+        status="resolvido",
+        motivo_encerramento="correcao_confirmada",
+    )
+    total = corrected_rdo.count() + corrected_operational.count()
+    without_prior_read = (
+        corrected_rdo.filter(was_read_before_correction=False).count()
+        + corrected_operational.filter(was_read_before_correction=False).count()
+    )
+    identified_user = (
+        corrected_rdo.filter(corrigido_por__isnull=False).count()
+        + corrected_operational.filter(corrigido_por__isnull=False).count()
+    )
+    elapsed_seconds = []
+    for queryset in (corrected_rdo, corrected_operational):
+        for created_at, corrected_at in queryset.values_list("criado_em", "corrigido_em"):
+            if created_at and corrected_at:
+                elapsed_seconds.append(max(0, int((corrected_at - created_at).total_seconds())))
+    average_seconds = int(sum(elapsed_seconds) / len(elapsed_seconds)) if elapsed_seconds else 0
+    average_time = ""
+    if elapsed_seconds:
+        average_time = _format_elapsed(
+            timezone.now(),
+            timezone.now() + timedelta(seconds=average_seconds),
+        )
+    return {
+        "total": total,
+        "without_prior_read": without_prior_read,
+        "with_identified_user": identified_user,
+        "average_correction_time": average_time,
+    }
+
+
 def serialize_alert(source, alert, is_read=False):
     target_section = ""
     if source == "rdo":
@@ -190,6 +283,13 @@ def serialize_alert(source, alert, is_read=False):
     explanation = getattr(alert, "explicacao_curta", None) or ""
     title = alert.identificacao_operacional
     created_local = timezone.localtime(alert.criado_em)
+    corrected_at = getattr(alert, "corrigido_em", None)
+    corrected_local = timezone.localtime(corrected_at) if corrected_at else None
+    is_corrected = bool(
+        alert.status == "resolvido"
+        and getattr(alert, "motivo_encerramento", "") == "correcao_confirmada"
+    )
+    sort_at = getattr(alert, "notification_sort_at", None) or corrected_at or alert.criado_em
     os_filter_url = ""
     if os_obj and os_number:
         os_filter_url = f"{reverse('rdo')}?{urlencode({'os': os_number})}"
@@ -207,9 +307,24 @@ def serialize_alert(source, alert, is_read=False):
         "type": alert.tipo,
         "type_label": alert.get_tipo_display(),
         "is_read": bool(is_read),
+        "is_corrected": is_corrected,
+        "lifecycle_status": "corrigida" if is_corrected else "pendente",
+        "lifecycle_label": "Corrigida" if is_corrected else "Pendente",
         "created_at": alert.criado_em.isoformat(),
+        "sort_at": sort_at.isoformat(),
         "created_date": created_local.strftime("%d/%m/%Y"),
         "created_time": created_local.strftime("%H:%M"),
+        "corrected_at": corrected_at.isoformat() if corrected_at else "",
+        "corrected_date": corrected_local.strftime("%d/%m/%Y") if corrected_local else "",
+        "corrected_time": corrected_local.strftime("%H:%M") if corrected_local else "",
+        "corrected_by": _user_display_name(getattr(alert, "corrigido_por", None)),
+        "correction_origin": getattr(alert, "get_origem_correcao_display", lambda: "")(),
+        "resolution_reason": getattr(alert, "get_motivo_encerramento_display", lambda: "")(),
+        "resolution_time": _format_elapsed(alert.criado_em, corrected_at),
+        "occurrence_count": getattr(alert, "quantidade_ocorrencias", 1) or 1,
+        "corrected_without_prior_read": bool(
+            is_corrected and not getattr(alert, "was_read_before_correction", False)
+        ),
         "os_number": os_number or "",
         "rdo_number": rdo_number or "",
         "client": client,
@@ -280,12 +395,12 @@ def filtered_page(
     query = (query or "").strip()
     priority = (priority or "").strip().lower()
     alert_type = (alert_type or "").strip().upper()
-    rdo_qs, operational_qs = accessible_alert_querysets(user)
+    rdo_qs, operational_qs = accessible_alert_querysets(user, include_corrected=True)
     rdo_qs = _with_read_state(rdo_qs, user, "rdo")
     operational_qs = _with_read_state(operational_qs, user, "operacional")
     global_unread = (
-        rdo_qs.filter(user_has_read=False).count()
-        + operational_qs.filter(user_has_read=False).count()
+        rdo_qs.filter(status="pendente", user_has_read=False).count()
+        + operational_qs.filter(status="pendente", user_has_read=False).count()
     )
     rdo_qs = _apply_database_filters(rdo_qs, "rdo", query, priority, alert_type)
     operational_qs = _apply_database_filters(
@@ -298,23 +413,31 @@ def filtered_page(
     counts = {
         "all": rdo_qs.count() + operational_qs.count(),
         "pending": (
-            rdo_qs.filter(user_has_read=False).count()
-            + operational_qs.filter(user_has_read=False).count()
+            rdo_qs.filter(status="pendente", user_has_read=False).count()
+            + operational_qs.filter(status="pendente", user_has_read=False).count()
         ),
         "read": (
-            rdo_qs.filter(user_has_read=True).count()
-            + operational_qs.filter(user_has_read=True).count()
+            rdo_qs.filter(status="pendente", user_has_read=True).count()
+            + operational_qs.filter(status="pendente", user_has_read=True).count()
+        ),
+        "corrected": (
+            rdo_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada").count()
+            + operational_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada").count()
         ),
     }
+    corrected_metrics = _corrected_metrics(rdo_qs, operational_qs)
     if tab == "lidas":
-        rdo_qs = rdo_qs.filter(user_has_read=True)
-        operational_qs = operational_qs.filter(user_has_read=True)
+        rdo_qs = rdo_qs.filter(status="pendente", user_has_read=True)
+        operational_qs = operational_qs.filter(status="pendente", user_has_read=True)
+    elif tab == "corrigidas":
+        rdo_qs = rdo_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada")
+        operational_qs = operational_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada")
     elif tab == "todas":
         pass
     else:
         tab = "pendentes"
-        rdo_qs = rdo_qs.filter(user_has_read=False)
-        operational_qs = operational_qs.filter(user_has_read=False)
+        rdo_qs = rdo_qs.filter(status="pendente", user_has_read=False)
+        operational_qs = operational_qs.filter(status="pendente", user_has_read=False)
 
     try:
         page = max(1, int(page))
@@ -329,11 +452,12 @@ def filtered_page(
     end = min(total, start + page_size)
     candidates = _serialize_annotated("rdo", list(rdo_qs[:end]))
     candidates += _serialize_annotated("operacional", list(operational_qs[:end]))
-    candidates.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+    candidates.sort(key=lambda item: (item["sort_at"], item["id"]), reverse=True)
     items = candidates[start:end]
     return {
         "items": items,
         "counts": counts,
+        "corrected_metrics": corrected_metrics,
         "unread_count": global_unread,
         "tab": tab,
         "page": page,
@@ -357,7 +481,7 @@ def filtered_page(
 
 
 def get_accessible_alert(user, source, alert_id):
-    rdo_qs, operational_qs = accessible_alert_querysets(user)
+    rdo_qs, operational_qs = accessible_alert_querysets(user, include_corrected=True)
     if source == "rdo":
         alert = rdo_qs.filter(pk=alert_id).first()
     elif source == "operacional":

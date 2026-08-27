@@ -10,9 +10,9 @@ from alertas_inteligentes.management.command_lock import (
     build_lock_message,
     command_execution_lock,
 )
-from alertas_inteligentes.models import AlertaInteligente
 from alertas_inteligentes.services.rdo_validator import (
     identificar_rdo,
+    sincronizar_alertas_rdo_apos_analise,
     sincronizar_alertas_anomalia_da_os,
     validar_rdo,
 )
@@ -89,15 +89,8 @@ class Command(BaseCommand):
                             erro_analise_ia=None,
                         )
 
-                        AlertaInteligente.objects.filter(
-                            rdo=rdo,
-                            status__in=["pendente", "em_analise"]
-                        ).update(
-                            status="resolvido",
-                            resolvido_em=timezone.now(),
-                            justificativa="Resolvido automaticamente apos nova analise do RDO."
-                        )
                         alertas = validar_rdo(rdo)
+                        sincronizar_alertas_rdo_apos_analise(rdo, alertas)
                         sincronizar_alertas_anomalia_da_os(
                             rdo.ordem_servico,
                             excluir_rdo_id=rdo.pk,

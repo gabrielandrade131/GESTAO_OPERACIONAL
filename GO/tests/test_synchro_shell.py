@@ -435,6 +435,93 @@ class SynchroShellTest(TestCase):
         self.assertEqual(central_response.json()['items'][0]['os_number'], 99009)
         self.assertNotContains(shell_response, 'class="synchro-alert-count"')
 
+    def test_corrected_tab_lists_only_ai_confirmed_corrections_with_metrics(self):
+        ordem, _ = self._create_operational_alert(number=99012)
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='12',
+            data=timezone.localdate(),
+            status_analise_ia='pendente',
+        )
+        alert = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo='RDO_SEM_TURNO',
+            mensagem='O turno estava ausente.',
+            prioridade='media',
+            status='pendente',
+        )
+        legacy = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo='PT_SEM_NUMERO',
+            mensagem='Resolução antiga sem comprovação.',
+            prioridade='alta',
+            status='resolvido',
+        )
+
+        with patch(
+            'alertas_inteligentes.services.rdo_validator.validar_rdo',
+            return_value=[],
+        ):
+            result = analisar_rdo_imediatamente(rdo.pk, corrigido_por_id=self.user.pk)
+
+        alert.refresh_from_db()
+        self.assertEqual(result['corrected'], 1)
+        self.assertEqual(alert.status, 'resolvido')
+        self.assertEqual(alert.motivo_encerramento, 'correcao_confirmada')
+        self.assertEqual(alert.corrigido_por, self.user)
+        self.assertIsNotNone(alert.corrigido_em)
+        self.assertFalse(LeituraAlertaIA.objects.filter(alerta_rdo=alert).exists())
+
+        response = self.client.get(
+            reverse('alertas_inteligentes:api_notificacoes'),
+            {'tab': 'corrigidas'},
+        )
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload['counts']['corrected'], 1)
+        self.assertEqual(payload['total'], 1)
+        self.assertEqual(payload['items'][0]['id'], alert.pk)
+        self.assertTrue(payload['items'][0]['is_corrected'])
+        self.assertEqual(payload['items'][0]['corrected_by'], 'Ana Silva')
+        self.assertEqual(payload['items'][0]['correction_origin'], 'Edição de usuário')
+        self.assertFalse(payload['items'][0]['is_read'])
+        self.assertTrue(payload['items'][0]['corrected_without_prior_read'])
+        self.assertEqual(payload['corrected_metrics']['without_prior_read'], 1)
+        self.assertEqual(payload['corrected_metrics']['with_identified_user'], 1)
+        self.assertTrue(payload['corrected_metrics']['average_correction_time'])
+        self.assertFalse(any(item['id'] == legacy.pk for item in payload['items']))
+
+    def test_reanalysis_preserves_the_same_pending_alert_when_problem_remains(self):
+        ordem, _ = self._create_operational_alert(number=99013)
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='13',
+            data=timezone.localdate(),
+            status_analise_ia='pendente',
+        )
+        alert = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo='RDO_SEM_TURNO',
+            mensagem='Alerta original.',
+            prioridade='media',
+            status='pendente',
+        )
+
+        result = analisar_rdo_imediatamente(rdo.pk, corrigido_por_id=self.user.pk)
+
+        alert.refresh_from_db()
+        self.assertTrue(result['processed'])
+        self.assertEqual(alert.status, 'pendente')
+        self.assertIsNone(alert.corrigido_em)
+        self.assertEqual(
+            AlertaInteligente.objects.filter(
+                rdo=rdo,
+                tipo='RDO_SEM_TURNO',
+                status='pendente',
+            ).count(),
+            1,
+        )
+
     def test_notification_api_rejects_user_without_ai_permission(self):
         regular = get_user_model().objects.create_user(
             username='no_ai_access', email='no-ai@example.com', password='test-password'

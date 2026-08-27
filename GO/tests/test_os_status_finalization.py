@@ -5,7 +5,13 @@ from django.contrib.auth.models import Group, User
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from GO.models import Cliente, OrdemServico, Unidade
+from GO.models import (
+    AvaliacaoSupervisorMovimentacao,
+    Cliente,
+    OrdemServico,
+    ResponsavelCoordenador,
+    Unidade,
+)
 
 
 class OrdemServicoStatusFinalizationTests(TestCase):
@@ -13,7 +19,11 @@ class OrdemServicoStatusFinalizationTests(TestCase):
         self.client = Client()
         self.cliente = Cliente.objects.create(nome='Cliente Teste')
         self.unidade = Unidade.objects.create(nome='Unidade Teste')
-        self.coordenador = next(value for value, _ in OrdemServico.COORDENADORES if value)
+        self.coordenador_obj = ResponsavelCoordenador.objects.create(
+            nome='Coordenador Teste Status',
+            coordenador=True,
+        )
+        self.coordenador = self.coordenador_obj.nome
         self.supervisor_group, _ = Group.objects.get_or_create(name='Supervisor')
         self.supervisor = User.objects.create_user(
             username='supervisor_status_os',
@@ -50,6 +60,13 @@ class OrdemServicoStatusFinalizationTests(TestCase):
         os_principal = self._create_os(numero_os=7001, status_operacao='Em Andamento', status_geral='Programada')
         os_mesma_ordem = self._create_os(numero_os=7001, status_operacao='Paralizada', status_geral='Paralizada')
         os_outra_ordem = self._create_os(numero_os=7002, status_operacao='Em Andamento', status_geral='Programada')
+        for movimentacao in (os_principal, os_mesma_ordem):
+            AvaliacaoSupervisorMovimentacao.objects.create(
+                ordem_servico=movimentacao,
+                supervisor=self.supervisor,
+                nota=AvaliacaoSupervisorMovimentacao.AVALIACAO_BOM,
+                avaliado_por=self.supervisor,
+            )
 
         response = self.client.post(
             reverse('editar_os_post'),
@@ -79,7 +96,7 @@ class OrdemServicoStatusFinalizationTests(TestCase):
         self.assertEqual(os_outra_ordem.status_operacao, 'Em Andamento')
         self.assertEqual(os_outra_ordem.status_geral, 'Programada')
 
-    def test_nova_linha_finalizada_em_os_existente_sincroniza_status_da_mesma_os(self):
+    def test_nova_linha_com_supervisor_nao_pode_nascer_finalizada_sem_avaliacao(self):
         os_existente = self._create_os(numero_os=8001, status_operacao='Em Andamento', status_geral='Programada')
 
         response = self.client.post(
@@ -108,14 +125,14 @@ class OrdemServicoStatusFinalizationTests(TestCase):
             secure=True,
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 400)
         payload = response.json()
-        self.assertTrue(payload.get('success'))
+        self.assertFalse(payload.get('success'))
+        self.assertEqual(payload.get('code'), 'supervisor_evaluation_required')
 
         linhas_mesma_os = list(OrdemServico.objects.filter(numero_os=8001).order_by('id'))
-        self.assertEqual(len(linhas_mesma_os), 2)
-        self.assertTrue(all(item.status_operacao == 'Finalizada' for item in linhas_mesma_os))
-        self.assertTrue(all(item.status_geral == 'Finalizada' for item in linhas_mesma_os))
+        self.assertEqual(len(linhas_mesma_os), 1)
+        self.assertEqual(linhas_mesma_os[0].status_operacao, 'Em Andamento')
 
     def test_nova_os_aceita_label_exibido_do_servico(self):
         response = self.client.post(
@@ -147,3 +164,36 @@ class OrdemServicoStatusFinalizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         criada = OrdemServico.objects.get(pk=response.json()['os']['id'])
         self.assertEqual(criada.servico, 'ADEQUAÇÃO DE EQUIPAMENTOS')
+
+    def test_nova_movimentacao_sem_supervisor_pode_ser_finalizada(self):
+        response = self.client.post(
+            reverse('lista_servicos'),
+            data={
+                'box_opcao': 'nova',
+                'os_existente': '',
+                'numero_os': '8003',
+                'Cliente': str(self.cliente.pk),
+                'Unidade': str(self.unidade.pk),
+                'solicitante': 'Solicitante Teste',
+                'servico': 'COLETA DE AR',
+                'metodo': 'Manual',
+                'pob': '1',
+                'data_inicio': '2026-03-01',
+                'tipo_operacao': 'Onshore',
+                'status_operacao': 'Em Andamento',
+                'status_geral': 'Finalizada',
+                'status_comercial': 'Em aberto',
+                'status_planejamento': 'Pendente',
+                'coordenador': self.coordenador,
+                'supervisor': '',
+                'volume_tanque': '0',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_HOST='localhost',
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        criada = OrdemServico.objects.get(pk=response.json()['os']['id'])
+        self.assertIsNone(criada.supervisor_id)
+        self.assertEqual(criada.status_geral, 'Finalizada')

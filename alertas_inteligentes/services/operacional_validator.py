@@ -169,6 +169,8 @@ def _resolver_alertas_operacionais_duplicados(alerta_principal):
         status="resolvido",
         resolvido_em=timezone.now(),
         justificativa="Resolvido automaticamente durante consolidacao de alerta operacional duplicado.",
+        motivo_encerramento="mudanca_contexto",
+        origem_correcao="automatica",
     )
 
 
@@ -203,6 +205,12 @@ def criar_alerta_operacional(
         alerta.resolvido_em = None
         alerta.resolvido_por = None
         alerta.ignorado_por = None
+        alerta.corrigido_em = None
+        alerta.corrigido_por = None
+        alerta.motivo_encerramento = ""
+        alerta.origem_correcao = ""
+        alerta.ultima_ocorrencia_em = timezone.now()
+        alerta.quantidade_ocorrencias = max(1, alerta.quantidade_ocorrencias or 1) + 1
         alerta.save(
             update_fields=[
                 "mensagem",
@@ -212,6 +220,12 @@ def criar_alerta_operacional(
                 "resolvido_em",
                 "resolvido_por",
                 "ignorado_por",
+                "corrigido_em",
+                "corrigido_por",
+                "motivo_encerramento",
+                "origem_correcao",
+                "ultima_ocorrencia_em",
+                "quantidade_ocorrencias",
             ]
         )
         _resolver_alertas_operacionais_duplicados(alerta)
@@ -223,6 +237,7 @@ def criar_alerta_operacional(
         referencia=referencia,
         mensagem=mensagem_final,
         prioridade=prioridade,
+        ultima_ocorrencia_em=timezone.now(),
     )
     _resolver_alertas_operacionais_duplicados(alerta)
     return alerta
@@ -256,6 +271,9 @@ def resolver_alertas_operacionais_obsoletos(
             status="resolvido",
             resolvido_em=timezone.now(),
             justificativa=justificativa,
+            corrigido_em=timezone.now(),
+            motivo_encerramento="correcao_confirmada",
+            origem_correcao="nao_identificada",
         )
 
 
@@ -282,6 +300,9 @@ def resolver_alertas_operacionais_por_tipo_nao_mapeados(
             status="resolvido",
             resolvido_em=timezone.now(),
             justificativa=justificativa,
+            corrigido_em=timezone.now(),
+            motivo_encerramento="correcao_confirmada",
+            origem_correcao="nao_identificada",
         )
     
 def validar_os_sem_rdo_recente(os_obj):

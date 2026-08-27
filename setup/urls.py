@@ -59,6 +59,7 @@ urlpatterns = [
     path('api/os/<int:os_id>/logistica/anexos/upload/', views.upload_anexo_logistica, name='api_logistica_anexos_upload'),
     path('api/os/<int:os_id>/edicao/anexos/', views.listar_anexos_edicao_os, name='api_edicao_os_anexos_list'),
     path('api/os/<int:os_id>/edicao/anexos/upload/', views.upload_anexo_edicao_os, name='api_edicao_os_anexos_upload'),
+    path('api/os/<int:os_id>/avaliacao-supervisor/', views.api_avaliacao_supervisor_movimentacao, name='api_avaliacao_supervisor_movimentacao'),
     path('os/numero/<int:numero_os>/id/', views.get_os_id_by_number, name='get_os_id_by_number'),
     path('editar_os/<int:os_id>/', views.editar_os, name='editar_os'),
     path('buscar_os/<int:os_id>/', views.buscar_os, name='buscar_os'),

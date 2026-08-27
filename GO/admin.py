@@ -4,10 +4,31 @@ from decimal import Decimal, ROUND_HALF_UP
 from .models import OrdemServico, RDO, RDOAtividade, Cliente, Unidade, Pessoa, Funcao, PlanejamentoEquipeOS, PlanejamentoEquipeMembro
 from .models import Equipamentos, EquipamentoFoto, Formulario_de_inspeção, Modelo, TipoEquipamento, FabricanteEquipamento
 from .models import RdoTanque, MobileSyncEvent, MobileApiToken, SupervisorAccessHeartbeat, RDOChannelEvent, SupervisorHandover
+from .models import ResponsavelCoordenador, AvaliacaoSupervisorMovimentacao
 try:
 	from .models import CoordenadorCanonical
 except Exception:
 	CoordenadorCanonical = None
+
+
+@admin.register(ResponsavelCoordenador)
+class ResponsavelCoordenadorAdmin(admin.ModelAdmin):
+	list_display = ('nome', 'usuario', 'coordenador', 'responsavel_comercial', 'ativo', 'atualizado_em')
+	search_fields = ('nome', 'usuario__username', 'usuario__first_name', 'usuario__last_name', 'usuario__email')
+	list_filter = ('coordenador', 'responsavel_comercial', 'ativo')
+	list_select_related = ('usuario',)
+
+
+@admin.register(AvaliacaoSupervisorMovimentacao)
+class AvaliacaoSupervisorMovimentacaoAdmin(admin.ModelAdmin):
+	list_display = ('ordem_servico', 'supervisor_nome_snapshot', 'nota', 'avaliado_por', 'avaliado_em')
+	search_fields = (
+		'ordem_servico__numero_os', 'supervisor_nome_snapshot',
+		'supervisor__username', 'avaliado_por__username',
+	)
+	list_filter = ('nota', 'avaliado_em')
+	list_select_related = ('ordem_servico', 'supervisor', 'avaliado_por')
+	readonly_fields = ('supervisor_nome_snapshot', 'criado_em', 'atualizado_em')
 
 
 @admin.register(SupervisorAccessHeartbeat)

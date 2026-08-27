@@ -91,6 +91,22 @@ class PerguntaAssistenteIA(models.Model):
         return f"{self.get_status_display()} - {self.pergunta[:80]}"
 
 class AlertaInteligente(models.Model):
+    MOTIVOS_ENCERRAMENTO = [
+        ("", "Não informado"),
+        ("correcao_confirmada", "Correção confirmada pela IA"),
+        ("resolucao_manual", "Encerrado manualmente"),
+        ("excecao_aceita", "Exceção aceita"),
+        ("mudanca_contexto", "Encerrado por mudança de contexto"),
+        ("reanalise_legada", "Encerrado por reanálise anterior"),
+    ]
+
+    ORIGENS_CORRECAO = [
+        ("", "Não informada"),
+        ("usuario", "Edição de usuário"),
+        ("automatica", "Correção automática"),
+        ("nao_identificada", "Responsável não identificado"),
+    ]
+
     PRIORIDADES = [
         ("baixa", "Baixa"),
         ("media", "Média"),
@@ -207,6 +223,28 @@ class AlertaInteligente(models.Model):
 
     criado_em = models.DateTimeField(auto_now_add=True)
     resolvido_em = models.DateTimeField(null=True, blank=True)
+    corrigido_em = models.DateTimeField(null=True, blank=True)
+    corrigido_por = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="alertas_rdo_corrigidos",
+    )
+    motivo_encerramento = models.CharField(
+        max_length=40,
+        choices=MOTIVOS_ENCERRAMENTO,
+        blank=True,
+        default="",
+    )
+    origem_correcao = models.CharField(
+        max_length=30,
+        choices=ORIGENS_CORRECAO,
+        blank=True,
+        default="",
+    )
+    ultima_ocorrencia_em = models.DateTimeField(null=True, blank=True)
+    quantidade_ocorrencias = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["-criado_em"]
@@ -216,6 +254,10 @@ class AlertaInteligente(models.Model):
             models.Index(fields=["prioridade"]),
             models.Index(fields=["equipe_responsavel"]),
             models.Index(fields=["referencia"]),
+            models.Index(
+                fields=["status", "motivo_encerramento", "corrigido_em"],
+                name="alert_rdo_corr_status_idx",
+            ),
         ]
 
     @property
@@ -401,6 +443,9 @@ class AlertaInteligente(models.Model):
         return f"RDO {numero_rdo} - {self.tipo}"
 
 class AlertaOperacionalInteligente(models.Model):
+    MOTIVOS_ENCERRAMENTO = AlertaInteligente.MOTIVOS_ENCERRAMENTO
+    ORIGENS_CORRECAO = AlertaInteligente.ORIGENS_CORRECAO
+
     PRIORIDADES = [
         ("baixa", "Baixa"),
         ("media", "Média"),
@@ -452,6 +497,28 @@ class AlertaOperacionalInteligente(models.Model):
 
     criado_em = models.DateTimeField(auto_now_add=True)
     resolvido_em = models.DateTimeField(null=True, blank=True)
+    corrigido_em = models.DateTimeField(null=True, blank=True)
+    corrigido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="alertas_operacionais_corrigidos",
+    )
+    motivo_encerramento = models.CharField(
+        max_length=40,
+        choices=MOTIVOS_ENCERRAMENTO,
+        blank=True,
+        default="",
+    )
+    origem_correcao = models.CharField(
+        max_length=30,
+        choices=ORIGENS_CORRECAO,
+        blank=True,
+        default="",
+    )
+    ultima_ocorrencia_em = models.DateTimeField(null=True, blank=True)
+    quantidade_ocorrencias = models.PositiveIntegerField(default=1)
 
     resolvido_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -476,6 +543,10 @@ class AlertaOperacionalInteligente(models.Model):
             models.Index(fields=["tipo"]),
             models.Index(fields=["prioridade"]),
             models.Index(fields=["referencia"]),
+            models.Index(
+                fields=["status", "motivo_encerramento", "corrigido_em"],
+                name="alert_oper_corr_status_idx",
+            ),
         ]
 
     def __str__(self):

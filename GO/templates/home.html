@@ -13,7 +13,7 @@
     <link rel="shortcut icon" href="{% static 'js/img/ico/favicon.ico' %}" type="image/x-icon">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260812a">
-    <link rel="stylesheet" href="{% static 'css/home_redesign.css' %}?v=20260727d">
+    <link rel="stylesheet" href="{% static 'css/home_redesign.css' %}?v=20260826b">
     <title>Ambipar - Synchro</title>
 </head>
 <body>
@@ -828,7 +828,18 @@
                             <td>{{ os.dias_de_operacao_frente|default:"-" }}</td>
                             <td>{{ os.turno|default:"-" }}</td>
                             <td>{{ os.solicitante|default:"-" }}</td>
-                            <td>{{ os.supervisor|default:"-" }}</td>
+                            <td>
+                                <div class="home-supervisor-cell">
+                                    <span>{{ os.supervisor|default:"-" }}</span>
+                                    {% if os.supervisor %}
+                                        {% if os.avaliacao_supervisor %}
+                                            <span class="home-supervisor-eval-badge is-complete" title="Avaliação: {{ os.avaliacao_supervisor.get_nota_display }}">Avaliado</span>
+                                        {% elif os.status_geral == 'Finalizada' %}
+                                            <span class="home-supervisor-eval-badge is-pending" title="Avaliação do supervisor pendente">Avaliar</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            </td>
                             <td>{{ os.coordenador|default:"-" }}</td>
                             <td>{{ os.po|default:"-" }}</td>
                             <td>{{ os.status_geral|default:"-" }}</td>
@@ -1117,9 +1128,48 @@
                             {% if form.supervisor %}
                                 {{ form.supervisor }}
                             {% else %}
-                                <input type="text" id="edit_supervisor" name="supervisor" class="form-control" required>
+                                <input type="text" id="edit_supervisor" name="supervisor" class="form-control">
                             {% endif %}
                         </div>
+                        <section class="supervisor-evaluation-card is-loading" id="supervisor-evaluation-card" aria-labelledby="supervisor-evaluation-title" aria-live="polite">
+                            <div class="supervisor-evaluation-card__header">
+                                <div class="supervisor-evaluation-card__heading">
+                                    <span class="supervisor-evaluation-card__icon material-icons" aria-hidden="true">workspace_premium</span>
+                                    <div>
+                                        <h3 id="supervisor-evaluation-title">Avaliação do supervisor</h3>
+                                        <p id="supervisor-evaluation-subtitle">Carregando informações da avaliação...</p>
+                                    </div>
+                                </div>
+                                <span class="supervisor-evaluation-status" id="supervisor-evaluation-status">Carregando</span>
+                            </div>
+
+                            <div class="supervisor-evaluation-message" id="supervisor-evaluation-message" role="status"></div>
+
+                            <div class="supervisor-evaluation-editor" id="supervisor-evaluation-editor" hidden>
+                                <div class="supervisor-evaluation-rating" role="radiogroup" aria-label="Nota do supervisor">
+                                    <button type="button" class="supervisor-evaluation-option" data-rating="OTIMO" aria-pressed="false"><span class="material-icons" aria-hidden="true">star</span><span>Ótimo</span></button>
+                                    <button type="button" class="supervisor-evaluation-option" data-rating="BOM" aria-pressed="false"><span class="material-icons" aria-hidden="true">thumb_up</span><span>Bom</span></button>
+                                    <button type="button" class="supervisor-evaluation-option" data-rating="REGULAR" aria-pressed="false"><span class="material-icons" aria-hidden="true">remove_circle_outline</span><span>Regular</span></button>
+                                    <button type="button" class="supervisor-evaluation-option is-negative" data-rating="RUIM" aria-pressed="false"><span class="material-icons" aria-hidden="true">thumb_down</span><span>Ruim</span></button>
+                                    <button type="button" class="supervisor-evaluation-option is-negative" data-rating="PESSIMO" aria-pressed="false"><span class="material-icons" aria-hidden="true">error_outline</span><span>Péssimo</span></button>
+                                </div>
+                                <div class="supervisor-evaluation-comment">
+                                    <label for="supervisor-evaluation-justification" id="supervisor-evaluation-comment-label">Comentário <span>(opcional)</span></label>
+                                    <textarea id="supervisor-evaluation-justification" maxlength="500" rows="3" placeholder="Registre pontos relevantes sobre a atuação do supervisor."></textarea>
+                                    <div class="supervisor-evaluation-comment__footer">
+                                        <span id="supervisor-evaluation-help">Obrigatório para notas Ruim ou Péssimo.</span>
+                                        <span id="supervisor-evaluation-count">0/500</span>
+                                    </div>
+                                </div>
+                                <div class="supervisor-evaluation-actions">
+                                    <span class="supervisor-evaluation-error" id="supervisor-evaluation-error" role="alert"></span>
+                                    <button type="button" class="supervisor-evaluation-save" id="supervisor-evaluation-save">
+                                        <span class="material-icons" aria-hidden="true">check_circle</span>
+                                        Salvar avaliação
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
                     </fieldset>
                     <!-- Fieldset 1: Histórico de Observações (somente leitura) -->
                     <fieldset class="form-section">
@@ -1301,7 +1351,7 @@
             <span>© 2026 Ambipar - v1.1</span>
         </a>
     </footer>
-    <script src="{% static 'js/scripts.js'%}?v=20260824a"></script>
+    <script src="{% static 'js/scripts.js'%}?v=20260826b"></script>
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
     <script src="{% static 'js/notifications.js' %}"></script>
     <script src="{% static 'js/logistica.js' %}?v=20260603a"></script>

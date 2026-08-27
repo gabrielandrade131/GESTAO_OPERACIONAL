@@ -3314,6 +3314,274 @@ document.addEventListener('DOMContentLoaded', function() {
 
 });
 // Gerenciamento do modal de edição de OS
+var homeSupervisorEvaluationState = {
+    osId: '', persistedSupervisorId: '', selectedRating: '', data: null
+};
+
+function getSupervisorEvaluationRefs() {
+    return {
+        card: document.getElementById('supervisor-evaluation-card'),
+        subtitle: document.getElementById('supervisor-evaluation-subtitle'),
+        status: document.getElementById('supervisor-evaluation-status'),
+        message: document.getElementById('supervisor-evaluation-message'),
+        editor: document.getElementById('supervisor-evaluation-editor'),
+        justification: document.getElementById('supervisor-evaluation-justification'),
+        comment: document.querySelector('#supervisor-evaluation-card .supervisor-evaluation-comment'),
+        commentLabel: document.getElementById('supervisor-evaluation-comment-label'),
+        help: document.getElementById('supervisor-evaluation-help'),
+        count: document.getElementById('supervisor-evaluation-count'),
+        error: document.getElementById('supervisor-evaluation-error'),
+        save: document.getElementById('supervisor-evaluation-save'),
+        options: Array.from(document.querySelectorAll('#supervisor-evaluation-card .supervisor-evaluation-option'))
+    };
+}
+
+function getEditSupervisorField() {
+    return document.querySelector('#form-edicao [name="supervisor"]');
+}
+
+function setSupervisorEvaluationCardClass(stateClass) {
+    var refs = getSupervisorEvaluationRefs();
+    if (!refs.card) return;
+    refs.card.classList.remove('is-loading', 'is-na', 'is-pending', 'is-complete', 'is-attention', 'is-error');
+    if (stateClass) refs.card.classList.add(stateClass);
+}
+
+function setSupervisorEvaluationRating(rating) {
+    var refs = getSupervisorEvaluationRefs();
+    var normalized = String(rating || '').trim().toUpperCase();
+    homeSupervisorEvaluationState.selectedRating = normalized;
+    refs.options.forEach(function(option) {
+        var selected = String(option.getAttribute('data-rating') || '') === normalized;
+        option.classList.toggle('is-selected', selected);
+        option.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    var requiresJustification = normalized === 'RUIM' || normalized === 'PESSIMO';
+    if (refs.comment) refs.comment.classList.toggle('is-required', requiresJustification);
+    if (refs.commentLabel) {
+        refs.commentLabel.innerHTML = requiresJustification
+            ? 'Justificativa <span>(obrigatória)</span>'
+            : 'Comentário <span>(opcional)</span>';
+    }
+    if (refs.help) {
+        refs.help.textContent = requiresJustification
+            ? 'Explique os pontos que justificam esta nota.'
+            : 'Obrigatório para notas Ruim ou Péssimo.';
+    }
+    if (refs.error) refs.error.textContent = '';
+}
+
+function resetSupervisorEvaluationCard() {
+    var refs = getSupervisorEvaluationRefs();
+    homeSupervisorEvaluationState = { osId: '', persistedSupervisorId: '', selectedRating: '', data: null };
+    setSupervisorEvaluationCardClass('is-loading');
+    if (refs.subtitle) refs.subtitle.textContent = 'Carregando informações da avaliação...';
+    if (refs.status) refs.status.textContent = 'Carregando';
+    if (refs.message) refs.message.textContent = '';
+    if (refs.editor) refs.editor.hidden = true;
+    if (refs.justification) refs.justification.value = '';
+    if (refs.count) refs.count.textContent = '0/500';
+    if (refs.error) refs.error.textContent = '';
+    setSupervisorEvaluationRating('');
+}
+
+function formatSupervisorEvaluationDate(value) {
+    if (!value) return '';
+    try {
+        return new Intl.DateTimeFormat('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        }).format(new Date(value));
+    } catch (e) { return String(value); }
+}
+
+function renderSupervisorEvaluation(data) {
+    var refs = getSupervisorEvaluationRefs();
+    if (!refs.card || !data) return;
+    homeSupervisorEvaluationState.data = data;
+    homeSupervisorEvaluationState.persistedSupervisorId = data.supervisor && data.supervisor.id
+        ? String(data.supervisor.id) : '';
+    if (refs.error) refs.error.textContent = '';
+
+    if (!data.applicable || !data.supervisor) {
+        setSupervisorEvaluationCardClass('is-na');
+        if (refs.subtitle) refs.subtitle.textContent = 'Esta movimentação não possui supervisor.';
+        if (refs.status) refs.status.textContent = 'Não aplicável';
+        if (refs.message) refs.message.textContent = 'A movimentação pode ser finalizada sem avaliação.';
+        if (refs.editor) refs.editor.hidden = true;
+        return;
+    }
+
+    var evaluation = data.evaluation || null;
+    if (refs.subtitle) refs.subtitle.textContent = data.supervisor.nome || 'Supervisor selecionado';
+    if (evaluation) {
+        setSupervisorEvaluationCardClass('is-complete');
+        if (refs.status) refs.status.textContent = evaluation.nota_label || 'Avaliado';
+        var metadata = 'Avaliação registrada';
+        if (evaluation.avaliado_por_nome) metadata += ' por ' + evaluation.avaliado_por_nome;
+        if (evaluation.avaliado_em) metadata += ' em ' + formatSupervisorEvaluationDate(evaluation.avaliado_em);
+        if (refs.message) refs.message.textContent = metadata + '.';
+    } else {
+        setSupervisorEvaluationCardClass(data.is_finalized ? 'is-na' : 'is-pending');
+        if (refs.status) refs.status.textContent = data.is_finalized ? 'Sem avaliação' : 'Pendente';
+        if (refs.message) {
+            if (data.is_finalized) {
+                refs.message.textContent = data.can_evaluate
+                    ? 'Registro histórico já finalizado. A avaliação pode ser incluída, mas não é obrigatória retroativamente.'
+                    : 'Registro histórico finalizado sem avaliação obrigatória.';
+            } else {
+                refs.message.textContent = data.can_evaluate
+                    ? 'A avaliação será obrigatória antes de finalizar esta movimentação.'
+                    : 'Aguardando a avaliação do coordenador vinculado a esta movimentação.';
+            }
+        }
+    }
+
+    if (refs.editor) refs.editor.hidden = !data.can_evaluate;
+    if (data.can_evaluate) {
+        setSupervisorEvaluationRating(evaluation ? evaluation.nota : '');
+        if (refs.justification) refs.justification.value = evaluation ? (evaluation.justificativa || '') : '';
+        if (refs.count && refs.justification) refs.count.textContent = refs.justification.value.length + '/500';
+    }
+}
+
+function renderSupervisorEvaluationForCurrentSelection() {
+    var refs = getSupervisorEvaluationRefs();
+    var supervisorField = getEditSupervisorField();
+    if (!refs.card || !supervisorField) return;
+    var selectedId = String(supervisorField.value || '').trim();
+    if (!selectedId) {
+        setSupervisorEvaluationCardClass('is-na');
+        if (refs.subtitle) refs.subtitle.textContent = 'Esta movimentação ficará sem supervisor.';
+        if (refs.status) refs.status.textContent = 'Não aplicável';
+        if (refs.message) refs.message.textContent = 'A movimentação pode ser finalizada sem avaliação.';
+        if (refs.editor) refs.editor.hidden = true;
+        return;
+    }
+    if (selectedId !== String(homeSupervisorEvaluationState.persistedSupervisorId || '')) {
+        setSupervisorEvaluationCardClass('is-attention');
+        var hasEvaluation = Boolean(homeSupervisorEvaluationState.data && homeSupervisorEvaluationState.data.evaluation);
+        if (refs.subtitle) refs.subtitle.textContent = hasEvaluation ? 'Alteração de supervisor bloqueada' : 'Novo supervisor selecionado';
+        if (refs.status) refs.status.textContent = hasEvaluation ? 'Já avaliado' : 'Salve primeiro';
+        if (refs.message) refs.message.textContent = hasEvaluation
+            ? 'Esta movimentação já possui avaliação e o supervisor não pode ser substituído.'
+            : 'Salve a alteração do supervisor antes de registrar a avaliação.';
+        if (refs.editor) refs.editor.hidden = true;
+        return;
+    }
+    if (homeSupervisorEvaluationState.data) renderSupervisorEvaluation(homeSupervisorEvaluationState.data);
+}
+
+async function carregarAvaliacaoSupervisor(osId) {
+    resetSupervisorEvaluationCard();
+    homeSupervisorEvaluationState.osId = String(osId || '');
+    try {
+        var data = await fetchJson('/api/os/' + encodeURIComponent(osId) + '/avaliacao-supervisor/');
+        if (String(homeSupervisorEvaluationState.osId) !== String(osId)) return;
+        renderSupervisorEvaluation(data);
+        renderSupervisorEvaluationForCurrentSelection();
+    } catch (err) {
+        var refs = getSupervisorEvaluationRefs();
+        setSupervisorEvaluationCardClass('is-error');
+        if (refs.status) refs.status.textContent = 'Indisponível';
+        if (refs.subtitle) refs.subtitle.textContent = 'Não foi possível carregar a avaliação.';
+        if (refs.message) refs.message.textContent = (err && err.message) || 'Tente novamente em instantes.';
+        if (refs.editor) refs.editor.hidden = true;
+    }
+}
+
+async function salvarAvaliacaoSupervisor() {
+    var refs = getSupervisorEvaluationRefs();
+    var state = homeSupervisorEvaluationState;
+    var rating = String(state.selectedRating || '').trim();
+    var justification = refs.justification ? String(refs.justification.value || '').trim() : '';
+    if (!rating) {
+        if (refs.error) refs.error.textContent = 'Selecione uma nota para o supervisor.';
+        if (refs.options.length) refs.options[0].focus();
+        return false;
+    }
+    if ((rating === 'RUIM' || rating === 'PESSIMO') && !justification) {
+        if (refs.error) refs.error.textContent = 'Informe a justificativa para esta nota.';
+        if (refs.justification) refs.justification.focus();
+        return false;
+    }
+
+    var originalText = refs.save ? refs.save.innerHTML : '';
+    if (refs.save) { refs.save.disabled = true; refs.save.textContent = 'Salvando...'; }
+    try {
+        var csrf = document.querySelector('[name=csrfmiddlewaretoken]');
+        var data = await fetchJson('/api/os/' + encodeURIComponent(state.osId) + '/avaliacao-supervisor/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf ? csrf.value : '' },
+            body: JSON.stringify({ nota: rating, justificativa: justification })
+        });
+        var currentData = state.data || {};
+        currentData.evaluation = data.evaluation;
+        currentData.can_evaluate = true;
+        renderSupervisorEvaluation(currentData);
+        NotificationManager.show('Avaliação do supervisor salva com sucesso.', 'success');
+        return true;
+    } catch (err) {
+        setSupervisorEvaluationCardClass('is-error');
+        if (refs.error) refs.error.textContent = (err && err.message) || 'Não foi possível salvar a avaliação.';
+        return false;
+    } finally {
+        if (refs.save) { refs.save.disabled = false; refs.save.innerHTML = originalText; }
+    }
+}
+
+function destacarAvaliacaoSupervisorPendente(errorData) {
+    var refs = getSupervisorEvaluationRefs();
+    if (!refs.card) return;
+    var pendentes = errorData && Array.isArray(errorData.movimentacoes_pendentes)
+        ? errorData.movimentacoes_pendentes : [];
+    var currentId = String(homeSupervisorEvaluationState.osId || '');
+    var currentPending = pendentes.some(function(item) { return String(item.id || '') === currentId; });
+    refs.card.classList.add('is-attention');
+    if (refs.error) refs.error.textContent = currentPending
+        ? 'Salve a avaliação antes de finalizar.'
+        : 'Existem outras movimentações desta OS com avaliação pendente.';
+    if (!currentPending && refs.message && pendentes.length) {
+        var labels = pendentes.map(function(item) { return item.frente ? 'movimentação ' + item.frente : 'ID ' + item.id; });
+        refs.message.textContent = 'Avalie primeiro: ' + labels.join(', ') + '.';
+    }
+    try { refs.card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    if (currentPending && refs.options.length) setTimeout(function() { refs.options[0].focus(); }, 250);
+}
+
+function syncSupervisorEvaluationFinalizationState() {
+    var refs = getSupervisorEvaluationRefs();
+    var data = homeSupervisorEvaluationState.data;
+    if (!refs.card || !data) return;
+    var statusGeral = document.getElementById('edit_status_geral');
+    var normalized = String(statusGeral ? statusGeral.value : '').trim().toLowerCase();
+    var isFinal = normalized === 'finalizada' || normalized === 'finalizado';
+    var selectedSupervisor = getEditSupervisorField();
+    var selectedId = String(selectedSupervisor ? selectedSupervisor.value : '').trim();
+    var sameSupervisor = selectedId === String(homeSupervisorEvaluationState.persistedSupervisorId || '');
+    if (isFinal && sameSupervisor && data.applicable && !data.evaluation) {
+        refs.card.classList.add('is-attention');
+        if (refs.error) refs.error.textContent = 'A avaliação deve ser salva antes da finalização.';
+    } else if (sameSupervisor) {
+        renderSupervisorEvaluation(data);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var refs = getSupervisorEvaluationRefs();
+    refs.options.forEach(function(option) {
+        option.addEventListener('click', function() { setSupervisorEvaluationRating(option.getAttribute('data-rating')); });
+    });
+    if (refs.justification) refs.justification.addEventListener('input', function() {
+        if (refs.count) refs.count.textContent = refs.justification.value.length + '/500';
+        if (refs.error) refs.error.textContent = '';
+    });
+    if (refs.save) refs.save.addEventListener('click', salvarAvaliacaoSupervisor);
+    var supervisorField = getEditSupervisorField();
+    if (supervisorField) supervisorField.addEventListener('change', renderSupervisorEvaluationForCurrentSelection);
+    var statusGeral = document.getElementById('edit_status_geral');
+    if (statusGeral) statusGeral.addEventListener('change', syncSupervisorEvaluationFinalizationState);
+});
+
 function abrirModalEdicao(osId) {
 
     
@@ -3353,6 +3621,7 @@ function abrirModalEdicao(osId) {
                     localStorage.setItem('rdo_pending_count', (count + 1).toString());
                 } catch(e) {}
                 document.getElementById('modal-edicao').style.display = 'flex';
+                carregarAvaliacaoSupervisor(data.os.id);
                 const novaObs = document.getElementById('nova_observacao');
                 if (novaObs) novaObs.value = '';
                 try { atualizarHistoricoAnexosEdicao(data.os.id); } catch (e) {}
@@ -3368,6 +3637,7 @@ function abrirModalEdicao(osId) {
 function fecharModalEdicao() {
     document.getElementById('modal-edicao').style.display = 'none';
     limparFormularioEdicao();
+    resetSupervisorEvaluationCard();
     // limpar container de tags para não manter estado entre edições
     try {
         const editContainer = document.getElementById('edit_servico_tags_container');
@@ -4018,6 +4288,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         NotificationManager.show('Erro ao atualizar OS: ' + (data && data.error), "error");
                     }
                 } catch (err) {
+                    if (err && err.data && err.data.code === 'supervisor_evaluation_required') {
+                        destacarAvaliacaoSupervisorPendente(err.data);
+                    }
                     NotificationManager.show("Erro ao atualizar OS: " + (err.message || JSON.stringify(err)), "error");
                 } finally {
                     submitBtn.textContent = originalText;
@@ -4110,131 +4383,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 
-// Validação client-side: exigir Supervisor ao abrir OS (movido do template)
-(function(){
-    function onReady(fn){ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
-    onReady(function(){
-        try{
-            var form = document.getElementById('form-os');
-            if (!form) return;
-            var supervisorSelect = form.querySelector('select[name="supervisor"]') || form.querySelector('[name="supervisor"]');
-            if (!supervisorSelect) return;
-
-            // marcar como required (para navegadores que suportam)
-            supervisorSelect.setAttribute('required','required');
-
-            // helper visual mínimo
-            function showInlineError(el, msg){
-                var id = el.getAttribute('data-err-id');
-                var existing = id ? document.getElementById(id) : null;
-                if (existing) existing.remove();
-                var err = document.createElement('div');
-                err.className = 'field-error small';
-                err.style.color = '#b00020';
-                err.style.marginTop = '6px';
-                err.style.fontSize = '0.9rem';
-                err.textContent = msg || 'Selecione um Supervisor';
-                var uid = 'err-supervisor-'+Date.now();
-                err.id = uid;
-                el.setAttribute('data-err-id', uid);
-                el.parentNode && el.parentNode.appendChild(err);
-                setTimeout(function(){ try{ err.style.opacity = '1'; }catch(e){} }, 20);
-            }
-
-            function clearInlineError(el){
-                var id = el.getAttribute('data-err-id');
-                if (!id) return;
-                var ex = document.getElementById(id);
-                if (ex) try{ ex.remove(); }catch(e){}
-                el.removeAttribute('data-err-id');
-            }
-
-            form.addEventListener('submit', function(ev){
-                try{
-                    var val = supervisorSelect.value;
-                    if (!val || String(val).trim() === ''){
-                        ev.preventDefault();
-                        ev.stopPropagation();
-                        clearInlineError(supervisorSelect);
-                        showInlineError(supervisorSelect, 'Por favor selecione um Supervisor antes de abrir a OS.');
-                        try{ supervisorSelect.focus(); }catch(e){}
-                        return false;
-                    }
-                    clearInlineError(supervisorSelect);
-                }catch(e){/* noop */}
-            }, false);
-
-            // remover erro ao mudar
-            supervisorSelect.addEventListener('change', function(){ clearInlineError(supervisorSelect); });
-
-        }catch(e){ console.error('validation init error', e); }
-    });
-})();
-// (Wrapper removed) lógica de pré-população de Supervisor e Tanques foi integrada diretamente em preencherFormularioEdicao
-
-// Validação client-side para o modal de edição (form-edicao) (movido do template)
-(function(){
-    function qs(sel, ctx){ return (ctx||document).querySelector(sel); }
-    function qsa(sel, ctx){ return Array.from((ctx||document).querySelectorAll(sel)); }
-
-    document.addEventListener('DOMContentLoaded', function(){
-        var form = qs('#form-edicao');
-        if (!form) return;
-
-        function clearError(el){
-            if (!el) return;
-            var id = el.getAttribute('data-err-id');
-            if (id){
-                var ex = document.getElementById(id);
-                if (ex) try{ ex.remove(); }catch(e){}
-                el.removeAttribute('data-err-id');
-            }
-        }
-
-        function showError(el, msg){
-            if (!el) return;
-            clearError(el);
-            var div = document.createElement('div');
-            div.className = 'field-error small';
-            div.style.color = '#b00020';
-            div.style.marginTop = '6px';
-            div.style.fontSize = '0.92rem';
-            div.textContent = msg || 'Campo obrigatório';
-            var uid = 'err-edit-supervisor-' + Date.now();
-            div.id = uid;
-            el.setAttribute('data-err-id', uid);
-            // prefer appending after the input element
-            try { el.parentNode && el.parentNode.appendChild(div); } catch(e){ form.appendChild(div); }
-            try { el.focus(); } catch(e){}
-        }
-
-        var sup = qs('#edit_supervisor') || qs('#form-edicao [name="supervisor"]');
-        if (!sup) return;
-
-        // ensure browsers that support required will know, but we still enforce
-        try { sup.setAttribute('required','required'); } catch(e){}
-
-        sup.addEventListener('input', function(){ clearError(sup); });
-        sup.addEventListener('change', function(){ clearError(sup); });
-
-        form.addEventListener('submit', function(ev){
-            try{
-                clearError(sup);
-                var val = (sup.value || '').toString().trim();
-                if (!val){
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    showError(sup, 'Por favor selecione ou informe um Supervisor antes de salvar.');
-                    return false;
-                }
-                // Optionally: further format checks can be added here
-            }catch(err){
-                // se ocorrer erro na validação, não impedir envio — mas logar
-                console.warn('Erro na validação do supervisor (form-edicao):', err);
-            }
-        }, false);
-    });
-})();
+// Supervisor é opcional. A avaliação passa a ser exigida somente quando
+// uma movimentação que possui supervisor é finalizada.
 
 // Campo `link_logistica` foi removido (agora é fixo).
 // O bloco legado de validação foi removido aqui porque estava com erro de sintaxe e quebrava o carregamento do arquivo.

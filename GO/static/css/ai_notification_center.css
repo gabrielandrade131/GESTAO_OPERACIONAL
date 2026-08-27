@@ -246,6 +246,26 @@
     font-size: 10px;
 }
 
+.ai-notification-center__correction-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 9px 24px;
+    border-top: 1px solid #e6eadf;
+    background: #f4fbf6;
+    color: #50605a;
+    font-size: 11px;
+}
+
+.ai-notification-center__correction-metrics[hidden] {
+    display: none;
+}
+
+.ai-notification-center__correction-metrics strong {
+    color: #27653f;
+    font-size: 12px;
+}
+
 .ai-notification-center__content {
     display: grid;
     min-height: 0;
@@ -398,6 +418,17 @@
     box-shadow: inset 0 0 0 1px #dceabf;
 }
 
+.ai-notification-center__item--corrected {
+    border-left-color: #3f8f5f;
+    background: #f4fbf6;
+}
+
+.ai-notification-center__item--corrected.ai-notification-center__item--active {
+    border-left-color: #2f7a4d;
+    background: #edf8f0 !important;
+    box-shadow: inset 0 0 0 1px #cce8d4;
+}
+
 .ai-notification-center__unread-dot {
     width: 7px;
     height: 7px;
@@ -475,6 +506,18 @@
 .ai-notification-priority--alta { background: #fff5e8; color: #b54708; }
 .ai-notification-priority--media { background: #fff9db; color: #8a6700; }
 .ai-notification-priority--baixa { background: #eef6ec; color: #3f6f32; }
+
+.ai-notification-center__corrected-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #e5f6e9;
+    color: #27653f;
+    font-size: 9px;
+    font-weight: 750;
+    text-transform: uppercase;
+}
 
 .ai-notification-center__item-time {
     color: #8490a1;
