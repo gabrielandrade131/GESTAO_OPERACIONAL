@@ -536,7 +536,9 @@ def _discover_android_release_metadata():
     globs_to_scan.extend(
         [
             '/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-v*.apk',
+            '/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-hml-v*.apk',
             '/var/www/mobile/rdo_offline_app/dist/android/*/ambipar-synchro-v*.apk',
+            '/var/www/mobile/rdo_offline_app/dist/android/*/ambipar-synchro-hml-v*.apk',
         ]
     )
 
