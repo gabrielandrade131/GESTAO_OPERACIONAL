@@ -559,6 +559,19 @@
     });
     loadMoreButton.addEventListener("click", function () { if (state.hasMore) loadPage(state.page + 1, true); });
     markAllButton.addEventListener("click", markAllRead);
+    
+    const exportButton = document.getElementById("ai-notification-export");
+    if (exportButton) {
+        exportButton.addEventListener("click", function () {
+            const url = new URL(exportButton.dataset.exportUrl, window.location.origin);
+            url.searchParams.set("tab", state.tab);
+            if (state.query) url.searchParams.set("q", state.query);
+            if (state.priority) url.searchParams.set("prioridade", state.priority);
+            if (state.alertType) url.searchParams.set("tipo", state.alertType);
+            window.location.href = url.toString();
+        });
+    }
+
     openButton.addEventListener("click", openCenter);
     closeButton.addEventListener("click", closeCenter);
     overlay.addEventListener("click", closeCenter);

@@ -110,6 +110,11 @@
             <p id="ai-notification-center-subtitle">Carregando notificações...</p>
         </div>
         <div class="ai-notification-center__header-actions">
+            <button type="button" class="ai-notification-center__export" id="ai-notification-export"
+                    title="Exportar alertas para Excel" data-export-url="{% url 'alertas_inteligentes:api_notificacoes_exportar_excel' %}">
+                <span class="material-icons" style="font-size: 18px; vertical-align: middle; margin-right: 4px;" aria-hidden="true">download</span>
+                Exportar Excel
+            </button>
             <button type="button" class="ai-notification-center__mark-all" id="ai-notification-mark-all"{% if not daily_ai_alert_count %} disabled{% endif %}>
                 Marcar todas como lidas
             </button>
@@ -166,7 +171,7 @@
     </div>
     <div class="ai-notification-center__toast" id="ai-notification-toast" role="status" aria-live="polite" hidden></div>
 </section>
-<script src="{% static 'js/ai_notification_center.js' %}?v=20260807a" defer></script>
+<script src="{% static 'js/ai_notification_center.js' %}?v=20260827b" defer></script>
 {% endif %}
 
 {% include '_password_change_modal.html' %}

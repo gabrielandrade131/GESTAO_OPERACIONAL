@@ -92,9 +92,34 @@
 .ai-notification-center__item-action,
 .ai-notification-center__detail-action,
 .ai-notification-center__back,
-.ai-notification-center__clear-search {
+.ai-notification-center__export,
+.ai-notification-center__mark-all {
     font: inherit;
     cursor: pointer;
+}
+
+.ai-notification-center__export {
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid #cfe0af;
+    border-radius: 9px;
+    background: #f8fcec;
+    color: #49660c;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.ai-notification-center__export:hover:not(:disabled) {
+    background: #f0f8d8;
+}
+
+.ai-notification-center__export:disabled {
+    cursor: default;
+    opacity: .48;
 }
 
 .ai-notification-center__mark-all {

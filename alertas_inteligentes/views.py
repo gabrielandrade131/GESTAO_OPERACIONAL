@@ -29,6 +29,9 @@ from .notification_center import (
     notification_snapshot,
     serialize_alert,
     set_read_state,
+    accessible_alert_querysets,
+    _with_read_state,
+    _apply_database_filters,
 )
 
 SESSAO_HISTORICO_IA = "alertas_inteligentes_historico"
@@ -68,6 +71,152 @@ def api_notificacoes(request):
     )
     payload["success"] = True
     return JsonResponse(payload)
+
+
+def api_notificacoes_exportar_excel(request):
+    forbidden = _notification_api_forbidden(request)
+    if forbidden:
+        return forbidden
+    if request.method != "GET":
+        return HttpResponse("Método não permitido.", status=405)
+
+    tab = request.GET.get("tab", "pendentes")
+    query = request.GET.get("q", "")
+    priority = request.GET.get("prioridade", "")
+    alert_type = request.GET.get("tipo", "")
+
+    # Retrieve all accessible alerts
+    rdo_qs, operational_qs = accessible_alert_querysets(request.user)
+
+    # Annotate read state
+    rdo_qs = _with_read_state(rdo_qs, request.user, "rdo")
+    operational_qs = _with_read_state(operational_qs, request.user, "operacional")
+
+    # Apply search and dropdown filters
+    rdo_qs = _apply_database_filters(rdo_qs, "rdo", query, priority, alert_type)
+    operational_qs = _apply_database_filters(operational_qs, "operacional", query, priority, alert_type)
+
+    # Filter based on active tab state
+    if tab == "lidas":
+        rdo_qs = rdo_qs.filter(user_has_read=True)
+        operational_qs = operational_qs.filter(user_has_read=True)
+    elif tab == "todas":
+        pass
+    else:  # default is 'pendentes'
+        rdo_qs = rdo_qs.filter(user_has_read=False)
+        operational_qs = operational_qs.filter(user_has_read=False)
+
+    records = []
+
+    # Process RDO-level alerts
+    for alert in rdo_qs:
+        rdo = alert.rdo
+        os_obj = getattr(rdo, "ordem_servico", None)
+        os_num = getattr(os_obj, "numero_os", "") if os_obj else ""
+        rdo_num = getattr(rdo, "rdo", None) or getattr(rdo, "numero_rdo", None) or rdo.pk
+
+        sup_name = ""
+        if os_obj and os_obj.supervisor:
+            sup_name = os_obj.supervisor.get_full_name() or os_obj.supervisor.username
+
+        unidade_name = ""
+        if os_obj and os_obj.Unidade:
+            unidade_name = os_obj.Unidade.nome
+
+        records.append({
+            "os": os_num,
+            "rdo": rdo_num,
+            "supervisor": sup_name,
+            "unidade": unidade_name,
+            "tipo": alert.get_tipo_display(),
+            "prioridade": alert.get_prioridade_display(),
+            "criado_em": alert.criado_em,
+        })
+
+    # Process Operational-level alerts (which have no RDO associated)
+    for alert in operational_qs:
+        os_obj = alert.ordem_servico
+        os_num = getattr(os_obj, "numero_os", "") if os_obj else ""
+        rdo_num = "N/A"
+
+        sup_name = ""
+        if os_obj and os_obj.supervisor:
+            sup_name = os_obj.supervisor.get_full_name() or os_obj.supervisor.username
+
+        unidade_name = ""
+        if os_obj and os_obj.Unidade:
+            unidade_name = os_obj.Unidade.nome
+
+        records.append({
+            "os": os_num,
+            "rdo": rdo_num,
+            "supervisor": sup_name,
+            "unidade": unidade_name,
+            "tipo": alert.get_tipo_display(),
+            "prioridade": alert.get_prioridade_display(),
+            "criado_em": alert.criado_em,
+        })
+
+    # Sort descending by criado_em, similar to UI list
+    records.sort(key=lambda x: x["criado_em"], reverse=True)
+
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Alertas Inteligentes"
+
+    # Style definitions
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    data_font = Font(name="Segoe UI", size=10)
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+
+    headers = ["OS", "Nº RDO", "Nome do Supervisor", "Unidade", "Tipo de alerta", "Prioridade"]
+    ws.append(headers)
+
+    # Format header row
+    for col_num in range(1, 7):
+        cell = ws.cell(row=1, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_align if col_num in [1, 2, 6] else left_align
+
+    # Fill data rows
+    for row_idx, rec in enumerate(records, start=2):
+        row_data = [
+            rec["os"],
+            rec["rdo"],
+            rec["supervisor"],
+            rec["unidade"],
+            rec["tipo"],
+            rec["prioridade"]
+        ]
+        ws.append(row_data)
+        for col_idx in range(1, 7):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.font = data_font
+            cell.alignment = center_align if col_idx in [1, 2, 6] else left_align
+
+    # Autofit columns
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            val_str = str(cell.value or "")
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="alertas_inteligentes.xlsx"'
+    wb.save(response)
+    return response
 
 
 def api_notificacao_detalhe(request, source, alert_id):
