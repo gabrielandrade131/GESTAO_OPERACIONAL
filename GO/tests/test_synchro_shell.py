@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -298,7 +298,7 @@ class SynchroShellTest(TestCase):
         self.assertFalse(receipt.lido)
         self.assertIsNone(receipt.lido_em)
 
-    def test_opening_notification_detail_does_not_mark_it_as_read(self):
+    def test_loading_notification_detail_api_alone_does_not_mark_it_as_read(self):
         _, alert = self._create_operational_alert(number=99008)
         detail_url = reverse(
             'alertas_inteligentes:api_notificacao_detalhe',
@@ -312,6 +312,36 @@ class SynchroShellTest(TestCase):
         self.assertFalse(
             LeituraAlertaIA.objects.filter(usuario=self.user, alerta_operacional=alert).exists()
         )
+
+    def test_notification_times_are_displayed_in_sao_paulo_timezone(self):
+        _, alert = self._create_operational_alert(number=99016)
+        corrected_at_utc = datetime(
+            2026,
+            8,
+            28,
+            16,
+            55,
+            tzinfo=datetime_timezone.utc,
+        )
+        AlertaOperacionalInteligente.objects.filter(pk=alert.pk).update(
+            status='resolvido',
+            motivo_encerramento='correcao_confirmada',
+            corrigido_em=corrected_at_utc,
+            corrigido_por=self.user,
+            origem_correcao='usuario',
+        )
+
+        response = self.client.get(
+            reverse(
+                'alertas_inteligentes:api_notificacao_detalhe',
+                args=['operacional', alert.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item = response.json()['item']
+        self.assertEqual(item['corrected_date'], '28/08/2026')
+        self.assertEqual(item['corrected_time'], '13:55')
 
     def test_rdo_alert_actions_use_editor_deep_link_and_filtered_rdo_page(self):
         ordem, _ = self._create_operational_alert(number=99010)
@@ -482,6 +512,69 @@ class SynchroShellTest(TestCase):
             ).json()['total'],
             1,
         )
+
+    def test_excel_keeps_individual_alerts_and_always_includes_corrected(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        ordem, operational_alert = self._create_operational_alert(number=99015)
+        operational_alert.delete()
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='15',
+            data=timezone.localdate(),
+            turno='Diurno',
+        )
+        pending = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo='PT_SEM_NUMERO',
+            mensagem='Número da PT ausente.',
+            prioridade='alta',
+            status='pendente',
+        )
+        corrected = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo='ATIVIDADE_SOBREPOSTA',
+            mensagem='Atividades sobrepostas.',
+            prioridade='media',
+            status='resolvido',
+            motivo_encerramento='correcao_confirmada',
+            corrigido_em=timezone.now(),
+            corrigido_por=self.user,
+            origem_correcao='usuario',
+        )
+        LeituraAlertaIA.objects.create(
+            usuario=self.user,
+            alerta_rdo=corrected,
+            lido=True,
+            lido_em=timezone.now(),
+        )
+
+        response = self.client.get(
+            reverse('alertas_inteligentes:api_notificacoes_exportar_excel'),
+            {'tab': 'pendentes'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content))
+        sheet = workbook['Alertas Inteligentes']
+        headers = [cell.value for cell in sheet[1]]
+        rows = [dict(zip(headers, values)) for values in sheet.iter_rows(min_row=2, values_only=True)]
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            {row['Tipo de alerta'] for row in rows},
+            {pending.get_tipo_display(), corrected.get_tipo_display()},
+        )
+        by_type = {row['Tipo de alerta']: row for row in rows}
+        self.assertEqual(by_type[pending.get_tipo_display()]['Corrigido'], 'Não')
+        self.assertEqual(by_type[pending.get_tipo_display()]['Situação'], 'Pendente')
+        self.assertEqual(by_type[corrected.get_tipo_display()]['Corrigido'], 'Sim')
+        self.assertEqual(by_type[corrected.get_tipo_display()]['Situação'], 'Corrigido')
+        self.assertEqual(by_type[corrected.get_tipo_display()]['Lido'], 'Sim')
+        self.assertEqual(by_type[corrected.get_tipo_display()]['Corrigido por'], 'Ana Silva')
+        self.assertTrue(by_type[corrected.get_tipo_display()]['Corrigido em'])
 
     def test_notification_api_filters_tabs_search_priority_and_marks_all(self):
         self._create_operational_alert(number=99004, priority='alta', message='Pressão crítica na unidade')

@@ -111,8 +111,7 @@
             node.textContent = String(counts[map[name]] || 0);
         });
         const unread = Number(payload.unread_count || 0);
-        subtitle.textContent = unread + (unread === 1 ? " notificação pendente" : " notificações pendentes");
-        markAllButton.disabled = unread === 0;
+        updateUnreadSummary(unread);
         const metrics = payload.corrected_metrics || {};
         if (correctionMetrics) {
             correctionMetrics.hidden = state.tab !== "corrigidas";
@@ -122,6 +121,17 @@
                 node.textContent = value === undefined || value === null || value === "" ? "—" : String(value);
             });
         }
+    }
+
+    function updateUnreadSummary(unread) {
+        subtitle.textContent = unread + (unread === 1 ? " notificação pendente" : " notificações pendentes");
+        markAllButton.disabled = unread === 0;
+    }
+
+    function changeVisibleCount(name, delta) {
+        const node = center.querySelector('[data-ai-count="' + name + '"]');
+        if (!node) return;
+        node.textContent = String(Math.max(0, Number(node.textContent || 0) + delta));
     }
 
     function updateBellBadge(unread) {
@@ -241,11 +251,11 @@
         });
         bottom.append(read);
         button.append(top, element("span", "ai-notification-center__item-client", client), summary, bottom);
-        button.addEventListener("click", function () { selectItem(item); });
+        button.addEventListener("click", function () { selectItem(item, true); });
         button.addEventListener("keydown", function (event) {
             if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                selectItem(item);
+                selectItem(item, true);
             }
         });
         return button;
@@ -373,7 +383,19 @@
         center.classList.add("is-detail-open");
     }
 
-    async function selectItem(item) {
+    async function persistReadState(item, isRead) {
+        return request(templateUrl(center.dataset.readUrlTemplate, item), {
+            method: "POST",
+            headers: {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken()
+            },
+            body: JSON.stringify({ lido: isRead })
+        });
+    }
+
+    async function selectItem(item, markOpenedAsRead) {
         state.selectedKey = item.key;
         list.querySelectorAll(".ai-notification-center__item").forEach(function (node) {
             const active = node.dataset.key === item.key;
@@ -383,7 +405,26 @@
         details.setAttribute("aria-busy", "true");
         try {
             const payload = await request(templateUrl(center.dataset.detailUrlTemplate, item));
-            if (state.selectedKey === item.key) renderDetails(payload.item);
+            let detailItem = payload.item;
+            if (markOpenedAsRead && !item.is_read) {
+                try {
+                    const readPayload = await persistReadState(item, true);
+                    const wasActive = !item.is_corrected;
+                    Object.assign(item, readPayload.item || {}, { is_read: true });
+                    detailItem = Object.assign({}, detailItem, readPayload.item || {}, { is_read: true });
+                    updateBellBadge(readPayload.unread_count);
+                    updateUnreadSummary(Number(readPayload.unread_count || 0));
+                    renderCompact(readPayload.compact_items || []);
+                    if (wasActive) {
+                        changeVisibleCount("pending", -1);
+                        changeVisibleCount("read", 1);
+                    }
+                    renderList(false);
+                } catch (readError) {
+                    showToast("O alerta foi aberto, mas não foi possível registrar a leitura.", true);
+                }
+            }
+            if (state.selectedKey === item.key) renderDetails(detailItem);
         } catch (error) {
             detailsEmpty("Não foi possível carregar os detalhes deste alerta.");
             showToast(error.message, true);
@@ -444,15 +485,7 @@
         const previous = item.is_read;
         item.is_read = isRead;
         try {
-            const payload = await request(templateUrl(center.dataset.readUrlTemplate, item), {
-                method: "POST",
-                headers: {
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": csrfToken()
-                },
-                body: JSON.stringify({ lido: isRead })
-            });
+            const payload = await persistReadState(item, isRead);
             updateBellBadge(payload.unread_count);
             renderCompact(payload.compact_items || []);
             showToast(isRead ? "Notificação marcada como lida." : "Notificação marcada como não lida.");
@@ -621,7 +654,6 @@
     if (exportButton) {
         exportButton.addEventListener("click", function () {
             const url = new URL(exportButton.dataset.exportUrl, window.location.origin);
-            url.searchParams.set("tab", state.tab);
             if (state.query) url.searchParams.set("q", state.query);
             if (state.priority) url.searchParams.set("prioridade", state.priority);
             if (state.alertType) url.searchParams.set("tipo", state.alertType);

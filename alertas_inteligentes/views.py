@@ -33,6 +33,7 @@ from .notification_center import (
     accessible_alert_querysets,
     _with_read_state,
     _apply_database_filters,
+    ai_localtime,
 )
 
 SESSAO_HISTORICO_IA = "alertas_inteligentes_historico"
@@ -81,13 +82,16 @@ def api_notificacoes_exportar_excel(request):
     if request.method != "GET":
         return HttpResponse("Método não permitido.", status=405)
 
-    tab = request.GET.get("tab", "pendentes")
     query = request.GET.get("q", "")
     priority = request.GET.get("prioridade", "")
     alert_type = request.GET.get("tipo", "")
 
-    # Retrieve all accessible alerts
-    rdo_qs, operational_qs = accessible_alert_querysets(request.user)
+    # A tela consolida os alertas por RDO, mas a planilha preserva uma linha
+    # por alerta e sempre inclui os pontos pendentes e os corrigidos.
+    rdo_qs, operational_qs = accessible_alert_querysets(
+        request.user,
+        include_corrected=True,
+    )
 
     # Annotate read state
     rdo_qs = _with_read_state(rdo_qs, request.user, "rdo")
@@ -97,17 +101,30 @@ def api_notificacoes_exportar_excel(request):
     rdo_qs = _apply_database_filters(rdo_qs, "rdo", query, priority, alert_type)
     operational_qs = _apply_database_filters(operational_qs, "operacional", query, priority, alert_type)
 
-    # Filter based on active tab state
-    if tab == "lidas":
-        rdo_qs = rdo_qs.filter(user_has_read=True)
-        operational_qs = operational_qs.filter(user_has_read=True)
-    elif tab == "todas":
-        pass
-    else:  # default is 'pendentes'
-        rdo_qs = rdo_qs.filter(user_has_read=False)
-        operational_qs = operational_qs.filter(user_has_read=False)
-
     records = []
+
+    def correction_columns(alert):
+        is_corrected = (
+            alert.status == "resolvido"
+            and alert.motivo_encerramento == "correcao_confirmada"
+        )
+        corrected_by = ""
+        if is_corrected and alert.corrigido_por:
+            corrected_by = (
+                alert.corrigido_por.get_full_name().strip()
+                or alert.corrigido_por.username
+            )
+        corrected_at = ""
+        if is_corrected and alert.corrigido_em:
+            corrected_at = ai_localtime(alert.corrigido_em).strftime("%d/%m/%Y %H:%M")
+        return {
+            "situacao": "Corrigido" if is_corrected else "Pendente",
+            "lido": "Sim" if alert.user_has_read else "Não",
+            "corrigido": "Sim" if is_corrected else "Não",
+            "corrigido_em": corrected_at,
+            "corrigido_por": corrected_by,
+            "origem_correcao": alert.get_origem_correcao_display() if is_corrected else "",
+        }
 
     # Process RDO-level alerts
     for alert in rdo_qs:
@@ -132,6 +149,7 @@ def api_notificacoes_exportar_excel(request):
             "tipo": alert.get_tipo_display(),
             "prioridade": alert.get_prioridade_display(),
             "criado_em": alert.criado_em,
+            **correction_columns(alert),
         })
 
     # Process Operational-level alerts (which have no RDO associated)
@@ -156,6 +174,7 @@ def api_notificacoes_exportar_excel(request):
             "tipo": alert.get_tipo_display(),
             "prioridade": alert.get_prioridade_display(),
             "criado_em": alert.criado_em,
+            **correction_columns(alert),
         })
 
     # Sort descending by criado_em, similar to UI list
@@ -176,15 +195,28 @@ def api_notificacoes_exportar_excel(request):
     center_align = Alignment(horizontal="center", vertical="center")
     left_align = Alignment(horizontal="left", vertical="center")
 
-    headers = ["OS", "Nº RDO", "Nome do Supervisor", "Unidade", "Tipo de alerta", "Prioridade"]
+    headers = [
+        "OS",
+        "Nº RDO",
+        "Nome do Supervisor",
+        "Unidade",
+        "Tipo de alerta",
+        "Prioridade",
+        "Situação",
+        "Lido",
+        "Corrigido",
+        "Corrigido em",
+        "Corrigido por",
+        "Origem da correção",
+    ]
     ws.append(headers)
 
     # Format header row
-    for col_num in range(1, 7):
+    for col_num in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col_num)
         cell.font = header_font
         cell.fill = header_fill
-        cell.alignment = center_align if col_num in [1, 2, 6] else left_align
+        cell.alignment = center_align if col_num in [1, 2, 6, 7, 8, 9, 10] else left_align
 
     # Fill data rows
     for row_idx, rec in enumerate(records, start=2):
@@ -194,13 +226,26 @@ def api_notificacoes_exportar_excel(request):
             rec["supervisor"],
             rec["unidade"],
             rec["tipo"],
-            rec["prioridade"]
+            rec["prioridade"],
+            rec["situacao"],
+            rec["lido"],
+            rec["corrigido"],
+            rec["corrigido_em"],
+            rec["corrigido_por"],
+            rec["origem_correcao"],
         ]
         ws.append(row_data)
-        for col_idx in range(1, 7):
+        for col_idx in range(1, len(headers) + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.font = data_font
-            cell.alignment = center_align if col_idx in [1, 2, 6] else left_align
+            cell.alignment = center_align if col_idx in [1, 2, 6, 7, 8, 9, 10] else left_align
+        status_fill = PatternFill(
+            start_color="E2F0D9" if rec["corrigido"] == "Sim" else "FFF2CC",
+            end_color="E2F0D9" if rec["corrigido"] == "Sim" else "FFF2CC",
+            fill_type="solid",
+        )
+        ws.cell(row=row_idx, column=7).fill = status_fill
+        ws.cell(row=row_idx, column=9).fill = status_fill
 
     # Autofit columns
     for col in ws.columns:

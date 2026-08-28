@@ -1,6 +1,8 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta, timezone as datetime_timezone
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Coalesce
@@ -26,6 +28,9 @@ RDO_GROUP_MODE_BY_SOURCE = {
     source: mode for mode, source in RDO_GROUP_SOURCE_BY_MODE.items()
 }
 PRIORITY_ORDER = {"critica": 0, "alta": 1, "media": 2, "baixa": 3}
+AI_DISPLAY_TIMEZONE = ZoneInfo(
+    getattr(settings, "AI_DISPLAY_TIME_ZONE", "America/Sao_Paulo")
+)
 
 RDO_ALERT_SECTION_MAP = {
     "RDO_SEM_TURNO": "identificacao",
@@ -49,11 +54,28 @@ RDO_ALERT_SECTION_MAP = {
 }
 
 
+def ai_localtime(value=None):
+    value = value or timezone.now()
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, datetime_timezone.utc)
+    return timezone.localtime(value, AI_DISPLAY_TIMEZONE)
+
+
 def _period_filter():
-    today = timezone.localdate()
+    today = ai_localtime().date()
+    start = datetime.combine(
+        today - timedelta(days=1),
+        time.min,
+        tzinfo=AI_DISPLAY_TIMEZONE,
+    )
+    end = datetime.combine(
+        today + timedelta(days=1),
+        time.min,
+        tzinfo=AI_DISPLAY_TIMEZONE,
+    )
     return {
-        "criado_em__date__gte": today - timedelta(days=1),
-        "criado_em__date__lte": today,
+        "criado_em__gte": start,
+        "criado_em__lt": end,
     }
 
 
@@ -292,9 +314,9 @@ def serialize_alert(source, alert, is_read=False):
     recommendation = getattr(alert, "acao_recomendada", None) or ""
     explanation = getattr(alert, "explicacao_curta", None) or ""
     title = alert.identificacao_operacional
-    created_local = timezone.localtime(alert.criado_em)
+    created_local = ai_localtime(alert.criado_em)
     corrected_at = getattr(alert, "corrigido_em", None)
-    corrected_local = timezone.localtime(corrected_at) if corrected_at else None
+    corrected_local = ai_localtime(corrected_at) if corrected_at else None
     is_corrected = bool(
         alert.status == "resolvido"
         and getattr(alert, "motivo_encerramento", "") == "correcao_confirmada"
