@@ -2096,7 +2096,7 @@ class RDO(models.Model):
                     if not unicodedata.combining(char)
                 )
                 canonical = {
-                    'manha': 'ManhÃ£',
+                    'manha': 'Manhã',
                     'tarde': 'Tarde',
                     'noite': 'Noite',
                 }.get(normalized, turno)
@@ -2106,7 +2106,7 @@ class RDO(models.Model):
                     turnos_normalizados.add(canonical_key)
 
             for field_name, canonical in (
-                ('pt_manha', 'ManhÃ£'),
+                ('pt_manha', 'Manhã'),
                 ('pt_tarde', 'Tarde'),
                 ('pt_noite', 'Noite'),
             ):
