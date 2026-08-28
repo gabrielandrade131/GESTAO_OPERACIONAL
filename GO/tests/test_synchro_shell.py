@@ -91,7 +91,7 @@ class SynchroShellTest(TestCase):
         self.assertContains(response, '<span>Planejamento</span>')
         self.assertContains(response, 'id="nav-negocios">Negócios</h2>')
         self.assertContains(response, f'href="{reverse("comercial_propostas")}"')
-        self.assertContains(response, '<span>Comercial</span>')
+        self.assertContains(response, '<span>Propostas</span>')
         self.assertContains(response, f'href="{reverse("alertas_inteligentes:listar_alertas")}"')
 
     def test_new_drawer_modules_are_highlighted_centrally(self):
@@ -101,7 +101,7 @@ class SynchroShellTest(TestCase):
         self.assertEqual(planejamento_response.context['synchro_active_module'], 'planejamento')
         self.assertEqual(comercial_response.context['synchro_active_module'], 'comercial')
 
-    def test_commercial_is_coming_soon_for_regular_users(self):
+    def test_proposals_are_available_for_regular_users(self):
         regular_user = get_user_model().objects.create_user(
             username='shell_regular',
             email='regular@example.com',
@@ -113,22 +113,21 @@ class SynchroShellTest(TestCase):
         commercial_url = reverse('comercial_propostas')
 
         self.assertEqual(menu_response.status_code, 200)
-        self.assertContains(menu_response, 'synchro-menu-btn--disabled')
-        self.assertContains(menu_response, '<span class="synchro-menu-badge">Em breve</span>')
-        self.assertNotContains(menu_response, f'href="{commercial_url}"')
+        self.assertContains(menu_response, f'href="{commercial_url}"')
+        self.assertContains(menu_response, '<span>Propostas</span>')
 
-        search_response = self.client.get(reverse('global_search'), {'q': 'Comercial'})
+        search_response = self.client.get(reverse('global_search'), {'q': 'Propostas'})
         self.assertEqual(search_response.status_code, 200)
-        self.assertFalse(
+        self.assertTrue(
             any(
-                group['title'] == 'Comercial'
+                group['title'] == 'Propostas'
                 or any(result['url'].startswith(commercial_url) for result in group['results'])
                 for group in search_response.json()['groups']
             )
         )
 
         direct_response = self.client.get(commercial_url)
-        self.assertEqual(direct_response.status_code, 403)
+        self.assertEqual(direct_response.status_code, 200)
 
     def test_synchro_ai_is_coming_soon_and_blocked_for_non_admins(self):
         regular_user = get_user_model().objects.create_user(
@@ -152,7 +151,7 @@ class SynchroShellTest(TestCase):
 
         search_response = self.client.get(reverse('global_search'), {'q': 'Synchro AI'})
         self.assertEqual(search_response.status_code, 200)
-        self.assertFalse(
+        self.assertTrue(
             any(
                 result['url'].startswith(ai_url)
                 for group in search_response.json()['groups']

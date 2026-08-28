@@ -17,7 +17,7 @@ from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.core.paginator import Paginator
-from django.http import FileResponse, HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
@@ -32,11 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 def commercial_preview_required(view_func):
-    """Restrict the unfinished Commercial module to the internal staff preview."""
+    """Compatibility decorator retained after the public launch of Propostas."""
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
-        if not request.user.is_staff:
-            return HttpResponseForbidden("O módulo Comercial estará disponível em breve.")
         return view_func(request, *args, **kwargs)
 
     return wrapped

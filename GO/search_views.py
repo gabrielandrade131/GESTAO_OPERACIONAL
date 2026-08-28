@@ -72,8 +72,7 @@ def _navigation_results(user, term):
         ("show_chart", "Relatório Técnico", "Relatórios · Curva S", "relatório", reverse("curva_s")),
         ("smartphone", "Download App Mobile", "Outros", "mobile", reverse("mobile_app_download")),
     ]
-    if user.is_staff:
-        items.append(("business_center", "Comercial", "Módulo Comercial", "comercial", reverse("comercial_propostas")))
+    items.append(("business_center", "Propostas", "Módulo de Propostas", "comercial propostas", reverse("comercial_propostas")))
     if can_manage_permissions:
         items.append(("devices", "Métricas Web e Mobile", "Operação", "métricas", reverse("supervisor_access_dashboard")))
         items.append(("verified_user", "Gerenciar Permissões", "Cadastros", "permissões", reverse("gerenciar_permissoes_rdo")))
@@ -210,7 +209,7 @@ def _commercial_results(term):
         .order_by("exact_match", "-proposta")
         .values("proposta", "status_proposta", "cliente__Cliente__nome", "unidade__Unidade__nome")[:RESULT_LIMIT]
     )
-    return [_result("business_center", f"Proposta {row['proposta']}", f"{row['cliente__Cliente__nome']} · {row['status_proposta']}", "Comercial", f"{reverse('comercial_propostas')}?proposta={row['proposta']}") for row in rows]
+    return [_result("business_center", f"Proposta {row['proposta']}", f"{row['cliente__Cliente__nome']} · {row['status_proposta']}", "Propostas", f"{reverse('comercial_propostas')}?proposta={row['proposta']}") for row in rows]
 
 
 @login_required(login_url="/login/")
@@ -228,6 +227,5 @@ def global_search(request):
         ("Equipamentos", _equipment_results(term)),
         ("Clientes e Unidades", _client_unit_results(term, request.user)),
     ]
-    if request.user.is_staff:
-        groups.append(("Comercial", _commercial_results(term)))
+    groups.append(("Propostas", _commercial_results(term)))
     return JsonResponse({"query": term, "groups": [{"title": title, "results": results} for title, results in groups if results]})
