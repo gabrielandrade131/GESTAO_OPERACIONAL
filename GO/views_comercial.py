@@ -203,7 +203,9 @@ def _get_next_proposal_number(lock=False):
     if lock:
         queryset = queryset.select_for_update()
     last_item = queryset.order_by("-proposta").first()
-    return (last_item.proposta if last_item else 0) + 1
+    if last_item:
+        return max(4000, last_item.proposta + 1)
+    return 4000
 
 
 def _safe_decimal(value, default="0"):

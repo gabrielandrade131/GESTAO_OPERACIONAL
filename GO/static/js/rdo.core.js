@@ -2918,7 +2918,6 @@
 
   function _validateSupervisorRetornoEquipamentosBeforeSubmit(form){
     if (!form) return true;
-<<<<<<< HEAD
     var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
     var refs = _getSupervisorRetornoInlineRefs();
     var allowed = Object.create(null);
@@ -2926,10 +2925,6 @@
       var id = parseInt(String((item && item.id) || '').trim(), 10);
       if (isFinite(id) && id > 0) allowed[id] = true;
     });
-    if (!items.length) {
-=======
-    var refs = _getSupervisorRetornoInlineRefs();
-    var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
     var isRequired = !!(
       refs.root &&
       refs.root.hidden !== true &&
@@ -2940,7 +2935,6 @@
     // o estado vazio de uma secao oculta bloqueava o envio e focava um radio
     // invisivel, fazendo o botao parecer completamente inerte.
     if (!isRequired) {
->>>>>>> a59f3143ed335b654c7d4ef8053bc81036d7c95e
       _setSupervisorRetornoInlineError('');
       return true;
     }
