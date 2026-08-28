@@ -10,7 +10,8 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.client = Client()
         self.username = 'testuser'
         self.password = 'OldPass123!'
-        self.user = User.objects.create_user(username=self.username, password=self.password, email='test@example.com')
+        self.email = 'test@example.com'
+        self.user = User.objects.create_user(username=self.username, password=self.password, email=self.email)
         # Setup status
         self.status, _ = UserPasswordChangeStatus.objects.get_or_create(user=self.user)
         self.factory = RequestFactory()
@@ -38,7 +39,7 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.assertEqual(response.status_code, 302) # Redirects to login
 
     def test_mandatory_change_success(self):
-        self.client.login(username=self.username, password=self.password)
+        self.client.login(username=self.email, password=self.password)
         url = reverse('change_password_mandatory')
         
         # Valid password change
@@ -62,7 +63,7 @@ class PasswordChangeMandatoryTestCase(TestCase):
         self.assertTrue(self.user.check_password(new_pass))
 
     def test_mandatory_change_validation_errors(self):
-        self.client.login(username=self.username, password=self.password)
+        self.client.login(username=self.email, password=self.password)
         url = reverse('change_password_mandatory')
 
         # 1. Wrong current password
@@ -127,3 +128,91 @@ class PasswordChangeMandatoryTestCase(TestCase):
         })
         self.assertEqual(response.status_code, 400)
         self.assertIn('A nova senha e a confirmação não coincidem.', response.json()['errors'])
+
+    def test_password_change_counter_decrement_and_removal(self):
+        self.client.login(username=self.email, password=self.password)
+        url = reverse('change_password_mandatory')
+
+        self.status.password_change_counter = 2
+        self.status.needs_password_change = True
+        self.status.save()
+
+        # Should require change
+        request = self.factory.get('/')
+        request.user = self.user
+        context = synchro_shell(request)
+        self.assertTrue(context['password_change_required'])
+
+        # First password change on web
+        new_pass = 'Secr3tPassword1!'
+        response = self.client.post(url, {
+            'current_password': self.password,
+            'new_password': new_pass,
+            'confirm_password': new_pass
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+
+        self.status.refresh_from_db()
+        # On web, counter is NOT decremented (remains 2)
+        self.assertEqual(self.status.password_change_counter, 2)
+        # But needs_password_change is immediately set to False
+        self.assertFalse(self.status.needs_password_change)
+
+        # Context processor should now show false
+        context = synchro_shell(request)
+        self.assertFalse(context['password_change_required'])
+
+    def test_mobile_api_password_change_required_in_responses(self):
+        from GO.models import MobileApiToken
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Set user as supervisor for mobile auth
+        from django.contrib.auth.models import Group
+        g, _ = Group.objects.get_or_create(name='Supervisor')
+        self.user.groups.add(g)
+
+        self.status.password_change_counter = 2
+        self.status.needs_password_change = True
+        self.status.save()
+
+        # 1. Test mobile auth token response
+        url_token = reverse('api_mobile_auth_token')
+        response = self.client.post(url_token, {
+            'username': self.username,
+            'password': self.password
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['password_change_required'])
+        self.assertTrue(data['user']['password_change_required'])
+
+        token = data['access_token']
+
+        # 2. Test mobile bootstrap response
+        url_bootstrap = reverse('api_mobile_bootstrap')
+        response = self.client.get(url_bootstrap, HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['password_change_required'])
+
+        # 3. Perform mobile password change
+        url_change = reverse('api_mobile_change_password')
+        response = self.client.post(url_change, {
+            'current_password': self.password,
+            'new_password': 'NewSuperPass1!',
+            'confirm_password': 'NewSuperPass1!'
+        }, content_type='application/json', HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+
+        # Verify DB status
+        self.status.refresh_from_db()
+        self.assertEqual(self.status.password_change_counter, 1)
+        self.assertFalse(self.status.needs_password_change)
+
+        # 4. Mobile bootstrap should now show false
+        response = self.client.get(url_bootstrap, HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()['password_change_required'])
+

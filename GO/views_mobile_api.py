@@ -1262,17 +1262,26 @@ def mobile_auth_token(request):
         expires_at=expires_at,
     )
 
+    from .models import UserPasswordChangeStatus
+    try:
+        status_obj, _ = UserPasswordChangeStatus.objects.get_or_create(user=user)
+        password_change_required = status_obj.is_change_required()
+    except Exception:
+        password_change_required = False
+
     return JsonResponse(
         {
             'success': True,
             'token_type': 'Bearer',
             'access_token': token.key,
             'expires_at': token.expires_at.isoformat() if token.expires_at else None,
+            'password_change_required': password_change_required,
             'user': {
                 'id': user.id,
                 'username': user.username,
                 'is_superuser': bool(getattr(user, 'is_superuser', False)),
                 'is_supervisor': True,
+                'password_change_required': password_change_required,
             },
         },
         status=200,
@@ -1961,6 +1970,13 @@ def mobile_bootstrap(request):
         row.pop('_planning_active_count', None)
         data.append(row)
 
+    from .models import UserPasswordChangeStatus
+    try:
+        status_obj, _ = UserPasswordChangeStatus.objects.get_or_create(user=request.user)
+        password_change_required = status_obj.is_change_required()
+    except Exception:
+        password_change_required = False
+
     latest_handover = None
     try:
         handover = (
@@ -1986,6 +2002,7 @@ def mobile_bootstrap(request):
             'success': True,
             'count': len(data),
             'items': data,
+            'password_change_required': password_change_required,
             'atividade_choices': atividade_choices,
             'servico_choices': servico_choices,
             'metodo_choices': metodo_choices,
@@ -2981,3 +2998,66 @@ def mobile_rdo_photo_upload(request):
             },
             status=500,
         )
+
+
+@csrf_exempt
+@mobile_auth_required
+@require_POST
+def mobile_change_password(request):
+    body, parse_error = _parse_json_body(request)
+    if parse_error:
+        current_password = request.POST.get('current_password', '')
+        new_password = request.POST.get('new_password', '')
+        confirm_password = request.POST.get('confirm_password', '')
+    else:
+        current_password = body.get('current_password', '')
+        new_password = body.get('new_password', '')
+        confirm_password = body.get('confirm_password', '')
+
+    if not current_password or not new_password or not confirm_password:
+        return JsonResponse({'success': False, 'errors': ['Todos os campos são obrigatórios.']}, status=400)
+
+    if not request.user.check_password(current_password):
+        return JsonResponse({'success': False, 'errors': ['Senha atual incorreta.']}, status=400)
+
+    if new_password != confirm_password:
+        return JsonResponse({'success': False, 'errors': ['A nova senha e a confirmação não coincidem.']}, status=400)
+
+    # Password complexity checks
+    errors = []
+    if len(new_password) < 8:
+        errors.append('A senha deve ter pelo menos 8 caracteres.')
+    if not any(c.isupper() for c in new_password):
+        errors.append('A senha deve conter pelo menos uma letra maiúscula.')
+    if not any(c.islower() for c in new_password):
+        errors.append('A senha deve conter pelo menos uma letra minúscula.')
+    if not any(c.isdigit() for c in new_password):
+        errors.append('A senha deve conter pelo menos um número.')
+    # Check for special characters
+    special_chars = r"[!@#$%^&*(),.?\":{}|<>\-_+=\[\]\\/;`~]"
+    if not re.search(special_chars, new_password):
+        errors.append('A senha deve conter pelo menos um caractere especial (ex: @, $, !, %, *, ?, &).')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError
+    try:
+        validate_password(new_password, request.user)
+    except ValidationError as e:
+        return JsonResponse({'success': False, 'errors': e.messages}, status=400)
+
+    # All checks passed, change password
+    request.user.set_password(new_password)
+    request.user.save()
+
+    # Update needs_password_change status
+    from .models import UserPasswordChangeStatus
+    status, created = UserPasswordChangeStatus.objects.get_or_create(user=request.user)
+    status.password_change_counter = max(0, status.password_change_counter - 1)
+    if status.password_change_counter <= 1:
+        status.needs_password_change = False
+    status.save()
+
+    return JsonResponse({'success': True})

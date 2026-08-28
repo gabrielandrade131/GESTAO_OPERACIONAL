@@ -7,6 +7,11 @@ urlpatterns = [
     path("", views.listar_alertas, name="listar_alertas"),
     path("api/notificacoes/", views.api_notificacoes, name="api_notificacoes"),
     path(
+        "api/notificacoes/exportar-excel/",
+        views.api_notificacoes_exportar_excel,
+        name="api_notificacoes_exportar_excel",
+    ),
+    path(
         "api/notificacoes/marcar-todas-lidas/",
         views.api_notificacoes_marcar_todas_lidas,
         name="api_notificacoes_marcar_todas_lidas",

@@ -17,7 +17,7 @@
      {% endif %}
      {% if not is_supervisor %}
      <link rel="stylesheet" href="{% static 'css/rdo_nao_supervisor.css' %}?v=20260813a">
-     <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260812a">
+     <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260827b">
      <style id="rdo-synchro-header-guard">
          /* A RDO carrega estilos legados extensos. Este guard fica por último
             no documento para preservar o mesmo componente global sem permitir
@@ -71,7 +71,11 @@
 
 <body{% if not is_supervisor %} class="rdo-admin-body"{% endif %}>
 
-            {% if not is_supervisor %}{% include '_synchro_shell.html' %}{% endif %}
+            {% if not is_supervisor %}
+                {% include '_synchro_shell.html' %}
+            {% else %}
+                {% include '_password_change_modal.html' %}
+            {% endif %}
 
             <nav class="drawer-nav" id="drawer-nav">
                 <a href="/" class="menu-btn">
@@ -2123,7 +2127,11 @@
     </script>
     <script src="/static/vendor/rdo-pdf/html2canvas.min.js?v=1.4.1"></script>
     <script src="/static/vendor/rdo-pdf/jspdf.umd.min.js?v=2.5.1"></script>
+<<<<<<< HEAD
+    <script src="{% static 'js/rdo.core.js' %}?v=20260826b"></script>
+=======
     <script src="{% static 'js/rdo.core.js' %}?v=20260824g"></script>
+>>>>>>> a59f3143ed335b654c7d4ef8053bc81036d7c95e
     <script src="{% static 'js/rdo_approval.js' %}?v=20260805a"></script>
     {% if not is_supervisor %}
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>

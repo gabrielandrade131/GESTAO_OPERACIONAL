@@ -28,7 +28,7 @@ class MobileReleaseContextTest(SimpleTestCase):
                 with patch('GO.mobile_release.os.path.getmtime', return_value=1710200000.0):
                     with patch(
                         'GO.mobile_release.os.path.exists',
-                        side_effect=lambda path: path == apk_path,
+                        side_effect=lambda path: os.path.normpath(path) == os.path.normpath(apk_path),
                     ):
                         context = resolve_mobile_release_context(request)
 

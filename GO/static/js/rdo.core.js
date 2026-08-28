@@ -26,6 +26,75 @@
     } catch(_){}
   }
 
+  function _showHandoverConfirm(title, message, onConfirm, onCancel) {
+    if (document.getElementById('handover-confirm-modal')) return;
+
+    var backdrop = document.createElement('div');
+    backdrop.id = 'handover-confirm-modal';
+    backdrop.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(16, 24, 40, 0.45); z-index: 200000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);';
+
+    var container = document.createElement('div');
+    container.style.cssText = 'background: #ffffff; border-radius: 16px; box-shadow: 0 24px 48px rgba(20, 31, 50, 0.18); border: 1px solid #e7eaf0; width: 92%; max-width: 420px; padding: 24px; display: flex; flex-direction: column; gap: 16px; transform: scale(0.92); opacity: 0; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;';
+
+    var header = document.createElement('h3');
+    header.style.cssText = 'margin: 0; font-family: inherit; font-size: 18px; font-weight: 750; color: #172033;';
+    header.textContent = title;
+
+    var body = document.createElement('p');
+    body.style.cssText = 'margin: 0; font-family: inherit; font-size: 14px; color: #667085; line-height: 1.5;';
+    body.textContent = message;
+
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end; margin-top: 8px;';
+
+    var btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'btn-rdo outline';
+    btnCancel.style.cssText = 'min-width: 90px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; cursor: pointer; transition: all 0.15s ease;';
+    btnCancel.textContent = 'Não';
+
+    var btnConfirm = document.createElement('button');
+    btnConfirm.type = 'button';
+    btnConfirm.className = 'btn-rdo primary';
+    btnConfirm.style.cssText = 'min-width: 90px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; cursor: pointer; transition: all 0.15s ease;';
+    btnConfirm.textContent = 'Sim';
+
+    footer.appendChild(btnCancel);
+    footer.appendChild(btnConfirm);
+    container.appendChild(header);
+    container.appendChild(body);
+    container.appendChild(footer);
+    backdrop.appendChild(container);
+    document.body.appendChild(backdrop);
+
+    requestAnimationFrame(function() {
+      backdrop.style.opacity = '1';
+      container.style.opacity = '1';
+      container.style.transform = 'scale(1)';
+    });
+
+    function closeConfirmModal() {
+      backdrop.style.opacity = '0';
+      container.style.opacity = '0';
+      container.style.transform = 'scale(0.92)';
+      setTimeout(function() {
+        if (backdrop.parentNode) {
+          backdrop.parentNode.removeChild(backdrop);
+        }
+      }, 250);
+    }
+
+    btnCancel.addEventListener('click', function() {
+      closeConfirmModal();
+      if (typeof onCancel === 'function') onCancel();
+    });
+
+    btnConfirm.addEventListener('click', function() {
+      closeConfirmModal();
+      if (typeof onConfirm === 'function') onConfirm();
+    });
+  }
+
   var RDO_EDIT_ACCESS_MESSAGE = 'Seu usuario nao possui permissao para abrir ou editar RDO.';
   var RDO_READ_ONLY_MESSAGE = 'Modo somente leitura: voce pode consultar todos os dados, mas nao pode altera-los.';
 
@@ -2723,9 +2792,78 @@
           || (state.answer === false && radio.value === 'nao');
       } catch(_){ }
     });
-    try { if (refs.actions) refs.actions.hidden = true; } catch(_){ }
-    try { if (refs.list) refs.list.innerHTML = ''; } catch(_){ }
+    try { if (refs.actions) refs.actions.hidden = state.answer !== true; } catch(_){ }
+    if (state.answer === true) _renderSupervisorRetornoInlineEquipamentos(form, list);
+    else {
+      try { if (refs.list) refs.list.innerHTML = ''; } catch(_){ }
+    }
+    _updateSupervisorRetornoInlineSummary(form);
     _setSupervisorRetornoInlineError('');
+  }
+
+  function _updateSupervisorRetornoInlineSummary(form){
+    var refs = _getSupervisorRetornoInlineRefs();
+    var state = _getSupervisorRetornoEquipamentosState(form);
+    try {
+      if (refs.summary) {
+        refs.summary.textContent = state.answer === true
+          ? ((state.selectedIds || []).length ? String(state.selectedIds.length) + ' equipamento(s) selecionado(s).' : 'Nenhum equipamento selecionado.')
+          : 'Nenhum equipamento selecionado.';
+      }
+    } catch(_){ }
+  }
+
+  function _renderSupervisorRetornoInlineEquipamentos(form, items){
+    var refs = _getSupervisorRetornoInlineRefs();
+    if (!refs.list) return;
+    var list = Array.isArray(items) ? items : [];
+    var state = _getSupervisorRetornoEquipamentosState(form);
+    var selectedMap = Object.create(null);
+    (state.selectedIds || []).forEach(function(id){
+      var parsed = parseInt(String(id || '').trim(), 10);
+      if (isFinite(parsed) && parsed > 0) selectedMap[parsed] = true;
+    });
+    try { refs.list.innerHTML = ''; } catch(_){ }
+    list.forEach(function(item){
+      var id = parseInt(String((item && item.id) || '').trim(), 10);
+      if (!isFinite(id) || id <= 0) return;
+      var row = document.createElement('label');
+      row.className = 'sup-retorno-equip-item';
+      if (selectedMap[id]) row.classList.add('is-selected');
+      row.setAttribute('data-retorno-inline-item', String(id));
+      var head = document.createElement('div');
+      head.className = 'sup-retorno-equip-item__head';
+      var checkbox = document.createElement('input');
+      checkbox.className = 'sup-retorno-equip-item__check';
+      checkbox.type = 'checkbox';
+      checkbox.value = String(id);
+      checkbox.checked = !!selectedMap[id];
+      checkbox.setAttribute('data-retorno-inline-id', String(id));
+      var body = document.createElement('div');
+      var title = document.createElement('p');
+      title.className = 'sup-retorno-equip-item__title';
+      title.textContent = String(item.tipo_equipamento || '-');
+      var meta = document.createElement('div');
+      meta.className = 'sup-retorno-equip-item__meta';
+      [
+        ['Modelo', item.modelo || '-'],
+        ['Número de Série', item.numero_serie || '-'],
+        ['TAG', item.tag || '-']
+      ].forEach(function(pair){
+        var line = document.createElement('span');
+        var strong = document.createElement('strong');
+        strong.textContent = pair[0] + ': ';
+        line.appendChild(strong);
+        line.appendChild(document.createTextNode(String(pair[1])));
+        meta.appendChild(line);
+      });
+      body.appendChild(title);
+      body.appendChild(meta);
+      head.appendChild(checkbox);
+      head.appendChild(body);
+      row.appendChild(head);
+      refs.list.appendChild(row);
+    });
   }
 
   function _hydrateSupervisorRetornoEquipamentosState(snapshot){
@@ -2780,6 +2918,16 @@
 
   function _validateSupervisorRetornoEquipamentosBeforeSubmit(form){
     if (!form) return true;
+<<<<<<< HEAD
+    var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
+    var refs = _getSupervisorRetornoInlineRefs();
+    var allowed = Object.create(null);
+    items.forEach(function(item){
+      var id = parseInt(String((item && item.id) || '').trim(), 10);
+      if (isFinite(id) && id > 0) allowed[id] = true;
+    });
+    if (!items.length) {
+=======
     var refs = _getSupervisorRetornoInlineRefs();
     var items = Array.isArray(form.__retornoEquipamentosItems) ? form.__retornoEquipamentosItems : [];
     var isRequired = !!(
@@ -2792,16 +2940,34 @@
     // o estado vazio de uma secao oculta bloqueava o envio e focava um radio
     // invisivel, fazendo o botao parecer completamente inerte.
     if (!isRequired) {
+>>>>>>> a59f3143ed335b654c7d4ef8053bc81036d7c95e
       _setSupervisorRetornoInlineError('');
       return true;
     }
     var currentState = _getSupervisorRetornoEquipamentosState(form);
+    var validSelectedIds = [];
+    (currentState.selectedIds || []).forEach(function(id){
+      if (allowed[id]) validSelectedIds.push(id);
+    });
+    if (validSelectedIds.length !== (currentState.selectedIds || []).length) {
+      _setSupervisorRetornoEquipamentosState(form, currentState.answer, validSelectedIds);
+      currentState = _getSupervisorRetornoEquipamentosState(form);
+    }
     if (currentState.answer !== true && currentState.answer !== false) {
       _setSupervisorRetornoInlineError('Responda se há equipamentos retornando para a base.');
       try {
         var first = document.querySelector('input[name="sup-retorno-inline-choice"]');
         if (first) first.focus();
       } catch(_){ }
+      return false;
+    }
+    if (currentState.answer === false) {
+      _setSupervisorRetornoInlineError('');
+      return true;
+    }
+    if (!currentState.selectedIds || !currentState.selectedIds.length) {
+      _setSupervisorRetornoInlineError('Selecione pelo menos 1 equipamento com previsão de retorno.');
+      try { if (refs.selectBtn) refs.selectBtn.focus(); } catch(_){ }
       return false;
     }
     _setSupervisorRetornoInlineError('');
@@ -5683,6 +5849,18 @@
         else showToast(dataCr.message || 'RDO criado', 'success');
         try { document.dispatchEvent(new CustomEvent('rdo:saved', { detail: { mode: 'create', response: dataCr } })); } catch(_){ }
         try { closeModal(); } catch(_){ }
+        var finalizeAndReload = function() {
+          try {
+            setTimeout(function(){
+              try {
+                var q = new URLSearchParams(window.location.search || '');
+                q.set('page', '1');
+                window.location.href = window.location.pathname + (q.toString() ? '?' + q.toString() : '');
+              } catch(_){ try { window.location.reload(); } catch(_){} }
+            }, 400);
+          } catch(_){ try { window.location.reload(); } catch(_){} }
+        };
+
         try {
           var irHandoverChk = document.getElementById('sup-ir-handover');
           var isRetornoSim = false;
@@ -5691,31 +5869,34 @@
             if (radioSim && radioSim.checked) isRetornoSim = true;
           } catch(_){}
           if ((irHandoverChk && irHandoverChk.checked) || isRetornoSim) {
-            var osIdToRedirect = '';
-            try {
-              osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
-            } catch(e){}
-            if (!osIdToRedirect) {
-              try {
-                var osInput = form.querySelector('[name="ordem_servico_id"]');
-                if (osInput) osIdToRedirect = osInput.value;
-              } catch(e){}
-            }
-            setTimeout(function(){
-              window.location.href = '/handover/novo/' + (osIdToRedirect ? '?os_id=' + encodeURIComponent(osIdToRedirect) : '');
-            }, 500);
+            _showHandoverConfirm(
+              "Preencher Handover",
+              "Gostaria de preencher o handover?",
+              function() {
+                var osIdToRedirect = '';
+                try {
+                  osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
+                } catch(e){}
+                if (!osIdToRedirect) {
+                  try {
+                    var osInput = form.querySelector('[name="ordem_servico_id"]');
+                    if (osInput) osIdToRedirect = osInput.value;
+                  } catch(e){}
+                }
+                setTimeout(function(){
+                  window.location.href = '/handover/novo/' + (osIdToRedirect ? '?os_id=' + encodeURIComponent(osIdToRedirect) : '');
+                }, 500);
+              },
+              function() {
+                finalizeAndReload();
+              }
+            );
             return;
           }
-        } catch(e){ console.error('Redirect to handover failed', e); }
-        try {
-          setTimeout(function(){
-            try {
-              var q = new URLSearchParams(window.location.search || '');
-              q.set('page', '1');
-              window.location.href = window.location.pathname + (q.toString() ? '?' + q.toString() : '');
-            } catch(_){ try { window.location.reload(); } catch(_){} }
-          }, 400);
-        } catch(_){ try { window.location.reload(); } catch(_){} }
+        } catch(e){
+          console.error('Redirect to handover failed', e);
+        }
+        finalizeAndReload();
       }
     } catch(err){
       showToast(err && err.name === 'AbortError' ? 'Tempo de requisição expirou' : (err && err.message ? err.message : 'Erro ao salvar'), 'error');
