@@ -10790,7 +10790,7 @@ def create_rdo_ajax(request):
                 same_os_status_updates = _promote_programada_os_with_rdo_to_em_andamento(
                     getattr(rdo_obj, 'ordem_servico', None),
                 )
-                agendar_analise_rdo(rdo_obj)
+                agendar_analise_rdo(rdo_obj, corrigido_por=request.user)
 
                 try:
                     rdo_pk = payload.get('id') if payload is not None else getattr(rdo_obj, 'id', None)
@@ -10831,7 +10831,7 @@ def create_rdo_ajax(request):
             same_os_status_updates = _promote_programada_os_with_rdo_to_em_andamento(
                 getattr(rdo_obj, 'ordem_servico', None),
             )
-            agendar_analise_rdo(rdo_obj)
+            agendar_analise_rdo(rdo_obj, corrigido_por=request.user)
             return JsonResponse({
                 'success': True,
                 'message': 'RDO criado',
@@ -11201,7 +11201,7 @@ def update_rdo_ajax(request):
         same_os_status_updates = _promote_programada_os_with_rdo_to_em_andamento(
             getattr(rdo_obj, 'ordem_servico', None),
         )
-        agendar_analise_rdo(rdo_obj)
+        agendar_analise_rdo(rdo_obj, corrigido_por=request.user)
         return JsonResponse({
             'success': True,
             'message': 'RDO atualizado',

@@ -1,4 +1,5 @@
 from django.template.loader import render_to_string
+import json
 import tempfile
 from django.http import JsonResponse
 import logging
@@ -24,7 +25,7 @@ class CustomLoginView(auth_views.LoginView):
         except Exception:
             pass
         return response
-from .models import OrdemServico, Cliente, Unidade, RDO, RdoTanque, TipoEquipamento, FabricanteEquipamento, LogisticaAnexo, EdicaoOSAnexo, ResponsavelCoordenador, _canonical_tank_alias_for_os
+from .models import OrdemServico, Cliente, Unidade, RDO, RdoTanque, TipoEquipamento, FabricanteEquipamento, LogisticaAnexo, EdicaoOSAnexo, ResponsavelCoordenador, AvaliacaoSupervisorMovimentacao, _canonical_tank_alias_for_os
 import unicodedata
 from django.db.models import Func, F, Case, When, Value, CharField
 import re
@@ -43,7 +44,9 @@ import tempfile
 import subprocess
 from datetime import datetime
 from django.conf import settings
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 from .models import Equipamentos
 from .mobile_release import resolve_mobile_release_context
@@ -941,6 +944,91 @@ def _propagate_finalizada_status_for_same_os(os_obj):
         return 0
 
 
+def _serialize_supervisor_movement_evaluation(avaliacao):
+    if avaliacao is None:
+        return None
+    return {
+        'id': avaliacao.pk,
+        'ordem_servico_id': avaliacao.ordem_servico_id,
+        'supervisor_id': avaliacao.supervisor_id,
+        'supervisor_nome': avaliacao.supervisor_nome_snapshot,
+        'nota': avaliacao.nota,
+        'nota_label': avaliacao.get_nota_display(),
+        'justificativa': avaliacao.justificativa or '',
+        'avaliado_por_id': avaliacao.avaliado_por_id,
+        'avaliado_por_nome': AvaliacaoSupervisorMovimentacao._nome_usuario(avaliacao.avaliado_por),
+        'avaliado_em': avaliacao.avaliado_em.isoformat() if avaliacao.avaliado_em else None,
+    }
+
+
+def _coordenador_da_movimentacao(os_obj):
+    coordenador = getattr(os_obj, 'coordenador_cadastro', None)
+    if coordenador is not None:
+        return coordenador
+    nome = str(getattr(os_obj, 'coordenador', '') or '').strip()
+    if not nome:
+        return None
+    return ResponsavelCoordenador.objects.filter(
+        nome__iexact=nome,
+        coordenador=True,
+    ).first()
+
+
+def _user_can_evaluate_movement_supervisor(user, os_obj):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_superuser', False):
+        return True
+    coordenador = _coordenador_da_movimentacao(os_obj)
+    return bool(
+        coordenador
+        and coordenador.ativo
+        and coordenador.usuario_id
+        and coordenador.usuario_id == user.pk
+    )
+
+
+def _pending_supervisor_evaluations_for_finalization(os_obj, previous_status_geral):
+    """Return movements that would become final without an evaluation."""
+    candidates = []
+    current_was_final = _status_operacao_is_finalizada(previous_status_geral)
+    current_will_finalize = _status_operacao_is_finalizada(getattr(os_obj, 'status_geral', ''))
+    if current_will_finalize and not current_was_final:
+        candidates.append(os_obj)
+
+    operation_will_finalize = _status_operacao_is_finalizada(getattr(os_obj, 'status_operacao', ''))
+    if operation_will_finalize and getattr(os_obj, 'numero_os', None) not in (None, ''):
+        siblings = OrdemServico.objects.filter(numero_os=os_obj.numero_os).exclude(pk=os_obj.pk)
+        for sibling in siblings:
+            if not _status_operacao_is_finalizada(getattr(sibling, 'status_geral', '')):
+                candidates.append(sibling)
+
+    pending = []
+    seen = set()
+    for movement in candidates:
+        movement_key = getattr(movement, 'pk', None)
+        if movement_key in seen:
+            continue
+        seen.add(movement_key)
+        supervisor_id = getattr(movement, 'supervisor_id', None)
+        if not supervisor_id:
+            continue
+        has_evaluation = bool(
+            movement_key
+            and AvaliacaoSupervisorMovimentacao.objects.filter(
+                ordem_servico_id=movement_key,
+                supervisor_id=supervisor_id,
+            ).exists()
+        )
+        if not has_evaluation:
+            pending.append({
+                'id': movement_key,
+                'frente': getattr(movement, 'frente', None),
+                'supervisor_id': supervisor_id,
+            })
+    return pending
+
+
 def _resolve_named_choice_instance(model_cls, raw_value, label_field='nome'):
     if raw_value is None:
         return None
@@ -1233,6 +1321,16 @@ def lista_servicos(request):
                 except Exception as exc:
                     logging.getLogger(__name__).exception('Falha ao validar tanques da OS')
                     return JsonResponse({'success': False, 'error': str(exc) or 'Erro ao validar tanques da OS.'}, status=400)
+                _enforce_finalizada_status_pair(ordem_servico)
+                if (
+                    _status_operacao_is_finalizada(getattr(ordem_servico, 'status_geral', ''))
+                    and getattr(ordem_servico, 'supervisor_id', None)
+                ):
+                    return JsonResponse({
+                        'success': False,
+                        'code': 'supervisor_evaluation_required',
+                        'error': 'Cadastre a movimentação antes de finalizá-la para registrar a avaliação do supervisor.',
+                    }, status=400)
                 try:
                     with transaction.atomic():
                         existing_count = OrdemServico.objects.filter(numero_os=ordem_servico.numero_os).count()
@@ -1379,7 +1477,7 @@ def lista_servicos(request):
     if data_final:
         filtros_ativos['data_final'] = data_final
 
-    servicos_list = OrdemServico.objects.all().order_by('-id')
+    servicos_list = OrdemServico.objects.select_related('supervisor', 'avaliacao_supervisor').order_by('-id')
     if numero_os:
         base_qs = servicos_list
         raw = str(numero_os)
@@ -2114,6 +2212,7 @@ def editar_os(request, os_id=None):
                 return JsonResponse({'success': False, 'error': 'ID da OS não fornecido'}, status=400)
 
         os_instance = OrdemServico.objects.get(pk=os_id)
+        previous_status_geral = os_instance.status_geral
         previous_tank_labels_same_os = _extract_home_tank_labels(os_instance, by_numero_os=True)
         tank_rename_map = {}
 
@@ -2366,24 +2465,25 @@ def editar_os(request, os_id=None):
                 os_instance.observacao = nova_entrada
 
         try:
-            sup_val = request.POST.get('supervisor')
-            if sup_val is None or str(sup_val).strip() == '':
-                os_instance.supervisor = None
-            else:
-                try:
-                    sup_pk = int(sup_val)
+            if 'supervisor' in request.POST:
+                sup_val = request.POST.get('supervisor')
+                if sup_val is None or str(sup_val).strip() == '':
+                    os_instance.supervisor = None
+                else:
                     try:
-                        os_instance.supervisor = get_user_model().objects.get(pk=sup_pk)
-                    except Exception:
+                        sup_pk = int(sup_val)
+                        try:
+                            os_instance.supervisor = get_user_model().objects.get(pk=sup_pk)
+                        except Exception:
+                            try:
+                                os_instance.supervisor = get_user_model().objects.get(username=str(sup_val))
+                            except Exception:
+                                os_instance.supervisor = None
+                    except (ValueError, TypeError):
                         try:
                             os_instance.supervisor = get_user_model().objects.get(username=str(sup_val))
                         except Exception:
                             os_instance.supervisor = None
-                except (ValueError, TypeError):
-                    try:
-                        os_instance.supervisor = get_user_model().objects.get(username=str(sup_val))
-                    except Exception:
-                        os_instance.supervisor = None
         except Exception:
             pass
 
@@ -2398,6 +2498,28 @@ def editar_os(request, os_id=None):
                 ).first()
         except Exception:
             pass
+
+        avaliacao_existente = AvaliacaoSupervisorMovimentacao.objects.filter(
+            ordem_servico=os_instance,
+        ).first()
+        if avaliacao_existente and avaliacao_existente.supervisor_id != os_instance.supervisor_id:
+            return JsonResponse({
+                'success': False,
+                'code': 'supervisor_evaluation_conflict',
+                'error': 'O supervisor não pode ser alterado porque esta movimentação já possui avaliação registrada.',
+            }, status=400)
+
+        pending_evaluations = _pending_supervisor_evaluations_for_finalization(
+            os_instance,
+            previous_status_geral,
+        )
+        if pending_evaluations:
+            return JsonResponse({
+                'success': False,
+                'code': 'supervisor_evaluation_required',
+                'error': 'Avalie o supervisor antes de finalizar a movimentação.',
+                'movimentacoes_pendentes': pending_evaluations,
+            }, status=400)
 
         with transaction.atomic():
             os_instance.save()
@@ -2603,7 +2725,7 @@ def home(request):
     if data_final:
         filtros_ativos['data_final'] = data_final
 
-    servicos_list = OrdemServico.objects.all().order_by('-id')
+    servicos_list = OrdemServico.objects.select_related('supervisor', 'avaliacao_supervisor').order_by('-id')
 
     if numero_os:
         raw = str(numero_os)
@@ -2738,6 +2860,99 @@ def home(request):
 def logout_view(request):
     logout(request)
     return redirect('login')
+
+
+@login_required(login_url='/login/')
+def api_avaliacao_supervisor_movimentacao(request, os_id):
+    if request.method not in ('GET', 'POST'):
+        return JsonResponse({'success': False, 'error': 'Método não permitido.'}, status=405)
+
+    try:
+        os_obj = OrdemServico.objects.select_related(
+            'supervisor',
+            'coordenador_cadastro__usuario',
+        ).get(pk=os_id)
+    except OrdemServico.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Movimentação não encontrada.'}, status=404)
+
+    avaliacao = AvaliacaoSupervisorMovimentacao.objects.select_related(
+        'supervisor',
+        'avaliado_por',
+    ).filter(ordem_servico=os_obj).first()
+    can_evaluate = _user_can_evaluate_movement_supervisor(request.user, os_obj)
+
+    if request.method == 'GET':
+        is_finalized = _status_operacao_is_finalizada(os_obj.status_geral)
+        return JsonResponse({
+            'success': True,
+            'applicable': bool(os_obj.supervisor_id),
+            'is_finalized': is_finalized,
+            'required_on_finalization': bool(os_obj.supervisor_id and not is_finalized),
+            'can_evaluate': can_evaluate,
+            'supervisor': {
+                'id': os_obj.supervisor_id,
+                'nome': AvaliacaoSupervisorMovimentacao._nome_usuario(os_obj.supervisor),
+            } if os_obj.supervisor_id else None,
+            'evaluation': _serialize_supervisor_movement_evaluation(avaliacao),
+        })
+
+    if user_has_read_only_access(request.user):
+        return build_read_only_json_response('avaliar supervisor')
+    if not can_evaluate:
+        return JsonResponse({
+            'success': False,
+            'error': 'Somente o coordenador desta movimentação pode avaliar o supervisor.',
+        }, status=403)
+    if not os_obj.supervisor_id:
+        return JsonResponse({
+            'success': False,
+            'error': 'Esta movimentação não possui supervisor para avaliação.',
+        }, status=400)
+
+    try:
+        if 'application/json' in str(request.content_type or ''):
+            payload = json.loads(request.body.decode('utf-8') or '{}')
+        else:
+            payload = request.POST
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return JsonResponse({'success': False, 'error': 'Dados de avaliação inválidos.'}, status=400)
+
+    nota = str(payload.get('nota') or '').strip().upper()
+    justificativa = str(payload.get('justificativa') or '').strip()
+    notas_validas = {value for value, _ in AvaliacaoSupervisorMovimentacao.AVALIACAO_CHOICES}
+    if nota not in notas_validas:
+        return JsonResponse({'success': False, 'error': 'Selecione uma nota válida para o supervisor.'}, status=400)
+
+    try:
+        with transaction.atomic():
+            if avaliacao is None:
+                avaliacao = AvaliacaoSupervisorMovimentacao(
+                    ordem_servico=os_obj,
+                    supervisor=os_obj.supervisor,
+                    avaliado_por=request.user,
+                )
+            avaliacao.nota = nota
+            avaliacao.justificativa = justificativa
+            avaliacao.avaliado_por = request.user
+            avaliacao.avaliado_em = timezone.now()
+            avaliacao.save()
+    except ValidationError as exc:
+        messages = []
+        if hasattr(exc, 'message_dict'):
+            for values in exc.message_dict.values():
+                messages.extend(values)
+        if not messages:
+            messages = list(getattr(exc, 'messages', []))
+        return JsonResponse({
+            'success': False,
+            'error': ' '.join(messages) or 'Avaliação inválida.',
+        }, status=400)
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Avaliação do supervisor salva com sucesso.',
+        'evaluation': _serialize_supervisor_movement_evaluation(avaliacao),
+    })
 
 def exportar_ordens_excel(request):
     try:
@@ -2939,8 +3154,6 @@ def mobile_app_download(request):
 
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import update_session_auth_hash
-from django.core.exceptions import ValidationError
-from django.views.decorators.http import require_POST
 
 @login_required
 @require_POST

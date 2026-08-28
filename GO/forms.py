@@ -255,7 +255,7 @@ class OrdemServicoForm(forms.ModelForm):
                 sup_qs = User.objects.none()
             from django import forms as django_forms
             if 'supervisor' in self.fields:
-                self.fields['supervisor'] = django_forms.ModelChoiceField(queryset=sup_qs, required=True, widget=django_forms.Select(attrs={'class': 'form-control'}))
+                self.fields['supervisor'] = django_forms.ModelChoiceField(queryset=sup_qs, required=False, widget=django_forms.Select(attrs={'class': 'form-control'}))
         except Exception:
             pass
 

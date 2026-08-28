@@ -33,13 +33,13 @@ def refresh_tank_group_metrics_task(self, tank_id):
     retry_jitter=True,
     retry_kwargs={'max_retries': 5},
 )
-def analyze_rdo_task(self, rdo_id):
+def analyze_rdo_task(self, rdo_id, corrigido_por_id=None):
     try:
         from alertas_inteligentes.services.rdo_immediate_analysis import (
             analisar_rdo_imediatamente,
         )
 
-        result = analisar_rdo_imediatamente(rdo_id)
+        result = analisar_rdo_imediatamente(rdo_id, corrigido_por_id=corrigido_por_id)
         if result.get('error'):
             raise RuntimeError(result['error'])
         return result

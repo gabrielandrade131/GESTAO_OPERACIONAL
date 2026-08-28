@@ -206,11 +206,20 @@ def criar_alerta(
     ).first()
 
     if alerta:
+        agora = timezone.now()
         alerta.mensagem = mensagem_final
         alerta.prioridade = prioridade
         alerta.equipe_responsavel = equipe
+        alerta.ultima_ocorrencia_em = agora
+        alerta.quantidade_ocorrencias = max(1, alerta.quantidade_ocorrencias or 1) + 1
         # update anomaly fields when provided
-        update_fields = ["mensagem", "prioridade", "equipe_responsavel"]
+        update_fields = [
+            "mensagem",
+            "prioridade",
+            "equipe_responsavel",
+            "ultima_ocorrencia_em",
+            "quantidade_ocorrencias",
+        ]
         if anomaly_score is not None:
             alerta.anomaly_score = anomaly_score
             update_fields.append("anomaly_score")
@@ -231,6 +240,7 @@ def criar_alerta(
         "prioridade": prioridade,
         "equipe_responsavel": equipe,
         "referencia": referencia,
+        "ultima_ocorrencia_em": timezone.now(),
     }
     if anomaly_score is not None:
         create_kwargs["anomaly_score"] = anomaly_score
@@ -240,6 +250,41 @@ def criar_alerta(
         create_kwargs["baseline_snapshot"] = sanitize_json_value(baseline_snapshot)
 
     return AlertaInteligente.objects.create(**create_kwargs)
+
+
+def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_id=None):
+    """Confirma correções sem depender da leitura ou abertura da notificação.
+
+    Os validadores reutilizam o alerta pendente com a mesma identidade
+    (RDO + tipo + referência). Ao final da análise, todo alerta que estava
+    pendente e não foi reproduzido representa um problema que desapareceu.
+    """
+    ids_ativos = {
+        alerta.pk
+        for alerta in (alertas_ativos or [])
+        if getattr(alerta, "pk", None)
+    }
+    corrigidos = AlertaInteligente.objects.filter(
+        rdo=rdo,
+        status__in=["pendente", "em_analise"],
+    )
+    if ids_ativos:
+        corrigidos = corrigidos.exclude(pk__in=ids_ativos)
+
+    agora = timezone.now()
+    origem = "usuario" if corrigido_por_id else "nao_identificada"
+    ids_corrigidos = list(corrigidos.values_list("pk", flat=True))
+    if ids_corrigidos:
+        AlertaInteligente.objects.filter(pk__in=ids_corrigidos).update(
+            status="resolvido",
+            resolvido_em=agora,
+            corrigido_em=agora,
+            corrigido_por_id=corrigido_por_id,
+            motivo_encerramento="correcao_confirmada",
+            origem_correcao=origem,
+            justificativa="Correção confirmada automaticamente após nova análise do RDO.",
+        )
+    return ids_corrigidos
     
 
 

@@ -2747,7 +2747,7 @@ def _document_revision_payload(documento, proposta):
     linhas = {kind: [] for kind in ("PROCEDIMENTO", "EQUIPE", "EQUIPAMENTO", "PREMISSA", "OBRIGACAO")}
     for linha in documento.linhas.all():
         linhas[linha.tipo].append({"id": linha.id, "descricao": linha.descricao, "quantidade": linha.quantidade, "ordem": linha.ordem})
-    financeiro = [{"id": campo.id, "descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
+    financeiro = [{"id": campo.id, "nome": campo.nome, "descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
     return {"id": documento.id, "tipoDocumento": documento.tipo_documento, "revisaoDocumental": f"{documento.revisao_documental:02d}", "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "conteudo": documento.conteudo_revisao or {}, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro}
 
 
@@ -2910,6 +2910,22 @@ def _sync_pc_onshore_review_quantities(proposta, conteudo):
         proposta.save(update_fields=("estimativo_receita",))
 
 
+def _build_offshore_contextual_draft(proposta):
+    """Create a safe first draft from the actual service and operating unit."""
+    proposal_data = _serialize_financeiro(proposta)
+    service = _clean_text(proposal_data.get("servico") or proposal_data.get("escopo"))
+    unit = _clean_text(proposal_data.get("unidade"))
+    service_label = service or "serviço descrito nesta proposta"
+    unit_label = unit or "unidade informada na proposta"
+    return {
+        "introducao": (
+            f"Esta proposta contempla a execução de {service_label} na unidade {unit_label}. "
+            "As atividades serão conduzidas conforme os requisitos operacionais, de segurança e do cliente."
+        ),
+        "procedimentoTitulo": f"PROCEDIMENTO DE EXECUÇÃO — {service_label.upper()}",
+    }
+
+
 def _get_document_revision(proposta, user):
     documento, created = PropostaDocumentoRevisao.objects.get_or_create(
         proposta=proposta,
@@ -2917,11 +2933,18 @@ def _get_document_revision(proposta, user):
         tipo_documento=PropostaDocumentoRevisao.TIPO_OFFSHORE,
         defaults={"criado_por": user, "atualizado_por": user},
     )
-    if created or not documento.linhas.exists():
-        draft = load_offshore_template_draft()
-        documento.introducao_objetivo = documento.introducao_objetivo or draft["introducao"]
-        documento.procedimento_titulo = documento.procedimento_titulo or draft["procedimentoTitulo"]
-        documento.save(update_fields=("introducao_objetivo", "procedimento_titulo", "atualizado_em"))
+    draft = load_offshore_template_draft()
+    if created or not documento.linhas.exists() or not documento.introducao_objetivo or documento.introducao_objetivo == draft["introducao"] or not documento.procedimento_titulo or documento.procedimento_titulo == draft["procedimentoTitulo"]:
+        contextual_draft = _build_offshore_contextual_draft(proposta)
+        update_fields = []
+        if not documento.introducao_objetivo or documento.introducao_objetivo == draft["introducao"]:
+            documento.introducao_objetivo = contextual_draft["introducao"]
+            update_fields.append("introducao_objetivo")
+        if not documento.procedimento_titulo or documento.procedimento_titulo == draft["procedimentoTitulo"]:
+            documento.procedimento_titulo = contextual_draft["procedimentoTitulo"]
+            update_fields.append("procedimento_titulo")
+        if update_fields:
+            documento.save(update_fields=(*update_fields, "atualizado_em"))
         if not documento.linhas.exists():
             for kind, rows in draft["linhas"].items():
                 for order, row in enumerate(rows, start=1):
@@ -2957,6 +2980,75 @@ def comercial_revisao_documento_proposta(request, proposta_id):
         return JsonResponse({"success": False, "message": "A revisão documental controlada está disponível apenas para propostas Offshore."}, status=400)
     documento = _get_document_revision(proposta, request.user)
     return JsonResponse({"success": True, "revisao": _document_revision_payload(documento, proposta), "proposta": _serialize_financeiro(proposta)})
+
+
+def _parse_offshore_financial_decimal(value, label, *, allow_zero=False):
+    """Parse the JSON values used by the review table without inventing amounts."""
+    raw_value = str(value if value is not None else "").strip().replace("R$", "").replace(" ", "")
+    if "," in raw_value:
+        raw_value = raw_value.replace(".", "").replace(",", ".")
+    try:
+        parsed = Decimal(raw_value)
+    except (InvalidOperation, ValueError):
+        raise ValidationError(f"Informe um {label.lower()} v\u00e1lido.")
+    if parsed < 0 or (not allow_zero and parsed == 0):
+        raise ValidationError(f"Informe um {label.lower()} maior que zero.")
+    return parsed
+
+
+def _sync_offshore_review_financial_items(proposta, raw_items):
+    """Keep the commercial items and the Offshore document review in sync."""
+    if not isinstance(raw_items, list):
+        raise ValidationError("Os itens financeiros devem ser enviados em uma lista.")
+
+    choices = {value for value, _label in FinanceiroCampo._meta.get_field("nome").choices}
+    existing_items = {item.id: item for item in proposta.campos.all()}
+    normalized_items = []
+    retained_ids = set()
+
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            raise ValidationError("Um dos itens financeiros est\u00e1 inv\u00e1lido.")
+        name = str(raw_item.get("nome") or "").strip()
+        if name not in choices:
+            raise ValidationError("Selecione um item ou equipamento v\u00e1lido.")
+        item_id = raw_item.get("id")
+        try:
+            item_id = int(item_id) if item_id not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValidationError("Um dos itens financeiros possui identifica\u00e7\u00e3o inv\u00e1lida.")
+        if item_id is not None:
+            if item_id not in existing_items:
+                raise ValidationError("Um dos itens financeiros n\u00e3o pertence a esta proposta.")
+            if item_id in retained_ids:
+                raise ValidationError("Um item financeiro foi informado mais de uma vez.")
+            retained_ids.add(item_id)
+        quantity = _parse_offshore_financial_decimal(raw_item.get("quantidade"), "quantidade")
+        if quantity != quantity.to_integral_value():
+            raise ValidationError("A quantidade de cada item deve ser um numero inteiro.")
+        normalized_items.append({
+            "id": item_id,
+            "nome": name,
+            "preco_unitario": _parse_offshore_financial_decimal(raw_item.get("preco_unitario"), "pre\u00e7o unit\u00e1rio", allow_zero=True),
+            "quantidade": quantity,
+        })
+
+    for item in existing_items.values():
+        if item.id not in retained_ids:
+            item.delete()
+
+    total = Decimal("0.00")
+    for item_data in normalized_items:
+        item = existing_items.get(item_data["id"]) if item_data["id"] else FinanceiroCampo(financeiro=proposta)
+        item.nome = item_data["nome"]
+        item.preco_unitario = item_data["preco_unitario"]
+        item.quantidade = item_data["quantidade"]
+        item.save()
+        total += item.subtotal or Decimal("0.00")
+
+    proposta.estimativo_receita = total
+    proposta.save(update_fields=["estimativo_receita"])
+    getattr(proposta, "_prefetched_objects_cache", {}).pop("campos", None)
 
 
 @login_required(login_url="/login/")
@@ -3032,6 +3124,11 @@ def comercial_salvar_revisao_documento_proposta(request, proposta_id):
         return JsonResponse({"success": False, "message": "A revisão documental está disponível apenas para Offshore."}, status=400)
     payload = _read_request_json(request)
     documento = _get_document_revision(proposta, request.user)
+    if "itens_financeiros" in payload:
+        try:
+            _sync_offshore_review_financial_items(proposta, payload.get("itens_financeiros"))
+        except ValidationError as error:
+            return JsonResponse({"success": False, "message": error.messages[0]}, status=400)
     documento.introducao_objetivo = str(payload.get("introducao") or "").strip()
     documento.procedimento_titulo = str(payload.get("procedimentoTitulo") or "").strip()
     confirms = payload.get("confirmacoes") or {}

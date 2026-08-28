@@ -150,6 +150,14 @@
         <button type="button" role="tab" data-ai-tab="todas" aria-selected="false">Todas <span data-ai-count="all">0</span></button>
         <button type="button" role="tab" data-ai-tab="pendentes" aria-selected="true">Pendentes <span data-ai-count="pending">{{ daily_ai_alert_count }}</span></button>
         <button type="button" role="tab" data-ai-tab="lidas" aria-selected="false">Lidas <span data-ai-count="read">0</span></button>
+        <button type="button" role="tab" data-ai-tab="corrigidas" aria-selected="false">Corrigidas <span data-ai-count="corrected">0</span></button>
+    </div>
+
+    <div class="ai-notification-center__correction-metrics" id="ai-notification-correction-metrics" hidden>
+        <span><strong data-ai-correction-metric="total">0</strong> corrigidas</span>
+        <span><strong data-ai-correction-metric="without_prior_read">0</strong> sem consulta prévia</span>
+        <span><strong data-ai-correction-metric="with_identified_user">0</strong> com autor identificado</span>
+        <span><strong data-ai-correction-metric="average_correction_time">—</strong> tempo médio</span>
     </div>
 
     <div class="ai-notification-center__content">

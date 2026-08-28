@@ -725,6 +725,17 @@ def _set_paragraph_text(paragraph, value):
         paragraph.runs[0].text = _clean(value)
         for run in paragraph.runs[1:]:
             run.text = ""
+        return
+
+    # Word's static table of contents stores its visible labels inside
+    # hyperlinks, which python-docx does not expose through paragraph.runs.
+    # Update only the first visible label and preserve the page-reference field.
+    hyperlink_texts = paragraph._p.xpath(".//w:hyperlink//w:t")
+    if hyperlink_texts:
+        hyperlink_texts[0].text = _clean(value)
+        return
+
+    paragraph.add_run(_clean(value))
 
 
 def _set_paragraph_with_highlight(paragraph, prefix, highlighted, suffix, *, show_highlight):
@@ -758,8 +769,12 @@ def _apply_offshore_revision(document, revision):
     if introduction and len(paragraphs) > 50:
         _set_paragraph_text(paragraphs[50], introduction)
     if procedure_title and len(paragraphs) > 54:
-        _set_paragraph_text(paragraphs[24], f"3.2 {procedure_title}")
-        _set_paragraph_text(paragraphs[54], f"3.2 {procedure_title}")
+        # The official template uses a static index. Keep it synchronized with
+        # the reviewed service title rendered in the procedure section.
+        procedure_heading = re.sub(r"^3\.2\s*", "", procedure_title, flags=re.IGNORECASE)
+        procedure_heading = f"3.2 {procedure_heading}"
+        _set_paragraph_text(paragraphs[24], procedure_heading)
+        _set_paragraph_text(paragraphs[54], procedure_heading)
     if len(document.tables) >= 5:
         if lines.get("PROCEDIMENTO"):
             _fill_table_rows(document.tables[2], [(str(index).zfill(2), line.get("descricao", "")) for index, line in enumerate(lines["PROCEDIMENTO"], start=1)], 2)

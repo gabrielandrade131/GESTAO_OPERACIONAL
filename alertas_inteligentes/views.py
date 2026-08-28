@@ -448,7 +448,12 @@ def resolver_alerta(request, alerta_id):
         alerta.status = "resolvido"
         alerta.resolvido_em = timezone.now()
         alerta.resolvido_por = request.user
-        alerta.save(update_fields=["status", "resolvido_em", "resolvido_por"])
+        alerta.motivo_encerramento = "resolucao_manual"
+        alerta.origem_correcao = "usuario"
+        alerta.save(update_fields=[
+            "status", "resolvido_em", "resolvido_por",
+            "motivo_encerramento", "origem_correcao",
+        ])
 
     next_url = request.POST.get("next") or request.GET.get("next")
     if next_url:
@@ -465,12 +470,16 @@ def ignorar_alerta(request, alerta_id):
         alerta.justificativa = justificativa
         alerta.resolvido_em = timezone.now()
         alerta.ignorado_por = request.user
+        alerta.motivo_encerramento = "excecao_aceita"
+        alerta.origem_correcao = "usuario"
         alerta.save(
             update_fields=[
                 "status",
                 "justificativa",
                 "resolvido_em",
                 "ignorado_por",
+                "motivo_encerramento",
+                "origem_correcao",
             ]
         )
 
@@ -488,7 +497,12 @@ def resolver_alerta_operacional(request, alerta_id):
         alerta.status = "resolvido"
         alerta.resolvido_em = timezone.now()
         alerta.resolvido_por = request.user
-        alerta.save(update_fields=["status", "resolvido_em", "resolvido_por"])
+        alerta.motivo_encerramento = "resolucao_manual"
+        alerta.origem_correcao = "usuario"
+        alerta.save(update_fields=[
+            "status", "resolvido_em", "resolvido_por",
+            "motivo_encerramento", "origem_correcao",
+        ])
 
     next_url = request.POST.get("next") or request.GET.get("next")
     if next_url:
@@ -506,12 +520,16 @@ def ignorar_alerta_operacional(request, alerta_id):
         alerta.justificativa = justificativa
         alerta.resolvido_em = timezone.now()
         alerta.ignorado_por = request.user
+        alerta.motivo_encerramento = "excecao_aceita"
+        alerta.origem_correcao = "usuario"
         alerta.save(
             update_fields=[
                 "status",
                 "justificativa",
                 "resolvido_em",
                 "ignorado_por",
+                "motivo_encerramento",
+                "origem_correcao",
             ]
         )
 

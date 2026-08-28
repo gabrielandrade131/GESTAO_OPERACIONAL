@@ -4529,6 +4529,13 @@ class MobileApiToken(models.Model):
 
 class ResponsavelCoordenador(models.Model):
     nome = models.CharField(max_length=150)
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='responsavel_coordenador',
+    )
     responsavel_comercial = models.BooleanField(default=False)
     coordenador = models.BooleanField(default=False)
     ativo = models.BooleanField(default=True)
@@ -4569,6 +4576,97 @@ class ResponsavelCoordenador(models.Model):
 
     def __str__(self):
         return self.nome
+
+
+class AvaliacaoSupervisorMovimentacao(models.Model):
+    AVALIACAO_OTIMO = 'OTIMO'
+    AVALIACAO_BOM = 'BOM'
+    AVALIACAO_REGULAR = 'REGULAR'
+    AVALIACAO_RUIM = 'RUIM'
+    AVALIACAO_PESSIMO = 'PESSIMO'
+    AVALIACAO_CHOICES = [
+        (AVALIACAO_OTIMO, 'ÓTIMO'),
+        (AVALIACAO_BOM, 'BOM'),
+        (AVALIACAO_REGULAR, 'REGULAR'),
+        (AVALIACAO_RUIM, 'RUIM'),
+        (AVALIACAO_PESSIMO, 'PÉSSIMO'),
+    ]
+
+    ordem_servico = models.OneToOneField(
+        'OrdemServico',
+        on_delete=models.CASCADE,
+        related_name='avaliacao_supervisor',
+    )
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='avaliacoes_como_supervisor',
+    )
+    supervisor_nome_snapshot = models.CharField(max_length=150)
+    nota = models.CharField(max_length=20, choices=AVALIACAO_CHOICES)
+    justificativa = models.TextField(blank=True, default='')
+    avaliado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='avaliacoes_de_supervisores_realizadas',
+    )
+    avaliado_em = models.DateTimeField(default=timezone.now)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-avaliado_em', '-id']
+        verbose_name = 'Avaliação de supervisor da movimentação'
+        verbose_name_plural = 'Avaliações de supervisores das movimentações'
+
+    @staticmethod
+    def _nome_usuario(usuario):
+        if not usuario:
+            return ''
+        try:
+            return usuario.get_full_name() or usuario.get_username()
+        except Exception:
+            return str(usuario)
+
+    def clean(self):
+        super().clean()
+        supervisor_da_movimentacao_id = None
+        try:
+            supervisor_da_movimentacao_id = self.ordem_servico.supervisor_id
+        except Exception:
+            pass
+
+        if not supervisor_da_movimentacao_id:
+            raise ValidationError({
+                'ordem_servico': 'A movimentação não possui supervisor para avaliação.',
+            })
+        if self.supervisor_id != supervisor_da_movimentacao_id:
+            raise ValidationError({
+                'supervisor': 'O supervisor avaliado deve ser o supervisor atual da movimentação.',
+            })
+
+        justificativa = str(self.justificativa or '').strip()
+        if self.nota in (self.AVALIACAO_RUIM, self.AVALIACAO_PESSIMO) and not justificativa:
+            raise ValidationError({
+                'justificativa': 'Informe a justificativa para avaliações RUIM ou PÉSSIMO.',
+            })
+        self.justificativa = justificativa
+
+    def save(self, *args, **kwargs):
+        if not self.supervisor_id and self.ordem_servico_id:
+            try:
+                self.supervisor_id = self.ordem_servico.supervisor_id
+            except Exception:
+                pass
+        if not str(self.supervisor_nome_snapshot or '').strip():
+            self.supervisor_nome_snapshot = self._nome_usuario(
+                getattr(self, 'supervisor', None)
+            )
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.supervisor_nome_snapshot} - movimentação {self.ordem_servico_id}'
 
 
 class ResponsavelCoordenadorAuditoria(models.Model):
