@@ -319,6 +319,33 @@
         const description = element("section", "ai-notification-center__description");
         description.append(element("h4", "", "Descrição"), element("p", "", item.message));
         details.append(description);
+        if (Array.isArray(item.alerts) && item.alerts.length) {
+            const consolidated = element("section", "ai-notification-center__consolidated");
+            consolidated.append(element("h4", "", item.alerts.length === 1 ? "Ponto identificado" : "Pontos identificados"));
+            item.alerts.forEach(function (child, index) {
+                const card = element("article", "ai-notification-center__consolidated-item");
+                const head = element("div", "ai-notification-center__consolidated-head");
+                head.append(
+                    element("span", "ai-notification-center__consolidated-index", index + 1),
+                    element("strong", "", child.type_label),
+                    element("span", child.is_corrected ? "ai-notification-center__corrected-badge" : "ai-notification-center__priority " + priorityClass(child.priority), child.is_corrected ? "Corrigida" : child.priority_label)
+                );
+                card.append(head, element("p", "", child.message));
+                if (child.recommendation) {
+                    const action = element("p", "ai-notification-center__consolidated-action");
+                    action.append(element("strong", "", "O que conferir: "), document.createTextNode(child.recommendation));
+                    card.append(action);
+                }
+                if (child.is_corrected) {
+                    const correction = element("p", "ai-notification-center__consolidated-correction");
+                    const correctionText = [child.corrected_date, child.corrected_time, child.corrected_by].filter(Boolean).join(" · ");
+                    correction.textContent = "Correção confirmada" + (correctionText ? ": " + correctionText : "");
+                    card.append(correction);
+                }
+                consolidated.append(card);
+            });
+            details.append(consolidated);
+        }
         if (item.recommendation) {
             const recommendation = element("section", "ai-notification-center__recommendation");
             const heading = element("h4");

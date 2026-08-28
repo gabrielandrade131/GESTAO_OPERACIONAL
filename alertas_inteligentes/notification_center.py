@@ -17,6 +17,16 @@ from .models import (
 PAGE_SIZE_DEFAULT = 20
 PAGE_SIZE_MAX = 50
 
+RDO_GROUP_SOURCE_BY_MODE = {
+    "all": "rdo_grupo_todos",
+    "active": "rdo_grupo_ativos",
+    "corrected": "rdo_grupo_corrigidos",
+}
+RDO_GROUP_MODE_BY_SOURCE = {
+    source: mode for mode, source in RDO_GROUP_SOURCE_BY_MODE.items()
+}
+PRIORITY_ORDER = {"critica": 0, "alta": 1, "media": 2, "baixa": 3}
+
 RDO_ALERT_SECTION_MAP = {
     "RDO_SEM_TURNO": "identificacao",
     "RDO_DATA_PULADA": "identificacao",
@@ -333,7 +343,100 @@ def serialize_alert(source, alert, is_read=False):
         "target_section": target_section,
         "detail_url": detail_url,
         "os_url": os_filter_url,
+        "alerts": [],
+        "alert_count": 1,
+        "pending_count": 0 if is_corrected else 1,
+        "corrected_count": 1 if is_corrected else 0,
     }
+
+
+def serialize_rdo_group(alerts, *, mode="all"):
+    alerts = list(alerts or [])
+    if not alerts:
+        return None
+    children = [
+        serialize_alert("rdo", alert, bool(getattr(alert, "user_has_read", False)))
+        for alert in alerts
+    ]
+    children.sort(key=lambda item: (item["sort_at"], item["id"]), reverse=True)
+    first = children[0]
+    pending = [item for item in children if not item["is_corrected"]]
+    corrected = [item for item in children if item["is_corrected"]]
+    considered_for_read = pending if pending else children
+    is_read = bool(considered_for_read) and all(item["is_read"] for item in considered_for_read)
+    priority_item = min(
+        children,
+        key=lambda item: PRIORITY_ORDER.get(item["priority"], 9),
+    )
+    unique_types = []
+    for item in children:
+        if item["type_label"] not in unique_types:
+            unique_types.append(item["type_label"])
+    preview = ", ".join(unique_types[:3])
+    if len(unique_types) > 3:
+        preview += f" e mais {len(unique_types) - 3}"
+
+    if pending and corrected:
+        lifecycle_label = f"{len(pending)} pendente(s) · {len(corrected)} corrigido(s)"
+    elif corrected:
+        lifecycle_label = "Corrigida" if len(corrected) == 1 else "Corrigidas"
+    else:
+        lifecycle_label = "Pendente" if len(pending) == 1 else "Pendentes"
+
+    corrected_names = []
+    for item in corrected:
+        if item["corrected_by"] and item["corrected_by"] not in corrected_names:
+            corrected_names.append(item["corrected_by"])
+    corrected_by = corrected_names[0] if len(corrected_names) == 1 else (
+        f"{len(corrected_names)} usuários" if corrected_names else ""
+    )
+    corrected_dates = [item for item in corrected if item["corrected_at"]]
+    last_corrected = max(corrected_dates, key=lambda item: item["corrected_at"]) if corrected_dates else None
+    source = RDO_GROUP_SOURCE_BY_MODE.get(mode, RDO_GROUP_SOURCE_BY_MODE["all"])
+
+    grouped = dict(first)
+    grouped.update({
+        "key": f"{source}:{alerts[0].rdo_id}",
+        "source": source,
+        "id": alerts[0].rdo_id,
+        "message": f"Este RDO possui {len(children)} ponto(s) identificado(s) pela IA.",
+        "summary": f"{len(children)} ponto(s): {preview}",
+        "recommendation": "Revise os pontos consolidados abaixo. Cada validação continuará sendo acompanhada separadamente pela IA.",
+        "priority": priority_item["priority"],
+        "priority_label": priority_item["priority_label"],
+        "type": "RDO_CONSOLIDADO" if len(children) > 1 else first["type"],
+        "type_label": "Alertas consolidados do RDO" if len(children) > 1 else first["type_label"],
+        "is_read": is_read,
+        "is_corrected": bool(corrected and not pending),
+        "lifecycle_status": "corrigida" if corrected and not pending else "pendente",
+        "lifecycle_label": lifecycle_label,
+        "sort_at": max(item["sort_at"] for item in children),
+        "corrected_at": last_corrected["corrected_at"] if last_corrected else "",
+        "corrected_date": last_corrected["corrected_date"] if last_corrected else "",
+        "corrected_time": last_corrected["corrected_time"] if last_corrected else "",
+        "corrected_by": corrected_by,
+        "correction_origin": "Várias correções" if len(corrected) > 1 else (corrected[0]["correction_origin"] if corrected else ""),
+        "resolution_time": "",
+        "occurrence_count": sum(item["occurrence_count"] for item in children),
+        "corrected_without_prior_read": bool(corrected) and all(
+            item["corrected_without_prior_read"] for item in corrected
+        ),
+        "alerts": children,
+        "alert_count": len(children),
+        "pending_count": len(pending),
+        "corrected_count": len(corrected),
+    })
+    return grouped
+
+
+def _group_rdo_alerts(alerts, *, mode):
+    grouped = {}
+    for alert in alerts:
+        grouped.setdefault(alert.rdo_id, []).append(alert)
+    return [
+        serialize_rdo_group(items, mode=mode)
+        for items in grouped.values()
+    ]
 
 
 def all_accessible_serialized(user):
@@ -360,25 +463,20 @@ def notification_snapshot(user, limit=5):
     rdo_qs, operational_qs = accessible_alert_querysets(user, daily_only=True)
     rdo_qs = _with_read_state(rdo_qs, user, "rdo")
     operational_qs = _with_read_state(operational_qs, user, "operacional")
-    unread_count = (
-        rdo_qs.filter(user_has_read=False).count()
-        + operational_qs.filter(user_has_read=False).count()
-    )
-    unread = _serialize_annotated("rdo", list(rdo_qs.filter(user_has_read=False)[:limit]))
-    unread += _serialize_annotated(
-        "operacional", list(operational_qs.filter(user_has_read=False)[:limit])
-    )
-    read = _serialize_annotated("rdo", list(rdo_qs.filter(user_has_read=True)[:limit]))
-    read += _serialize_annotated(
-        "operacional", list(operational_qs.filter(user_has_read=True)[:limit])
-    )
-    unread.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
-    read.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+    rdo_groups = _group_rdo_alerts(list(rdo_qs), mode="active")
+    unread = [item for item in rdo_groups if not item["is_read"]]
+    read = [item for item in rdo_groups if item["is_read"]]
+    operational_items = _serialize_annotated("operacional", list(operational_qs))
+    unread += [item for item in operational_items if not item["is_read"]]
+    read += [item for item in operational_items if item["is_read"]]
+    unread_count = len(unread)
+    unread.sort(key=lambda item: (item["sort_at"], item["id"]), reverse=True)
+    read.sort(key=lambda item: (item["sort_at"], item["id"]), reverse=True)
     ordered = unread + read
     return {
         "unread_count": unread_count,
         "items": ordered[:limit],
-        "total": rdo_qs.count() + operational_qs.count(),
+        "total": len(rdo_groups) + len(operational_items),
     }
 
 
@@ -398,10 +496,6 @@ def filtered_page(
     rdo_qs, operational_qs = accessible_alert_querysets(user, include_corrected=True)
     rdo_qs = _with_read_state(rdo_qs, user, "rdo")
     operational_qs = _with_read_state(operational_qs, user, "operacional")
-    global_unread = (
-        rdo_qs.filter(status="pendente", user_has_read=False).count()
-        + operational_qs.filter(status="pendente", user_has_read=False).count()
-    )
     rdo_qs = _apply_database_filters(rdo_qs, "rdo", query, priority, alert_type)
     operational_qs = _apply_database_filters(
         operational_qs,
@@ -410,34 +504,46 @@ def filtered_page(
         priority,
         alert_type,
     )
-    counts = {
-        "all": rdo_qs.count() + operational_qs.count(),
-        "pending": (
-            rdo_qs.filter(status="pendente", user_has_read=False).count()
-            + operational_qs.filter(status="pendente", user_has_read=False).count()
-        ),
-        "read": (
-            rdo_qs.filter(status="pendente", user_has_read=True).count()
-            + operational_qs.filter(status="pendente", user_has_read=True).count()
-        ),
-        "corrected": (
-            rdo_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada").count()
-            + operational_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada").count()
-        ),
-    }
     corrected_metrics = _corrected_metrics(rdo_qs, operational_qs)
+
+    rdo_all_groups = _group_rdo_alerts(list(rdo_qs), mode="all")
+    rdo_active_groups = _group_rdo_alerts(
+        list(rdo_qs.filter(status="pendente")),
+        mode="active",
+    )
+    rdo_corrected_groups = _group_rdo_alerts(
+        list(rdo_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada")),
+        mode="corrected",
+    )
+    rdo_pending_groups = [item for item in rdo_active_groups if not item["is_read"]]
+    rdo_read_groups = [item for item in rdo_active_groups if item["is_read"]]
+
+    operational_all = _serialize_annotated("operacional", list(operational_qs))
+    operational_pending = [
+        item for item in operational_all if not item["is_corrected"] and not item["is_read"]
+    ]
+    operational_read = [
+        item for item in operational_all if not item["is_corrected"] and item["is_read"]
+    ]
+    operational_corrected = [item for item in operational_all if item["is_corrected"]]
+
+    counts = {
+        "all": len(rdo_all_groups) + len(operational_all),
+        "pending": len(rdo_pending_groups) + len(operational_pending),
+        "read": len(rdo_read_groups) + len(operational_read),
+        "corrected": len(rdo_corrected_groups) + len(operational_corrected),
+    }
+    global_unread = counts["pending"]
+
     if tab == "lidas":
-        rdo_qs = rdo_qs.filter(status="pendente", user_has_read=True)
-        operational_qs = operational_qs.filter(status="pendente", user_has_read=True)
+        candidates = rdo_read_groups + operational_read
     elif tab == "corrigidas":
-        rdo_qs = rdo_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada")
-        operational_qs = operational_qs.filter(status="resolvido", motivo_encerramento="correcao_confirmada")
+        candidates = rdo_corrected_groups + operational_corrected
     elif tab == "todas":
-        pass
+        candidates = rdo_all_groups + operational_all
     else:
         tab = "pendentes"
-        rdo_qs = rdo_qs.filter(status="pendente", user_has_read=False)
-        operational_qs = operational_qs.filter(status="pendente", user_has_read=False)
+        candidates = rdo_pending_groups + operational_pending
 
     try:
         page = max(1, int(page))
@@ -447,12 +553,10 @@ def filtered_page(
         page_size = min(PAGE_SIZE_MAX, max(1, int(page_size)))
     except (TypeError, ValueError):
         page_size = PAGE_SIZE_DEFAULT
-    total = rdo_qs.count() + operational_qs.count()
+    candidates.sort(key=lambda item: (item["sort_at"], item["id"]), reverse=True)
+    total = len(candidates)
     start = (page - 1) * page_size
     end = min(total, start + page_size)
-    candidates = _serialize_annotated("rdo", list(rdo_qs[:end]))
-    candidates += _serialize_annotated("operacional", list(operational_qs[:end]))
-    candidates.sort(key=lambda item: (item["sort_at"], item["id"]), reverse=True)
     items = candidates[start:end]
     return {
         "items": items,
@@ -482,6 +586,24 @@ def filtered_page(
 
 def get_accessible_alert(user, source, alert_id):
     rdo_qs, operational_qs = accessible_alert_querysets(user, include_corrected=True)
+    group_mode = RDO_GROUP_MODE_BY_SOURCE.get(source)
+    if group_mode:
+        alerts = _with_read_state(
+            rdo_qs.filter(rdo_id=alert_id),
+            user,
+            "rdo",
+        )
+        if group_mode == "active":
+            alerts = alerts.filter(status="pendente")
+        elif group_mode == "corrected":
+            alerts = alerts.filter(
+                status="resolvido",
+                motivo_encerramento="correcao_confirmada",
+            )
+        alerts = list(alerts)
+        if not alerts:
+            return None
+        return alerts, all(bool(alert.user_has_read) for alert in alerts)
     if source == "rdo":
         alert = rdo_qs.filter(pk=alert_id).first()
     elif source == "operacional":
@@ -499,6 +621,19 @@ def get_accessible_alert(user, source, alert_id):
 
 
 def set_read_state(user, source, alert, is_read):
+    if source in RDO_GROUP_MODE_BY_SOURCE:
+        receipts = []
+        for child_alert in alert:
+            receipt, _ = LeituraAlertaIA.objects.update_or_create(
+                usuario=user,
+                alerta_rdo=child_alert,
+                defaults={
+                    "lido": bool(is_read),
+                    "lido_em": timezone.now() if is_read else None,
+                },
+            )
+            receipts.append(receipt)
+        return receipts
     lookup = {
         "usuario": user,
         "alerta_rdo": alert if source == "rdo" else None,

@@ -398,6 +398,91 @@ class SynchroShellTest(TestCase):
         )
         self.assertEqual(empty.json()['total'], 0)
 
+    def test_multiple_alerts_from_same_rdo_are_consolidated_and_read_together(self):
+        ordem, operational_alert = self._create_operational_alert(number=99014)
+        operational_alert.delete()
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='14',
+            data=timezone.localdate(),
+            turno='Diurno',
+        )
+        alerts = [
+            AlertaInteligente.objects.create(
+                rdo=rdo,
+                tipo='PT_SEM_NUMERO',
+                referencia='pt_tarde',
+                mensagem='Número da PT da tarde ausente.',
+                prioridade='alta',
+                status='pendente',
+            ),
+            AlertaInteligente.objects.create(
+                rdo=rdo,
+                tipo='ATIVIDADE_SOBREPOSTA',
+                mensagem='Atividades com horários sobrepostos.',
+                prioridade='media',
+                status='pendente',
+            ),
+            AlertaInteligente.objects.create(
+                rdo=rdo,
+                tipo='RDO_TANQUE_INCOMPLETO',
+                referencia='tanque_8c',
+                mensagem='Dados estruturais do tanque incompletos.',
+                prioridade='alta',
+                status='pendente',
+            ),
+        ]
+
+        response = self.client.get(
+            reverse('alertas_inteligentes:api_notificacoes'),
+            {'tab': 'pendentes'},
+        )
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload['total'], 1)
+        self.assertEqual(payload['counts']['pending'], 1)
+        grouped = payload['items'][0]
+        self.assertEqual(grouped['source'], 'rdo_grupo_ativos')
+        self.assertEqual(grouped['id'], rdo.pk)
+        self.assertEqual(grouped['alert_count'], 3)
+        self.assertEqual(grouped['priority'], 'alta')
+        self.assertEqual({item['id'] for item in grouped['alerts']}, {item.pk for item in alerts})
+
+        detail = self.client.get(
+            reverse(
+                'alertas_inteligentes:api_notificacao_detalhe',
+                args=['rdo_grupo_ativos', rdo.pk],
+            )
+        ).json()['item']
+        self.assertEqual(detail['alert_count'], 3)
+
+        marked = self.client.post(
+            reverse(
+                'alertas_inteligentes:api_notificacao_leitura',
+                args=['rdo_grupo_ativos', rdo.pk],
+            ),
+            data='{"lido": true}',
+            content_type='application/json',
+        )
+        self.assertEqual(marked.status_code, 200)
+        self.assertEqual(marked.json()['unread_count'], 0)
+        self.assertEqual(
+            LeituraAlertaIA.objects.filter(
+                usuario=self.user,
+                alerta_rdo__in=alerts,
+                lido=True,
+            ).count(),
+            3,
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse('alertas_inteligentes:api_notificacoes'),
+                {'tab': 'lidas'},
+            ).json()['total'],
+            1,
+        )
+
     def test_notification_api_filters_tabs_search_priority_and_marks_all(self):
         self._create_operational_alert(number=99004, priority='alta', message='Pressão crítica na unidade')
         self._create_operational_alert(number=99005, priority='baixa', message='Revisão documental')

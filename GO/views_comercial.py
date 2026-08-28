@@ -15,6 +15,7 @@ from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.core.paginator import Paginator
 from django.http import FileResponse, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -22,7 +23,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoImagem, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
 from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf, load_offshore_template_draft
 from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
 
@@ -1523,6 +1524,8 @@ def _build_bootstrap_payload():
     critical_analysis_pdf_pattern = reverse("comercial_gerar_pdf_analise_critica", args=[0]).replace("/0/", "/__id__/")
     document_review_pattern = reverse("comercial_revisao_documento_proposta", args=[0]).replace("/0/", "/__id__/")
     document_review_save_pattern = reverse("comercial_salvar_revisao_documento_proposta", args=[0]).replace("/0/", "/__id__/")
+    document_review_image_upload_pattern = reverse("comercial_enviar_imagens_revisao_documento", args=[0]).replace("/0/", "/__id__/")
+    document_review_image_delete_pattern = reverse("comercial_excluir_imagem_revisao_documento", args=[0, 0]).replace("/0/", "/__id__/", 1).replace("/0/", "/__image_id__/", 1)
     attachment_list_pattern = reverse("comercial_listar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
     attachment_upload_pattern = reverse("comercial_enviar_anexos_proposta", args=[0]).replace("/0/", "/__id__/")
 
@@ -1541,6 +1544,8 @@ def _build_bootstrap_payload():
             "criticalAnalysisPdfPattern": critical_analysis_pdf_pattern,
             "documentReviewPattern": document_review_pattern,
             "documentReviewSavePattern": document_review_save_pattern,
+            "documentReviewImageUploadPattern": document_review_image_upload_pattern,
+            "documentReviewImageDeletePattern": document_review_image_delete_pattern,
             "attachmentListPattern": attachment_list_pattern,
             "attachmentUploadPattern": attachment_upload_pattern,
             "quickClientCreate": reverse("comercial_criar_cliente"),
@@ -2748,7 +2753,17 @@ def _document_revision_payload(documento, proposta):
     for linha in documento.linhas.all():
         linhas[linha.tipo].append({"id": linha.id, "descricao": linha.descricao, "quantidade": linha.quantidade, "ordem": linha.ordem})
     financeiro = [{"id": campo.id, "nome": campo.nome, "descricao": campo.get_nome_display(), "preco_unitario": str(campo.preco_unitario), "quantidade": str(campo.quantidade), "subtotal": str(campo.subtotal)} for campo in proposta.campos.all()]
-    return {"id": documento.id, "tipoDocumento": documento.tipo_documento, "revisaoDocumental": f"{documento.revisao_documental:02d}", "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "conteudo": documento.conteudo_revisao or {}, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro}
+    imagens = [
+        {
+            "id": imagem.id,
+            "nome": imagem.nome_original,
+            "url": imagem.imagem.url,
+            "ordem": imagem.ordem,
+        }
+        for imagem in documento.imagens.all()
+        if imagem.imagem
+    ]
+    return {"id": documento.id, "tipoDocumento": documento.tipo_documento, "revisaoDocumental": f"{documento.revisao_documental:02d}", "status": documento.status, "introducao": documento.introducao_objetivo, "procedimentoTitulo": documento.procedimento_titulo, "conteudo": documento.conteudo_revisao or {}, "confirmacoes": {"procedimento": documento.procedimento_confirmado, "equipe": documento.equipe_confirmada, "equipamentos": documento.equipamentos_confirmados, "premissas": documento.premissas_confirmadas, "obrigacoes": documento.obrigacoes_confirmadas}, "linhas": linhas, "financeiro": financeiro, "imagens": imagens}
 
 
 def _get_onshore_document_revision(proposta, user, document_type):
@@ -2982,6 +2997,111 @@ def comercial_revisao_documento_proposta(request, proposta_id):
     return JsonResponse({"success": True, "revisao": _document_revision_payload(documento, proposta), "proposta": _serialize_financeiro(proposta)})
 
 
+DOCUMENT_REVIEW_IMAGE_MAX_SIZE = 10 * 1024 * 1024
+DOCUMENT_REVIEW_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
+
+def _validate_document_review_images(images):
+    """Validate images before they become part of an official Offshore document."""
+    if not images:
+        raise ValidationError("Selecione ao menos uma imagem para enviar.")
+
+    errors = []
+    for image_file in images:
+        extension = os.path.splitext(image_file.name or "")[1].lower()
+        if extension not in DOCUMENT_REVIEW_IMAGE_EXTENSIONS:
+            errors.append(f"{image_file.name}: envie somente imagens PNG ou JPEG.")
+            continue
+        if image_file.size > DOCUMENT_REVIEW_IMAGE_MAX_SIZE:
+            errors.append(f"{image_file.name}: a imagem deve ter no maximo 10 MB.")
+            continue
+        try:
+            from PIL import Image
+
+            uploaded_image = Image.open(image_file)
+            uploaded_image.verify()
+            image_file.seek(0)
+        except Exception:
+            errors.append(f"{image_file.name}: o arquivo nao e uma imagem valida.")
+    if errors:
+        raise ValidationError(errors)
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+@transaction.atomic
+def comercial_enviar_imagens_revisao_documento(request, proposta_id):
+    proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos"), pk=proposta_id)
+    document_type = request.POST.get("document_type", PropostaDocumentoRevisao.TIPO_OFFSHORE).strip()
+    allowed_types = {
+        PropostaDocumentoRevisao.TIPO_OFFSHORE,
+        PropostaDocumentoRevisao.TIPO_PC_ONSHORE,
+    }
+    if document_type not in allowed_types:
+        return JsonResponse({"success": False, "message": "Imagens estao disponiveis somente para as propostas comerciais Offshore e Onshore."}, status=400)
+    if document_type == PropostaDocumentoRevisao.TIPO_OFFSHORE and not _is_offshore_proposal(proposta):
+        return JsonResponse({"success": False, "message": "A revisao selecionada nao pertence a uma proposta Offshore."}, status=400)
+    if document_type == PropostaDocumentoRevisao.TIPO_PC_ONSHORE and not _is_onshore_proposal(proposta):
+        return JsonResponse({"success": False, "message": "A revisao selecionada nao pertence a uma proposta Onshore."}, status=400)
+
+    images = request.FILES.getlist("imagens")
+    try:
+        _validate_document_review_images(images)
+    except ValidationError as error:
+        return JsonResponse({"success": False, "message": error.messages[0], "errors": error.messages}, status=400)
+
+    documento = (
+        _get_document_revision(proposta, request.user)
+        if document_type == PropostaDocumentoRevisao.TIPO_OFFSHORE
+        else _get_onshore_document_revision(proposta, request.user, document_type)
+    )
+    next_order = (documento.imagens.aggregate(max_order=Max("ordem")).get("max_order") or 0) + 1
+    for image_file in images:
+        PropostaDocumentoImagem.objects.create(
+            documento=documento,
+            imagem=image_file,
+            nome_original=os.path.basename(image_file.name or "imagem"),
+            ordem=next_order,
+            enviado_por=request.user,
+        )
+        next_order += 1
+    documento.atualizado_por = request.user
+    documento.save(update_fields=("atualizado_por", "atualizado_em"))
+    documento.refresh_from_db()
+    return JsonResponse({"success": True, "message": "Imagem(ns) adicionada(s) a introducao.", "imagens": _document_revision_payload(documento, proposta)["imagens"]}, status=201)
+
+
+@login_required(login_url="/login/")
+@commercial_preview_required
+@require_POST
+@transaction.atomic
+def comercial_excluir_imagem_revisao_documento(request, proposta_id, imagem_id):
+    imagem = get_object_or_404(
+        PropostaDocumentoImagem.objects.select_related("documento", "documento__proposta", "documento__proposta__tipo_operacao"),
+        pk=imagem_id,
+        documento__proposta_id=proposta_id,
+        documento__tipo_documento__in=(
+            PropostaDocumentoRevisao.TIPO_OFFSHORE,
+            PropostaDocumentoRevisao.TIPO_PC_ONSHORE,
+        ),
+    )
+    proposta = imagem.documento.proposta
+    if imagem.documento.tipo_documento == PropostaDocumentoRevisao.TIPO_OFFSHORE and not _is_offshore_proposal(proposta):
+        return JsonResponse({"success": False, "message": "Imagem de revisao indisponivel para esta proposta."}, status=400)
+    if imagem.documento.tipo_documento == PropostaDocumentoRevisao.TIPO_PC_ONSHORE and not _is_onshore_proposal(proposta):
+        return JsonResponse({"success": False, "message": "Imagem de revisao indisponivel para esta proposta."}, status=400)
+    documento = imagem.documento
+    try:
+        imagem.imagem.delete(save=False)
+    except OSError:
+        logger.warning("Nao foi possivel remover o arquivo da imagem documental id=%s", imagem.id)
+    imagem.delete()
+    documento.atualizado_por = request.user
+    documento.save(update_fields=("atualizado_por", "atualizado_em"))
+    return JsonResponse({"success": True, "message": "Imagem removida da introducao.", "imagens": _document_revision_payload(documento, proposta)["imagens"]})
+
+
 def _parse_offshore_financial_decimal(value, label, *, allow_zero=False):
     """Parse the JSON values used by the review table without inventing amounts."""
     raw_value = str(value if value is not None else "").strip().replace("R$", "").replace(" ", "")
@@ -3186,13 +3306,14 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
         serialized = _serialize_financeiro(proposta)
         documento = None
         revisao_payload = None
+        document_image_paths = []
         template_key = None
         if _is_offshore_proposal(proposta):
             documento = PropostaDocumentoRevisao.objects.filter(
                 proposta=proposta,
                 numero_revisao=proposta.revisao,
                 tipo_documento=PropostaDocumentoRevisao.TIPO_OFFSHORE,
-            ).prefetch_related("linhas").first()
+            ).prefetch_related("linhas", "imagens").first()
             if not documento:
                 raise OfficialProposalPdfError("Não foi possível carregar a revisão documental desta proposta. O PDF não foi gerado.")
             if mode not in {"preview", "final"}:
@@ -3202,6 +3323,7 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
                 if not all(getattr(documento, field) for field in required):
                     raise OfficialProposalPdfError("Confirme todas as seções da revisão documental antes de gerar o PDF oficial.")
             revisao_payload = _document_revision_payload(documento, proposta)
+            document_image_paths = [str(image.imagem.path) for image in documento.imagens.all() if image.imagem]
         elif _is_onshore_proposal(proposta):
             type_to_template = {
                 PropostaDocumentoRevisao.TIPO_PC_ONSHORE: "pc_onshore",
@@ -3215,7 +3337,7 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
                 proposta=proposta,
                 numero_revisao=proposta.revisao,
                 tipo_documento=document_type,
-            ).prefetch_related("linhas").first()
+            ).prefetch_related("linhas", "imagens").first()
             if not documento:
                 raise OfficialProposalPdfError("Não foi possível carregar a revisão documental selecionada. O PDF não foi gerado.")
             if document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE and mode == "final":
@@ -3226,6 +3348,8 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
                     )
             revisao_payload = _document_revision_payload(documento, proposta)
             template_key = type_to_template[document_type]
+            if document_type == PropostaDocumentoRevisao.TIPO_PC_ONSHORE:
+                document_image_paths = [str(image.imagem.path) for image in documento.imagens.all() if image.imagem]
         pdf_content, filename = generate_official_proposal_pdf(
             proposta,
             serialized=serialized,
@@ -3233,6 +3357,7 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
             document_revision=revisao_payload,
             template_key=template_key,
             preserve_variable_highlights=mode != "final",
+            document_image_paths=document_image_paths,
         )
         if preview_as_images:
             if documento and document_type == PropostaDocumentoRevisao.TIPO_PT_ONSHORE:

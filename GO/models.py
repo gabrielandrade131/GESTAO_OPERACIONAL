@@ -5171,6 +5171,41 @@ class PropostaDocumentoRevisao(models.Model):
         ordering = ("-numero_revisao", "-id")
 
 
+def proposta_documento_imagem_upload_to(instance, filename):
+    base, extension = os.path.splitext(str(filename or ""))
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._") or "imagem"
+    return f"comercial/revisoes/{instance.documento_id}/imagens/{safe_name}_{secrets.token_hex(6)}{extension.lower()}"
+
+
+class PropostaDocumentoImagem(models.Model):
+    """Imagem inserida ao final da introdução de uma revisão comercial."""
+
+    documento = models.ForeignKey(
+        PropostaDocumentoRevisao,
+        on_delete=models.CASCADE,
+        related_name="imagens",
+    )
+    imagem = models.ImageField(upload_to=proposta_documento_imagem_upload_to)
+    nome_original = models.CharField(max_length=255)
+    ordem = models.PositiveIntegerField(default=1)
+    enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="imagens_revisao_proposta_enviadas",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("ordem", "id")
+        verbose_name = "imagem de revisão documental"
+        verbose_name_plural = "imagens de revisão documental"
+
+    def __str__(self):
+        return f"Revisão {self.documento_id} - {self.nome_original}"
+
+
 class PropostaDocumentoLinha(models.Model):
     """Linha ordenada das seções variáveis do documento oficial."""
     TIPO_CHOICES = (("PROCEDIMENTO", "Procedimento"), ("EQUIPE", "Equipe"), ("EQUIPAMENTO", "Equipamento"), ("PREMISSA", "Premissa"), ("OBRIGACAO", "Obrigação"))

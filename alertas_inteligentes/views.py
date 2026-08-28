@@ -28,6 +28,7 @@ from .notification_center import (
     mark_all_read,
     notification_snapshot,
     serialize_alert,
+    serialize_rdo_group,
     set_read_state,
     accessible_alert_querysets,
     _with_read_state,
@@ -229,7 +230,18 @@ def api_notificacao_detalhe(request, source, alert_id):
     if not result:
         return JsonResponse({"success": False, "error": "Alerta não encontrado."}, status=404)
     alert, is_read = result
-    return JsonResponse({"success": True, "item": serialize_alert(source, alert, is_read)})
+    item = (
+        serialize_rdo_group(
+            alert,
+            mode={
+                "rdo_grupo_ativos": "active",
+                "rdo_grupo_corrigidos": "corrected",
+            }.get(source, "all"),
+        )
+        if source.startswith("rdo_grupo_")
+        else serialize_alert(source, alert, is_read)
+    )
+    return JsonResponse({"success": True, "item": item})
 
 
 def api_notificacao_leitura(request, source, alert_id):
@@ -248,10 +260,25 @@ def api_notificacao_leitura(request, source, alert_id):
         return JsonResponse({"success": False, "error": "Informe um estado de leitura válido."}, status=400)
     set_read_state(request.user, source, alert, is_read)
     snapshot = notification_snapshot(request.user)
+    item = (
+        serialize_rdo_group(
+            alert,
+            mode={
+                "rdo_grupo_ativos": "active",
+                "rdo_grupo_corrigidos": "corrected",
+            }.get(source, "all"),
+        )
+        if source.startswith("rdo_grupo_")
+        else serialize_alert(source, alert, is_read)
+    )
+    if source.startswith("rdo_grupo_"):
+        item["is_read"] = is_read
+        for child in item["alerts"]:
+            child["is_read"] = is_read
     return JsonResponse(
         {
             "success": True,
-            "item": serialize_alert(source, alert, is_read),
+            "item": item,
             "unread_count": snapshot["unread_count"],
             "compact_items": snapshot["items"],
         }

@@ -14,7 +14,7 @@ import tempfile
 
 from django.conf import settings
 from docx import Document
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -440,6 +440,52 @@ def _apply_pc_onshore_revision(document, revision, serialized, items, *, show_va
     _fill_pc_onshore_financial_table(document, items, revision, serialized)
 
 
+def _append_pc_onshore_signature(document, analyst):
+    """Clone the approved Offshore signature block for the PC Onshore layout."""
+    date_paragraph = next(
+        (
+            paragraph
+            for paragraph in reversed(document.paragraphs)
+            if paragraph.text.strip().startswith("Rio de Janeiro,")
+        ),
+        None,
+    )
+    if date_paragraph is None:
+        raise OfficialProposalPdfError("A data de assinatura do template PC Onshore nao foi encontrada.")
+
+    offshore_template = Document(resolve_official_template_path("pc_offshore"))
+    # Paragraphs 80-85 are the approved plain-text signature block. Paragraph
+    # 79 contains the legacy signature drawing and must never be copied.
+    source_block = offshore_template.paragraphs[80:86]
+    if len(source_block) != 6:
+        raise OfficialProposalPdfError("O bloco de assinatura do template Offshore nao foi encontrado.")
+
+    insertion_point = date_paragraph
+    inserted = []
+    for source_paragraph in source_block:
+        paragraph_xml = deepcopy(source_paragraph._p)
+        insertion_point._p.addnext(paragraph_xml)
+        insertion_point = Paragraph(paragraph_xml, date_paragraph._parent)
+        inserted.append(insertion_point)
+
+    # The third cloned paragraph is the analyst name. Reusing the original
+    # paragraph preserves its exact approved formatting and alignment.
+    _set_paragraph_text(inserted[2], (analyst or "Nao informado").upper())
+
+
+def _set_pc_onshore_footer_analyst(document, analyst):
+    """Keep the official PC footer tied to the commercial analyst."""
+    for section in document.sections:
+        for paragraph in section.footer.paragraphs:
+            if "Comercial" not in paragraph.text:
+                continue
+            _replace_in_runs(
+                paragraph,
+                "Nome do analista \u2013 Comercial",
+                f"{analyst or 'Nao informado'} \u2013 Comercial",
+            )
+
+
 def _apply_pt_onshore_revision(document, revision, serialized, *, show_variable_highlights=False):
     """Apply the PT revision only to the explicitly yellow runs of its official DOCX."""
     content = (revision or {}).get("conteudo") or {}
@@ -759,7 +805,77 @@ def _set_paragraph_with_highlight(paragraph, prefix, highlighted, suffix, *, sho
         ending_run._r.insert(0, deepcopy(base_properties))
 
 
-def _apply_offshore_revision(document, revision):
+def _insert_document_review_images(document, image_paths, *, anchor_index):
+    """Render reviewed images as reference figures after an introduction paragraph."""
+    if not image_paths or len(document.paragraphs) <= anchor_index:
+        return
+
+    insertion_point = document.paragraphs[anchor_index]._p
+    for position, image_path in enumerate(image_paths, start=1):
+        path = Path(image_path)
+        if not path.is_file():
+            raise OfficialProposalPdfError("Uma imagem da revisao documental nao foi encontrada para gerar o PDF.")
+
+        figure = document.add_table(rows=1, cols=1)
+        figure.alignment = WD_TABLE_ALIGNMENT.CENTER
+        figure.autofit = False
+        cell = figure.cell(0, 0)
+        cell.width = Inches(5.45)
+        figure.columns[0].width = Inches(5.45)
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+        properties = cell._tc.get_or_add_tcPr()
+        shading = OxmlElement("w:shd")
+        shading.set(qn("w:fill"), "F7F9FA")
+        properties.append(shading)
+        margins = OxmlElement("w:tcMar")
+        for side in ("top", "left", "bottom", "right"):
+            margin = OxmlElement(f"w:{side}")
+            margin.set(qn("w:w"), "120")
+            margin.set(qn("w:type"), "dxa")
+            margins.append(margin)
+        properties.append(margins)
+        borders = OxmlElement("w:tcBorders")
+        for side in ("top", "left", "bottom", "right"):
+            border = OxmlElement(f"w:{side}")
+            border.set(qn("w:val"), "single")
+            border.set(qn("w:sz"), "4")
+            border.set(qn("w:color"), "D8E2E5")
+            borders.append(border)
+        properties.append(borders)
+
+        image_paragraph = cell.paragraphs[0]
+        image_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        image_paragraph.paragraph_format.space_before = Pt(0)
+        image_paragraph.paragraph_format.space_after = Pt(4)
+        try:
+            image_paragraph.add_run().add_picture(str(path), width=Inches(4.95))
+        except Exception as error:
+            raise OfficialProposalPdfError("Nao foi possivel inserir uma imagem da introducao no documento.") from error
+        caption = cell.add_paragraph()
+        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        caption.paragraph_format.space_before = Pt(0)
+        caption.paragraph_format.space_after = Pt(0)
+        caption_run = caption.add_run(f"Figura {position} - Imagem de referencia enviada pelo cliente")
+        caption_run.font.name = "Arial"
+        caption_run._element.rPr.rFonts.set(qn("w:eastAsia"), "Arial")
+        caption_run.font.size = Pt(8)
+        caption_run.font.italic = True
+        caption_run.font.color.rgb = RGBColor(92, 108, 123)
+
+        insertion_point.addnext(figure._tbl)
+        insertion_point = figure._tbl
+
+
+def _insert_offshore_intro_images(document, image_paths):
+    _insert_document_review_images(document, image_paths, anchor_index=50)
+
+
+def _insert_pc_onshore_intro_images(document, image_paths):
+    _insert_document_review_images(document, image_paths, anchor_index=37)
+
+
+def _apply_offshore_revision(document, revision, image_paths=None):
     if not revision:
         return
     paragraphs = document.paragraphs
@@ -787,6 +903,10 @@ def _apply_offshore_revision(document, revision):
             for offset in range(max(3, len(content))):
                 if start + offset < len(paragraphs):
                     _set_paragraph_text(paragraphs[start + offset], content[offset].get("descricao", "") if offset < len(content) else "")
+    # Add visual figures only after the template's indexed paragraphs and
+    # tables are complete. A figure is itself a table and would otherwise
+    # shift the official table indexes above.
+    _insert_offshore_intro_images(document, image_paths)
 
 
 def _apply_offshore_signature_details(document, analyst, emission_date):
@@ -901,6 +1021,7 @@ def generate_official_proposal_pdf(
     document_revision=None,
     template_key=None,
     preserve_variable_highlights=True,
+    document_image_paths=None,
 ):
     """Fill a private DOCX copy and return the generated PDF bytes and filename."""
     template_key = template_key or _proposal_kind(proposal)
@@ -976,6 +1097,9 @@ def generate_official_proposal_pdf(
         if template_key == "pc_offshore":
             _apply_offshore_revision(document, document_revision)
             _fill_offshore_financial_table(document, normalized_items)
+            # This figure creates a DOCX table. Insert it only after every
+            # indexed template table has been filled.
+            _insert_offshore_intro_images(document, document_image_paths)
             _apply_offshore_signature_details(document, responsible, emission_date)
         elif template_key == "pc_onshore":
             if not document_revision:
@@ -987,6 +1111,9 @@ def generate_official_proposal_pdf(
                 normalized_items,
                 show_variable_highlights=preserve_variable_highlights,
             )
+            _insert_pc_onshore_intro_images(document, document_image_paths)
+            _append_pc_onshore_signature(document, responsible)
+            _set_pc_onshore_footer_analyst(document, responsible)
         elif template_key == "pt_onshore":
             if not document_revision:
                 raise OfficialProposalPdfError("Nao foi possivel carregar a revisao da Proposta Tecnica Onshore.")

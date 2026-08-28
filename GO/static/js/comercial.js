@@ -3565,6 +3565,8 @@ document.addEventListener("DOMContentLoaded", () => {
             criticalAnalysisPdfPattern: bootstrap?.endpoints?.criticalAnalysisPdfPattern || "",
             documentReviewPattern: bootstrap?.endpoints?.documentReviewPattern || "",
             documentReviewSavePattern: bootstrap?.endpoints?.documentReviewSavePattern || "",
+            documentReviewImageUploadPattern: bootstrap?.endpoints?.documentReviewImageUploadPattern || "",
+            documentReviewImageDeletePattern: bootstrap?.endpoints?.documentReviewImageDeletePattern || "",
             attachmentListPattern: bootstrap?.endpoints?.attachmentListPattern || "",
             attachmentUploadPattern: bootstrap?.endpoints?.attachmentUploadPattern || "",
             quickClientCreate: bootstrap?.endpoints?.quickClientCreate || "",
@@ -4338,6 +4340,49 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.add("comercial-proposal-modal-open", "comercial-no-scroll");
         modal.innerHTML = `<div class="document-review-modal__dialog"><header><div><h2>Revisar Proposta Comercial Onshore</h2><p>Proposta ${escapeHtml(payload.proposta.numeroProposta)} • REV ${escapeHtml(review.revisaoDocumental || "00")} • Onshore</p></div><button type="button" data-document-close>×</button></header><main><section class="document-review__general"><h3>Dados gerais <small>Automático</small></h3><div class="document-review__readonly-grid"><span><b>Cliente</b>${escapeHtml(payload.proposta.empresa)}</span><span><b>Serviço</b>${escapeHtml(payload.proposta.servico || payload.proposta.escopo)}</span><span><b>Solicitante</b>${escapeHtml(payload.proposta.solicitante || "Não informado")}</span><span><b>E-mail</b>${escapeHtml(payload.proposta.emailSolicitante || "Não informado")}</span></div></section><section class="document-review__section"><h3>Carta / serviço <small>Revisão documental</small></h3><label>Complemento do serviço<textarea data-pc-service-complement placeholder="Use somente se o serviço exigir complemento na carta.">${escapeHtml(content.complemento_servico || "")}</textarea></label></section><section class="document-review__section"><h3>Referência à Proposta Técnica <small>Revisão documental</small></h3><label class="document-review__checkbox"><input type="checkbox" data-pc-has-pt ${content.possui_pt ? "checked" : ""}> Esta PC possui uma Proposta Técnica relacionada</label><div data-pc-pt-fields class="document-review__line-fields ${content.possui_pt ? "" : "is-hidden"}"><label>Identificação da PT<input data-pc-pt-id value="${escapeHtml(content.pt_identificacao || "")}"></label><label>Data da PT<input type="date" data-pc-pt-date value="${escapeHtml(content.pt_data || "")}"></label><label>REV da PT<input data-pc-pt-revision value="${escapeHtml(content.pt_revisao || "")}"></label></div><label>Texto de introdução sem PT<textarea data-pc-no-pt-text placeholder="Obrigatório somente se não houver PT relacionada.">${escapeHtml(content.introducao_sem_pt || "")}</textarea></label></section><section class="document-review__section"><h3>Proposta financeira <small>Automático a partir da proposta</small></h3><div class="document-review__financial">${(review.financeiro || []).map((item) => `<div><b>${escapeHtml(item.descricao)}</b><span>Qtd. ${escapeHtml(item.quantidade)}</span><strong>R$ ${escapeHtml(item.preco_unitario)}</strong></div>`).join("") || "Nenhum item financeiro cadastrado."}</div></section><section class="document-review__section"><h3>Prazo e validade <small>Revisão documental</small></h3><div class="document-review__line-fields"><label>Prazo de execução<input data-pc-deadline value="${escapeHtml(content.prazo || "")}" placeholder="Ex.: ${escapeHtml(payload.proposta.tempoContratoDias || "60 dias")}"></label><label>Validade em dias<input type="number" min="1" data-pc-validity value="${escapeHtml(content.validade_dias || "")}" placeholder="Ex.: 30"></label></div><label>Texto complementar<textarea data-pc-deadline-note placeholder="Ex.: Mobilização a combinar, após assinatura de contrato.">${escapeHtml(content.prazo_complementar || "")}</textarea></label></section><section class="document-review__section"><h3>Revisão final</h3><p>Os campos comerciais são preenchidos automaticamente; confirme os campos documentais antes da pré-visualização.</p></section></main><footer><button type="button" data-document-close>Cancelar</button><button type="button" data-document-save>Salvar rascunho</button><button type="button" data-document-preview>Pré-visualizar PDF</button></footer></div>`;
         document.body.appendChild(modal);
+        let reviewImages = Array.isArray(review.imagens) ? [...review.imagens] : [];
+        const pcImageSection = document.createElement("section");
+        pcImageSection.className = "document-review__section document-review__section--onshore-images";
+        pcImageSection.innerHTML = `<div class="document-review__image-heading"><div><h3>Imagens da introducao</h3><p>As imagens enviadas pelo cliente serao inseridas ao final de 2. INTRODUCAO E OBJETIVO.</p></div><button type="button" data-pc-image-add>+ Adicionar imagens</button></div><input class="is-hidden" type="file" accept="image/png,image/jpeg" multiple data-pc-image-input><div class="document-review__image-grid" data-pc-image-grid></div>`;
+        const pcReferenceSection = [...modal.querySelectorAll(".document-review__section")].find((section) => section.querySelector("h3")?.textContent.includes("Refer"));
+        pcReferenceSection?.after(pcImageSection);
+        const renderPcReviewImages = () => {
+            const grid = pcImageSection.querySelector("[data-pc-image-grid]");
+            if (!grid) return;
+            grid.innerHTML = reviewImages.length ? reviewImages.map((image) => `<article class="document-review__image-card"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.nome || "Imagem da introducao")}"><div><strong>${escapeHtml(image.nome || "Imagem")}</strong><button type="button" data-pc-image-remove data-pc-image-id="${escapeHtml(String(image.id))}">Remover</button></div></article>`).join("") : `<div class="document-review__image-empty">Nenhuma imagem adicionada. As imagens aparecerao apos a introducao no documento.</div>`;
+        };
+        renderPcReviewImages();
+        pcImageSection.querySelector("[data-pc-image-input]")?.addEventListener("change", async (event) => {
+            const files = [...(event.target.files || [])];
+            if (!files.length || !state.endpoints.documentReviewImageUploadPattern) return;
+            const formData = new FormData();
+            formData.append("document_type", "PC_ONSHORE");
+            files.forEach((file) => formData.append("imagens", file));
+            try {
+                const response = await fetch(buildEndpoint(state.endpoints.documentReviewImageUploadPattern, proposalId), { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": getCsrfToken() }, body: formData });
+                const uploadPayload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(uploadPayload?.message || "Nao foi possivel enviar as imagens.");
+                reviewImages = Array.isArray(uploadPayload.imagens) ? uploadPayload.imagens : reviewImages;
+                renderPcReviewImages();
+                showNotification({ type: "success", title: "Imagens adicionadas", message: uploadPayload.message || "As imagens serao incluidas na introducao." });
+            } catch (error) {
+                showNotification({ type: "warning", title: "Erro ao adicionar imagens", message: error.message || "Nao foi possivel enviar as imagens." });
+            } finally { event.target.value = ""; }
+        });
+        pcImageSection.addEventListener("click", async (event) => {
+            if (event.target.closest("[data-pc-image-add]")) return pcImageSection.querySelector("[data-pc-image-input]")?.click();
+            const removeButton = event.target.closest("[data-pc-image-remove]");
+            if (!removeButton || !state.endpoints.documentReviewImageDeletePattern) return;
+            try {
+                const endpoint = buildEndpoint(state.endpoints.documentReviewImageDeletePattern, proposalId).replace("__image_id__", removeButton.dataset.pcImageId || "");
+                const deletePayload = await fetchJson(endpoint, { method: "POST" });
+                reviewImages = Array.isArray(deletePayload.imagens) ? deletePayload.imagens : reviewImages.filter((image) => String(image.id) !== String(removeButton.dataset.pcImageId));
+                renderPcReviewImages();
+                showNotification({ type: "success", title: "Imagem removida", message: deletePayload.message || "A imagem foi removida da introducao." });
+            } catch (error) {
+                showNotification({ type: "warning", title: "Erro ao remover imagem", message: error.message || "Nao foi possivel remover a imagem." });
+            }
+        });
         const clearLegacyDefault = (selector, expectedValue, placeholder) => {
             const input = modal.querySelector(selector);
             if (input && String(input.value || "").trim() === String(expectedValue || "").trim()) {
@@ -4672,6 +4717,67 @@ document.addEventListener("DOMContentLoaded", () => {
             documentNotice.textContent = "Sugestão contextual do Synchro AI baseada no serviço e na unidade da proposta. Revise e ajuste o conteúdo antes da emissão.";
             overviewSection.append(documentNotice, introductionField, procedureTitleField);
             generalSection.after(overviewSection);
+
+            let reviewImages = Array.isArray(review.imagens) ? [...review.imagens] : [];
+            const imageSection = document.createElement("section");
+            imageSection.className = "document-review__section document-review__section--offshore-images";
+            imageSection.innerHTML = `<div class="document-review__image-heading"><div><h3>Imagens da introducao</h3><p>Adicione imagens enviadas pelo cliente para inseri-las ao final de 2. INTRODUCAO E OBJETIVO.</p></div><button type="button" data-offshore-image-add>+ Adicionar imagens</button></div><input class="is-hidden" type="file" accept="image/png,image/jpeg" multiple data-offshore-image-input><div class="document-review__image-grid" data-offshore-image-grid></div>`;
+            overviewSection.after(imageSection);
+
+            const renderReviewImages = () => {
+                const imageGrid = imageSection.querySelector("[data-offshore-image-grid]");
+                if (!imageGrid) return;
+                imageGrid.innerHTML = reviewImages.length ? reviewImages.map((image) => `
+                    <article class="document-review__image-card">
+                        <img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.nome || "Imagem da introducao")}">
+                        <div><strong>${escapeHtml(image.nome || "Imagem")}</strong><button type="button" data-offshore-image-remove data-offshore-image-id="${escapeHtml(String(image.id))}">Remover</button></div>
+                    </article>
+                `).join("") : `<div class="document-review__image-empty">Nenhuma imagem adicionada. As imagens enviadas aparecerao depois do texto de introducao no PDF.</div>`;
+            };
+            renderReviewImages();
+
+            imageSection.querySelector("[data-offshore-image-input]")?.addEventListener("change", async (event) => {
+                const files = [...(event.target.files || [])];
+                if (!files.length || !state.endpoints.documentReviewImageUploadPattern) return;
+                const formData = new FormData();
+                files.forEach((file) => formData.append("imagens", file));
+                try {
+                    const response = await fetch(buildEndpoint(state.endpoints.documentReviewImageUploadPattern, proposalId), {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: { "X-CSRFToken": getCsrfToken() },
+                        body: formData,
+                    });
+                    const uploadPayload = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(uploadPayload?.message || "Nao foi possivel enviar as imagens.");
+                    reviewImages = Array.isArray(uploadPayload.imagens) ? uploadPayload.imagens : reviewImages;
+                    renderReviewImages();
+                    showNotification({ type: "success", title: "Imagens adicionadas", message: uploadPayload.message || "As imagens serao incluídas na introducao do documento." });
+                } catch (error) {
+                    showNotification({ type: "warning", title: "Erro ao adicionar imagens", message: error.message || "Nao foi possivel enviar as imagens." });
+                } finally {
+                    event.target.value = "";
+                }
+            });
+
+            imageSection.addEventListener("click", async (event) => {
+                if (event.target.closest("[data-offshore-image-add]")) {
+                    imageSection.querySelector("[data-offshore-image-input]")?.click();
+                    return;
+                }
+                const removeButton = event.target.closest("[data-offshore-image-remove]");
+                if (!removeButton || !state.endpoints.documentReviewImageDeletePattern) return;
+                try {
+                    const deleteEndpoint = buildEndpoint(state.endpoints.documentReviewImageDeletePattern, proposalId)
+                        .replace("__image_id__", removeButton.dataset.offshoreImageId || "");
+                    const deletePayload = await fetchJson(deleteEndpoint, { method: "POST" });
+                    reviewImages = Array.isArray(deletePayload.imagens) ? deletePayload.imagens : reviewImages.filter((image) => String(image.id) !== String(removeButton.dataset.offshoreImageId));
+                    renderReviewImages();
+                    showNotification({ type: "success", title: "Imagem removida", message: deletePayload.message || "A imagem foi removida da introducao." });
+                } catch (error) {
+                    showNotification({ type: "warning", title: "Erro ao remover imagem", message: error.message || "Nao foi possivel remover a imagem." });
+                }
+            });
         }
         const close = () => {
             modal.remove();

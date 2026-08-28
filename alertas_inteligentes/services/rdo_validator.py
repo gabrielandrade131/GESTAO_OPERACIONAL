@@ -264,15 +264,36 @@ def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_i
         for alerta in (alertas_ativos or [])
         if getattr(alerta, "pk", None)
     }
-    corrigidos = AlertaInteligente.objects.filter(
+    obsoletos = AlertaInteligente.objects.filter(
         rdo=rdo,
         status__in=["pendente", "em_analise"],
     )
     if ids_ativos:
-        corrigidos = corrigidos.exclude(pk__in=ids_ativos)
+        obsoletos = obsoletos.exclude(pk__in=ids_ativos)
 
     agora = timezone.now()
     origem = "usuario" if corrigido_por_id else "nao_identificada"
+    # Uma anomalia pode desaparecer apenas porque a base estatística mudou.
+    # Isso não comprova que alguém corrigiu o RDO e não deve gerar crédito
+    # para o usuário que realizou uma edição sem relação com a anomalia.
+    anomalias_ids = list(
+        obsoletos.filter(
+            tipo__in=["RDO_OUTLIER", "RDO_REVISAR_ANOMALIA"]
+        ).values_list("pk", flat=True)
+    )
+    if anomalias_ids:
+        AlertaInteligente.objects.filter(pk__in=anomalias_ids).update(
+            status="resolvido",
+            resolvido_em=agora,
+            motivo_encerramento="mudanca_contexto",
+            origem_correcao="automatica",
+            justificativa=(
+                "Anomalia não confirmada após nova análise; a mudança da base "
+                "estatística não foi contabilizada como correção do RDO."
+            ),
+        )
+
+    corrigidos = obsoletos.exclude(pk__in=anomalias_ids)
     ids_corrigidos = list(corrigidos.values_list("pk", flat=True))
     if ids_corrigidos:
         AlertaInteligente.objects.filter(pk__in=ids_corrigidos).update(
