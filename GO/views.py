@@ -1172,10 +1172,20 @@ def _safe_apply_name_filter(queryset, fk_field_name, legacy_field_name, value):
             return queryset
 
 def _safe_apply_multi_filter(queryset, field_name, raw_value):
+    """Filter text fields by one or more values without splitting phrases.
+
+    Commas, semicolons and line breaks are explicit separators. Whitespace is
+    kept inside each value so names and statuses such as ``IVONEI DE SOUZA``
+    and ``Em Andamento`` are matched as complete phrases.
+    """
     if not raw_value:
         return queryset
 
-    tokens = [t.strip() for t in re.split(r"[;,\s]+", str(raw_value)) if t.strip()]
+    tokens = [
+        token.strip()
+        for token in re.split(r"[;,\r\n]+", str(raw_value))
+        if token.strip()
+    ]
     if not tokens:
         return queryset
 

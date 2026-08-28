@@ -22,14 +22,14 @@ class HomeStatusDatabookFilterTests(TestCase):
         self.unidade = Unidade.objects.create(nome='Unidade Filtro Home')
         self.coordenador = next(value for value, _ in OrdemServico.COORDENADORES if value)
 
-    def _create_os(self, numero_os, status_databook):
+    def _create_os(self, numero_os, status_databook, *, coordenador=None, servico='COLETA DE AR'):
         return OrdemServico.objects.create(
             numero_os=numero_os,
             data_inicio=date(2026, 3, 26),
             data_fim=None,
             dias_de_operacao=0,
-            servico='COLETA DE AR',
-            servicos='COLETA DE AR',
+            servico=servico,
+            servicos=servico,
             metodo='Manual',
             pob=1,
             tanque='',
@@ -39,7 +39,7 @@ class HomeStatusDatabookFilterTests(TestCase):
             Unidade=self.unidade,
             tipo_operacao='Onshore',
             solicitante='Solicitante Teste',
-            coordenador=self.coordenador,
+            coordenador=coordenador or self.coordenador,
             status_operacao='Programada',
             status_geral='Programada',
             status_comercial='Em aberto',
@@ -76,4 +76,76 @@ class HomeStatusDatabookFilterTests(TestCase):
         self.assertEqual(
             [obj.pk for obj in response.context['servicos'].object_list],
             [os_finalizada.pk],
+        )
+
+    def test_home_keeps_coordinator_name_as_a_complete_phrase(self):
+        os_ivonei = self._create_os(
+            numero_os=94001,
+            status_databook='Em Andamento',
+            coordenador='IVONEI DE SOUZA',
+        )
+        self._create_os(
+            numero_os=94002,
+            status_databook='Em Andamento',
+            coordenador='RICARDO PIRES DE MOURA JUNIOR',
+        )
+
+        response = self.client.get(reverse('home'), {'coordenador': 'IVONEI DE SOUZA'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [obj.pk for obj in response.context['servicos'].object_list],
+            [os_ivonei.pk],
+        )
+
+    def test_home_keeps_other_multiword_filters_as_complete_phrases(self):
+        os_em_andamento = self._create_os(
+            numero_os=95001,
+            status_databook='Em Andamento',
+            servico='COLETA DE AR',
+        )
+        self._create_os(
+            numero_os=95002,
+            status_databook='Em aberto',
+            servico='COLETA DE OLEO',
+        )
+
+        status_response = self.client.get(
+            reverse('home'),
+            {'status_databook': 'Em Andamento'},
+        )
+        service_response = self.client.get(
+            reverse('home'),
+            {'servico': 'COLETA DE AR'},
+        )
+
+        self.assertEqual(
+            [obj.pk for obj in status_response.context['servicos'].object_list],
+            [os_em_andamento.pk],
+        )
+        self.assertEqual(
+            [obj.pk for obj in service_response.context['servicos'].object_list],
+            [os_em_andamento.pk],
+        )
+
+    def test_home_still_accepts_explicit_multiple_values(self):
+        os_ivonei = self._create_os(
+            numero_os=96001,
+            status_databook='Em Andamento',
+            coordenador='IVONEI DE SOUZA',
+        )
+        os_ricardo = self._create_os(
+            numero_os=96002,
+            status_databook='Em Andamento',
+            coordenador='RICARDO PIRES DE MOURA JUNIOR',
+        )
+
+        response = self.client.get(
+            reverse('home'),
+            {'coordenador': 'IVONEI DE SOUZA; RICARDO PIRES DE MOURA JUNIOR'},
+        )
+
+        self.assertEqual(
+            {obj.pk for obj in response.context['servicos'].object_list},
+            {os_ivonei.pk, os_ricardo.pk},
         )
