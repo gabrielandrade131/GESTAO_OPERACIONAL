@@ -7869,21 +7869,21 @@ def _apply_post_to_rdo(request, rdo_obj):
             if not getattr(rdo_obj, 'contrato_po', None) and contrato_po_str:
                 rdo_obj.contrato_po = contrato_po_str
 
-        rdo_num = _clean(request.POST.get('rdo_contagem'))
+        rdo_num = _clean(request.POST.get('rdo_contagem') or _get_post_or_json('rdo_contagem') or _get_post_or_json('rdo'))
         if rdo_num and not getattr(rdo_obj, 'rdo', None):
             rdo_obj.rdo = rdo_num
         houve_correcao_in = _get_post_or_json('houve_correcao')
         houve_correcao_present = _get_post_or_json('houve_correcao_present')
         if houve_correcao_in is not None or houve_correcao_present is not None:
             rdo_obj.houve_correcao = str(houve_correcao_in).strip().lower() in ('1', 'true', 'sim', 'on', 'yes')
-        turno_in = _clean(request.POST.get('turno'))
+        turno_in = _clean(request.POST.get('turno') or _get_post_or_json('turno'))
         if turno_in:
             if turno_in.lower() == 'diurno':
                 rdo_obj.turno = 'Diurno'
             elif turno_in.lower() == 'noturno':
                 rdo_obj.turno = 'Noturno'
 
-        contrato_in = _clean(request.POST.get('contrato_po'))
+        contrato_in = _clean(request.POST.get('contrato_po') or _get_post_or_json('contrato_po'))
         contrato_in = _normalize_contrato(contrato_in)
         if contrato_in is not None:
             if hasattr(rdo_obj, 'contrato_po'):
