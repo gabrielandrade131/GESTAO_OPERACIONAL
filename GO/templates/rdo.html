@@ -6,14 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Relatório Diário de Operação - Synchro</title>
     <meta name="rdo-pending-url" content="/rdo/pending_os_json/">
-     <link rel="stylesheet" href="{% static 'css/rdo.css' %}?v=20260406h">
+     <link rel="stylesheet" href="{% static 'css/rdo.css' %}?v=20260831f">
      <link rel="stylesheet" href="{% static 'css/page_rdo.css' %}">
      <link rel="stylesheet" href="{% static 'css/rdo.report.css' %}">
      <link rel="stylesheet" href="{% static 'css/notifications.css' %}?v=20260727a">
      {# O formulário Gerar RDO é compartilhado por supervisores e administradores. #}
      <link rel="stylesheet" href="{% static 'css/rdo.supervisor.css' %}?v=20260824c">
      {% if is_supervisor %}
-     <link rel="stylesheet" href="{% static 'css/rdo.mobile.css' %}?v=20260406b">
+     <link rel="stylesheet" href="{% static 'css/rdo.mobile.css' %}?v=20260831e">
      {% endif %}
      {% if not is_supervisor %}
      <link rel="stylesheet" href="{% static 'css/rdo_nao_supervisor.css' %}?v=20260813a">
@@ -1511,6 +1511,7 @@
                                                 </select>
                                             </div>
                                         </div>
+                                        <button type="button" class="team-row-remove" aria-label="Remover este colaborador" title="Remover este colaborador"><span class="material-icons" aria-hidden="true">person_remove</span><span>Remover</span></button>
                                     </div>
                                     <div class="team-footer">
                                         <button type="button" class="btn-rdo small" id="btn-add-membro">
@@ -2028,6 +2029,7 @@
                                             {% endfor %}
                                         </select>
                                     </div>
+                                    <button type="button" class="team-row-remove" aria-label="Remover este colaborador" title="Remover este colaborador"><span class="material-icons" aria-hidden="true">person_remove</span><span>Remover</span></button>
                                 </div>
                                 <div class="team-footer">
                                     <button type="button" class="btn-rdo small" id="edit-btn-add-membro">Adicionar membro</button>
@@ -2104,7 +2106,7 @@
 
     <script src="{% static 'js/notifications.js' %}?v=20260727a"></script>
     <script src="{% static 'js/scripts.js' %}?v=20260824a"></script>
-    <script src="{% static 'js/supervisor_formdata.js' %}"></script>
+    <script src="{% static 'js/supervisor_formdata.js' %}?v=20260831d"></script>
     <script src="{% static 'js/rdo.compartment.js' %}?v=20260810d"></script>
     <script>
         
@@ -2127,7 +2129,7 @@
     </script>
     <script src="/static/vendor/rdo-pdf/html2canvas.min.js?v=1.4.1"></script>
     <script src="/static/vendor/rdo-pdf/jspdf.umd.min.js?v=2.5.1"></script>
-    <script src="{% static 'js/rdo.core.js' %}?v=20260826b"></script>
+    <script src="{% static 'js/rdo.core.js' %}?v=20260831d"></script>
     <script src="{% static 'js/rdo_approval.js' %}?v=20260805a"></script>
     {% if not is_supervisor %}
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>

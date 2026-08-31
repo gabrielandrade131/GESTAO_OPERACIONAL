@@ -357,13 +357,15 @@
 
 .planejamento-list::-webkit-scrollbar,
 .planejamento-detail-surface__body::-webkit-scrollbar,
-.planejamento-modal__body::-webkit-scrollbar {
+.planejamento-modal__body::-webkit-scrollbar,
+.plan-edit-modal__body::-webkit-scrollbar {
     width: 10px;
 }
 
 .planejamento-list::-webkit-scrollbar-thumb,
 .planejamento-detail-surface__body::-webkit-scrollbar-thumb,
-.planejamento-modal__body::-webkit-scrollbar-thumb {
+.planejamento-modal__body::-webkit-scrollbar-thumb,
+.plan-edit-modal__body::-webkit-scrollbar-thumb {
     background: #d7dde5;
     border-radius: 999px;
 }
@@ -1555,11 +1557,18 @@
 .planejamento-modal.is-plan-edit .planejamento-modal__dialog {
     width: min(760px, calc(100vw - 32px));
     max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
+    display: flex;
+    flex-direction: column;
 }
 
 .planejamento-modal__body.is-plan-edit-body {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 0;
     max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
+    overflow: hidden;
 }
 
 .planejamento-modal-stack {
@@ -1935,14 +1944,24 @@
 }
 
 .plan-edit-modal {
-    width: min(760px, calc(100vw - 32px));
+    width: 100%;
     max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
+    min-height: 0;
     background: #ffffff;
     border-radius: 22px;
     box-shadow: 0 24px 70px rgba(16, 24, 40, 0.24);
     overflow: hidden;
     display: flex;
     flex-direction: column;
+}
+
+.plan-edit-modal > form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .plan-edit-modal,
@@ -2000,7 +2019,10 @@
 
 .plan-edit-modal__body {
     flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     padding: 22px 24px;
 }
 
@@ -2157,6 +2179,7 @@
 .plan-edit-modal__footer {
     flex: 0 0 auto;
     border-top: 1px solid #e5e7eb;
+    background: #ffffff;
     padding: 16px 24px;
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -2811,8 +2834,9 @@
     }
 
     .plan-edit-modal {
-        width: calc(100vw - 20px);
+        width: 100%;
         max-height: calc(100vh - 20px);
+        max-height: calc(100dvh - 20px);
         border-radius: 18px;
     }
 

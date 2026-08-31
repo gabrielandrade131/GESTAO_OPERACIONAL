@@ -25,7 +25,13 @@
             // Pular EC para serializar de forma controlada depois
             if (el.name === 'entrada_confinado[]' || el.name === 'entrada_confinado' || el.name === 'saida_confinado[]' || el.name === 'saida_confinado') return;
             // Pular quaisquer nomes de campos de atividades/equipe mesmo que fora do wrapper (ex.: templates escondidos)
-            if (/^(atividade_|equipe_)/.test(el.name)) return;
+            // Exclusões do planejamento são flags do RDO atual (não são linhas
+            // de equipe) e precisam seguir para o backend.
+            if (/^(atividade_|equipe_)/.test(el.name) && [
+                'equipe_source',
+                'equipe_avaliacoes_json',
+                'equipe_planejamento_excluidos[]'
+            ].indexOf(el.name) === -1) return;
             fd.append(el.name, el.value);
         });
 
@@ -90,6 +96,7 @@
                 var nom = _val(nomeEl);
                 var fun = _val(funcEl);
                 var srv = _val(row.querySelector('[name="equipe_em_servico[]"]')) || _val(row.querySelector('[name="equipe_em_servico"]'));
+                if (!srv) srv = 'true';
 
                 // Se o nome vier de <select>, preferir o data-id da opção selecionada
                 try {
@@ -119,6 +126,19 @@
                 if (typeof fd.set === 'function') fd.set('pob', String(pobCount));
                 else fd.append('pob', String(pobCount));
             } catch(_){ }
+        })();
+
+        // Equipe que permanece visível na prévia do planejamento: esta é a
+        // fonte autoritativa para o RDO atual, inclusive quando alguém foi removido.
+        (function(){
+            var source = _qs('[name="equipe_source"]', form);
+            if (!source || String(source.value || '').trim() !== 'planejamento') return;
+            try { if (typeof fd.delete === 'function') fd.delete('planejamento_membros_rdo[]'); } catch(_){ }
+            try { if (typeof fd.set === 'function') fd.set('planejamento_membros_rdo_definidos', '1'); else fd.append('planejamento_membros_rdo_definidos', '1'); } catch(_){ }
+            _qsa('#sup-planejamento-team-list .rdo-planning-team-member', form).forEach(function(card){
+                var pid = String(card.getAttribute('data-team-member-pessoa-id') || '').trim();
+                if (pid) fd.append('planejamento_membros_rdo[]', pid);
+            });
         })();
 
         // 5) EC (Entradas/Saídas de Espaço Confinado) — anexar de forma controlada

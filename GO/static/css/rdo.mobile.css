@@ -420,6 +420,19 @@ input[readonly], textarea[readonly]{background:#f7f7f7}
 
 .btn-rdo.small{padding:6px 8px;font-size:0.85rem;border-radius:8px}
 
+.team-wrapper .team-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
+.team-row-remove{align-self:center;min-height:42px}
+
+/* Equipe no modal do supervisor: campos grandes, sem estouro horizontal. */
+@media (max-width:700px){
+    .team-wrapper .team-row{grid-template-columns:minmax(0,1fr) !important;gap:10px}
+    .team-wrapper .team-footer{align-items:stretch;flex-wrap:wrap;gap:10px}
+    .team-wrapper .team-footer > .btn-rdo{min-height:44px}
+    .planning-picker{width:100%;min-width:0}
+    .planning-picker__controls{display:flex;flex-direction:column;gap:8px}
+    .planning-picker-select,.planning-picker__controls .btn-rdo{width:100%;min-height:44px}
+}
+
 
 .modal-footer .btn-rdo{min-width:120px;padding:10px 14px;border-radius:10px;font-weight:700}
 .modal-footer .btn-rdo:not(.outline){background:#bfe21b;color:#0b2a00;border:none;box-shadow:0 6px 14px rgba(191,226,27,0.18)}

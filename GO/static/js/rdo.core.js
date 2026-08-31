@@ -693,15 +693,17 @@
       var ratingCode = _escapePlanningHtml((item && item.avaliacao_nota) || '');
       var ratingLabel = _escapePlanningHtml((item && (item.avaliacao_nota_label || item.avaliacao_nota)) || '');
       var memberId = _escapePlanningHtml((item && item.id != null) ? item.id : '');
+      var pessoaId = _escapePlanningHtml((item && (item.pessoa_id || item.pessoaId) != null) ? (item.pessoa_id || item.pessoaId) : '');
       var safeIndex = _escapePlanningHtml((item && item.ordem != null) ? item.ordem : index);
       return [
-        '<article class="rdo-planning-team-member" data-team-member-id="', memberId, '" data-team-member-index="', safeIndex, '" data-team-member-name="', nome, '" data-team-member-role="', funcao, '">',
+        '<article class="rdo-planning-team-member" data-team-member-id="', memberId, '" data-team-member-pessoa-id="', pessoaId, '" data-team-member-index="', safeIndex, '" data-team-member-name="', nome, '" data-team-member-role="', funcao, '">',
           '<span class="rdo-planning-team-member__icon material-icons" aria-hidden="true">person</span>',
           '<div class="rdo-planning-team-member__content">',
             '<strong>', nome, '</strong>',
             '<span>', funcao, '</span>',
           '</div>',
           '<div class="rdo-planning-team-member__actions">',
+            '<button type="button" class="rdo-planning-team-member__remove" data-remove-planning-member="' + (pessoaId || memberId) + '" data-remove-planning-index="' + safeIndex + '" aria-label="Remover deste RDO">Remover deste RDO</button>',
             '<div class="rdo-planning-team-member__meta">',
               (ratingLabel ? '<span class="rdo-team-rating-badge" data-rating="' + ratingCode + '">' + ratingLabel + '</span>' : ''),
             '</div>',
@@ -757,6 +759,7 @@
       seed.push({
         index: (item && item.ordem != null) ? item.ordem : index,
         member_id: (item && item.id != null) ? item.id : '',
+        pessoa_id: (item && (item.pessoa_id || item.pessoaId) != null) ? (item.pessoa_id || item.pessoaId) : '',
         nota: nota,
         justificativa: String((item && item.avaliacao_justificativa) || '').trim()
       });
@@ -768,9 +771,11 @@
     var items = _readRdoTeamEvaluations(form);
     var memberId = String((memberData && memberData.memberId) || '').trim();
     var memberIndex = String((memberData && memberData.memberIndex) || '').trim();
+    var pessoaId = String((memberData && memberData.pessoaId) || '').trim();
     for (var i = 0; i < items.length; i++) {
       var item = items[i] || {};
       if (memberId && String(item.member_id || '').trim() === memberId) return item;
+      if (pessoaId && String(item.pessoa_id || '').trim() === pessoaId) return item;
       if (!memberId && memberIndex && String(item.index || '').trim() === memberIndex) return item;
     }
     return null;
@@ -780,9 +785,11 @@
     var items = _readRdoTeamEvaluations(form);
     var memberId = String((memberData && memberData.memberId) || '').trim();
     var memberIndex = String((memberData && memberData.memberIndex) || '').trim();
+    var pessoaId = String((memberData && memberData.pessoaId) || '').trim();
     var payload = {
       index: memberIndex,
       member_id: memberId,
+      pessoa_id: pessoaId,
       nota: String((ratingData && ratingData.nota) || '').trim(),
       justificativa: String((ratingData && ratingData.justificativa) || '').trim()
     };
@@ -790,6 +797,10 @@
     items = items.filter(function(item){
       if (!item) return false;
       if (memberId && String(item.member_id || '').trim() === memberId) {
+        if (!replaced) { replaced = true; return false; }
+        return false;
+      }
+      if (pessoaId && String(item.pessoa_id || '').trim() === pessoaId) {
         if (!replaced) { replaced = true; return false; }
         return false;
       }
@@ -817,7 +828,8 @@
       Array.prototype.forEach.call(form.querySelectorAll('.rdo-planning-team-member'), function(card){
         if (!card) return;
         members.push({
-          id: String(card.getAttribute('data-team-member-id') || '').trim(),
+        id: String(card.getAttribute('data-team-member-id') || '').trim(),
+          pessoa_id: String(card.getAttribute('data-team-member-pessoa-id') || '').trim(),
           ordem: String(card.getAttribute('data-team-member-index') || '').trim(),
           nome: String(card.getAttribute('data-team-member-name') || '').trim() || '-',
           funcao: String(card.getAttribute('data-team-member-role') || '').trim() || '-',
@@ -1047,9 +1059,10 @@
     var state = { formId: targetForm.id || '', members: {} };
     teamMembers.forEach(function(member){
       var key = String(member.id || member.ordem || '').trim();
-      var current = _findRdoTeamEvaluation(targetForm, { memberId: member.id, memberIndex: member.ordem }) || {};
+      var current = _findRdoTeamEvaluation(targetForm, { memberId: member.id, memberIndex: member.ordem, pessoaId: member.pessoa_id }) || {};
       state.members[key] = {
         id: String(member.id || '').trim(),
+        pessoa_id: String(member.pessoa_id || '').trim(),
         ordem: String(member.ordem || '').trim(),
         nome: member.nome || '-',
         funcao: member.funcao || '-',
@@ -1123,6 +1136,7 @@
       return {
         membro_id: String(item.id || '').trim(),
         member_id: String(item.id || '').trim(),
+        pessoa_id: String(item.pessoa_id || '').trim(),
         index: String(item.ordem || '').trim(),
         nota: String(item.nota || '').trim().toUpperCase(),
         justificativa: String(item.justificativa || '').trim()
@@ -1130,7 +1144,7 @@
     });
 
     payloadItems.forEach(function(item){
-      _upsertRdoTeamEvaluation(targetForm, { memberId: item.member_id, memberIndex: item.index }, {
+      _upsertRdoTeamEvaluation(targetForm, { memberId: item.member_id, memberIndex: item.index, pessoaId: item.pessoa_id }, {
         nota: item.nota,
         justificativa: item.justificativa
       });
@@ -1268,6 +1282,265 @@
     } catch(_){ }
   }
 
+  function _appendPlanningParticipantsToPayload(payload, form){
+    try {
+      if (!payload || !form || String((form.querySelector('[name="equipe_source"]') || {}).value || '').trim() !== 'planejamento') return;
+      if (typeof payload.delete === 'function') payload.delete('planejamento_membros_rdo[]');
+      if (typeof payload.set === 'function') payload.set('planejamento_membros_rdo_definidos', '1');
+      else payload.append('planejamento_membros_rdo_definidos', '1');
+      Array.prototype.forEach.call(form.querySelectorAll('#sup-planejamento-team-list .rdo-planning-team-member'), function(card){
+        var pid = String(card.getAttribute('data-team-member-pessoa-id') || '').trim();
+        if (pid) payload.append('planejamento_membros_rdo[]', pid);
+      });
+    } catch(_){ }
+  }
+
+  function _planningMemberKey(member){
+    if (!member) return '';
+    var pid = String(member.pessoa_id || member.pessoaId || '').trim();
+    var name = String(member.nome || member.name || '').trim().toLowerCase();
+    var role = String(member.funcao || member.role || '').trim().toLowerCase();
+    return (pid ? 'id:' + pid : 'name:' + name) + '|role:' + role;
+  }
+
+  function _configurePlanningEditorRoster(plannedMembers){
+    try {
+      var form = document.getElementById('form-editor');
+      if (!form) return;
+      var roster = Array.isArray(plannedMembers) ? plannedMembers : [];
+      window.__rdo_planning_members = roster;
+      var allowedIds = {};
+      var allowedNames = {};
+      var roleById = {};
+      roster.forEach(function(member){
+        var pid = String(member && (member.pessoa_id || member.pessoaId) || '').trim();
+        var name = String(member && (member.nome || member.name) || '').trim();
+        if (pid) { allowedIds[pid] = true; roleById[pid] = String(member.funcao || member.role || '').trim(); }
+        if (name) allowedNames[name.toLowerCase()] = true;
+      });
+      Array.prototype.forEach.call(form.querySelectorAll('select[name="equipe_nome[]"]'), function(select){
+        Array.prototype.forEach.call(select.options, function(option){
+          if (!option.value) return;
+          var id = String(option.getAttribute('data-id') || '').trim();
+          var name = String(option.value || '').trim().toLowerCase();
+          option.hidden = !(allowedIds[id] || allowedNames[name]);
+          option.disabled = option.hidden;
+        });
+        var id = String(select.options[select.selectedIndex] && select.options[select.selectedIndex].getAttribute('data-id') || '').trim();
+        var role = roleById[id];
+        if (role) {
+          var roleSelect = select.closest('.team-row') && select.closest('.team-row').querySelector('select[name="equipe_funcao[]"]');
+          if (roleSelect) {
+            var found = false;
+            Array.prototype.forEach.call(roleSelect.options, function(option){
+              var match = String(option.value || '').trim().toLowerCase() === role.toLowerCase();
+              option.hidden = !(!option.value || match);
+              option.disabled = option.hidden;
+              if (match) { roleSelect.value = option.value; found = true; }
+            });
+            if (!found) roleSelect.value = role;
+          }
+        }
+      });
+      var picker = document.getElementById('edit-planning-member-select');
+      if (picker) {
+        var selectedKeys = {};
+        Array.prototype.forEach.call(form.querySelectorAll('.team-row'), function(row){
+          var ns = row.querySelector('select[name="equipe_nome[]"]');
+          var rs = row.querySelector('select[name="equipe_funcao[]"]');
+          var opt = ns && ns.options[ns.selectedIndex];
+          var pid = String(opt && opt.getAttribute('data-id') || '').trim();
+          var name = String(ns && ns.value || '').trim();
+          var role = String(rs && rs.value || '').trim();
+          if (name || pid) selectedKeys[(pid ? 'id:' + pid : 'name:' + name.toLowerCase()) + '|role:' + role.toLowerCase()] = true;
+        });
+        while (picker.options.length > 1) picker.remove(1);
+        roster.forEach(function(member){
+          var pid = String(member && (member.pessoa_id || member.pessoaId) || '').trim();
+          var name = String(member && (member.nome || member.name) || '').trim();
+          var role = String(member && (member.funcao || member.role) || '').trim();
+          var key = (pid ? 'id:' + pid : 'name:' + name.toLowerCase()) + '|role:' + role.toLowerCase();
+          if (!name || selectedKeys[key]) return;
+          var option = document.createElement('option');
+          option.value = pid || name;
+          option.textContent = name + (role ? ' — ' + role : '');
+          option.setAttribute('data-id', pid); option.setAttribute('data-name', name); option.setAttribute('data-role', role);
+          picker.appendChild(option);
+        });
+        picker.disabled = picker.options.length <= 1;
+      }
+      if (pessoaId && String(item.pessoa_id || '').trim() === pessoaId) {
+        if (!replaced) { replaced = true; return false; }
+        return false;
+      }
+    } catch(_){ }
+  }
+
+  function _syncPlanningEditorPreviewFromRows(form){
+    try {
+      if (!form || String((form.querySelector('input[name="equipe_source"]') || {}).value || '').trim() !== 'planejamento') return;
+      var preview = form.querySelector('.rdo-planning-team-preview');
+      var list = form.querySelector('.rdo-planning-team-list');
+      if (!preview || !list) return;
+      var old = {};
+      Array.prototype.forEach.call(list.querySelectorAll('.rdo-planning-team-member'), function(card){
+        var key = String(card.getAttribute('data-team-member-name') || '').toLowerCase() + '|role:' + String(card.getAttribute('data-team-member-role') || '').toLowerCase();
+        var badge = card.querySelector('.rdo-team-rating-badge');
+        old[key] = badge ? { nota: badge.getAttribute('data-rating') || '', label: badge.textContent || '' } : null;
+      });
+      var members = [];
+      Array.prototype.forEach.call(form.querySelectorAll('.team-row'), function(row, index){
+        var ns = row.querySelector('select[name="equipe_nome[]"]'); var rs = row.querySelector('select[name="equipe_funcao[]"]');
+        var opt = ns && ns.options[ns.selectedIndex]; var name = String(ns && ns.value || '').trim(); var role = String(rs && rs.value || '').trim();
+        if (!name && !role) return;
+        var pid = String(opt && opt.getAttribute('data-id') || '').trim();
+        var prior = old[name.toLowerCase() + '|role:' + role.toLowerCase()];
+        members.push({ id: '', pessoa_id: pid, nome: name, funcao: role, ordem: index, avaliacao_nota: prior && prior.nota, avaliacao_nota_label: prior && prior.label });
+      });
+      _renderSupervisorPlanningTeamList(list, members);
+      _toggleRdoTeamBatchAction(preview, form.querySelector('.rdo-team-rate-batch-button'), members);
+    } catch(_){ }
+  }
+
+  function _addPlanningEditorMember(){
+    try {
+      var form = document.getElementById('form-editor'), picker = document.getElementById('edit-planning-member-select');
+      if (!form || !picker || !picker.value) { showToast('Selecione um colaborador do planejamento.', 'error'); return; }
+      var opt = picker.options[picker.selectedIndex], wrap = document.getElementById('edit-equipe-wrapper');
+      var base = wrap && wrap.querySelector('.team-row'); if (!base) return;
+      var clone = base.cloneNode(true);
+      Array.prototype.forEach.call(clone.querySelectorAll('select,input,textarea'), function(el){ if (el.tagName.toLowerCase() === 'select') el.selectedIndex = 0; else el.value = ''; });
+      var ns = clone.querySelector('select[name="equipe_nome[]"]'), rs = clone.querySelector('select[name="equipe_funcao[]"]'), pid = clone.querySelector('input[name="equipe_pessoa_id[]"]');
+      if (ns) { ns.value = opt.getAttribute('data-name') || opt.value; if (ns.value !== (opt.getAttribute('data-name') || opt.value)) { Array.prototype.forEach.call(ns.options, function(o){ if (String(o.getAttribute('data-id')||'') === String(opt.getAttribute('data-id')||'')) ns.value = o.value; }); } }
+      if (pid) pid.value = opt.getAttribute('data-id') || '';
+      if (rs) rs.value = opt.getAttribute('data-role') || '';
+      wrap.insertBefore(clone, wrap.querySelector('.team-footer'));
+      _configurePlanningEditorRoster(window.__rdo_planning_members || []); _syncPlanningEditorPreviewFromRows(form); syncPobAllForms();
+      picker.value = ''; showToast('Colaborador adicionado. Avalie-o antes de salvar.', 'success');
+    } catch(_){ }
+  }
+
+  function _capturePlanningEditorExistingMembers(form){
+    try {
+      var existing = {};
+      if (!form) return existing;
+      Array.prototype.forEach.call(form.querySelectorAll('.team-row'), function(row){
+        var nameSelect = row.querySelector('select[name="equipe_nome[]"]');
+        var roleSelect = row.querySelector('select[name="equipe_funcao[]"]');
+        var name = String(nameSelect && nameSelect.value || '').trim();
+        var pid = String(nameSelect && nameSelect.options[nameSelect.selectedIndex] && nameSelect.options[nameSelect.selectedIndex].getAttribute('data-id') || '').trim();
+        var role = String(roleSelect && roleSelect.value || '').trim();
+        if (name || pid || role) existing[(pid ? 'id:' + pid : 'name:' + name.toLowerCase()) + '|role:' + role.toLowerCase()] = true;
+      });
+      window.__rdo_planning_existing_keys = existing;
+      return existing;
+    } catch(_){ return {}; }
+  }
+
+  function _validatePlanningEditorNewMembers(form){
+    try {
+      if (!form || String((form.querySelector('input[name="equipe_source"]') || {}).value || '').trim() !== 'planejamento') return true;
+      var roster = Array.isArray(window.__rdo_planning_members) ? window.__rdo_planning_members : [];
+      var existing = window.__rdo_planning_existing_keys || {};
+      var evaluations = _readRdoTeamEvaluations(form);
+      var evalByIndex = {};
+      var evalByPessoaId = {};
+      evaluations.forEach(function(item){
+        if (!item || !item.nota) return;
+        if (item.index != null) evalByIndex[String(item.index)] = item.nota;
+        if (item.pessoa_id != null && String(item.pessoa_id).trim()) evalByPessoaId[String(item.pessoa_id)] = item.nota;
+      });
+      var rows = form.querySelectorAll('.team-row');
+      for (var i = 0; i < rows.length; i++) {
+        var nameSelect = rows[i].querySelector('select[name="equipe_nome[]"]');
+        var roleSelect = rows[i].querySelector('select[name="equipe_funcao[]"]');
+        var name = String(nameSelect && nameSelect.value || '').trim();
+        var pid = String(nameSelect && nameSelect.options[nameSelect.selectedIndex] && nameSelect.options[nameSelect.selectedIndex].getAttribute('data-id') || '').trim();
+        var role = String(roleSelect && roleSelect.value || '').trim();
+        if (!name && !pid && !role) continue;
+        var key = (pid ? 'id:' + pid : 'name:' + name.toLowerCase()) + '|role:' + role.toLowerCase();
+        if (!existing[key] && role.toLowerCase().indexOf('supervisor') === -1 && !evalByPessoaId[pid] && !evalByIndex[String(i)]) {
+          var rateButton = form.querySelector('.rdo-team-rate-batch-button');
+          if (rateButton) rateButton.click();
+          showToast('Avalie o novo colaborador antes de salvar o RDO.', 'error');
+          return false;
+        }
+      }
+    } catch(_){ }
+    return true;
+  }
+
+  try {
+    document.addEventListener('click', function(ev){
+      var button = ev && ev.target && ev.target.closest ? ev.target.closest('.team-row-remove') : null;
+      if (!button || !button.closest('#form-supervisor')) return;
+      ev.preventDefault();
+      var row = button.closest('.team-row'), wrap = row && row.closest('.team-wrapper');
+      if (!row || !wrap) return;
+      var rows = wrap.querySelectorAll('.team-row');
+      if (rows.length > 1) row.remove();
+      else {
+        Array.prototype.forEach.call(row.querySelectorAll('select,input,textarea'), function(el){
+          if (el.tagName.toLowerCase() === 'select') el.selectedIndex = 0;
+          else el.value = '';
+        });
+        Array.prototype.forEach.call(row.querySelectorAll('.dropdown-input'), function(el){ el.value = ''; });
+      }
+      try { syncPobAllForms(); } catch(_){ }
+    }, true);
+    document.addEventListener('click', function(ev){
+      var btn = ev && ev.target && ev.target.closest ? ev.target.closest('[data-remove-planning-member]') : null;
+      if (!btn || !document.getElementById('form-supervisor')) return;
+      ev.preventDefault();
+      var form = document.getElementById('form-supervisor');
+      var id = String(btn.getAttribute('data-remove-planning-member') || '').trim();
+      var idx = String(btn.getAttribute('data-remove-planning-index') || '').trim();
+      var removed = window.__rdo_planning_excluded || (window.__rdo_planning_excluded = {});
+      removed[(id ? 'id:' + id : 'index:' + idx)] = true;
+      var card = btn.closest('.rdo-planning-team-member'); if (card) card.remove();
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden'; hidden.name = 'equipe_planejamento_excluidos[]'; hidden.value = id || ('index:' + idx); form.appendChild(hidden);
+      var pob = form.querySelector('[name="pob"]'); if (pob) pob.value = String(form.querySelectorAll('.rdo-planning-team-member').length);
+    }, true);
+    document.addEventListener('change', function(ev){
+      var target = ev && ev.target;
+      if (!target || !target.closest || !target.closest('#form-editor')) return;
+      if (target.matches('select[name="equipe_nome[]"], select[name="equipe_funcao[]"]')) {
+        _configurePlanningEditorRoster(window.__rdo_planning_members || []);
+      }
+    }, true);
+    document.addEventListener('click', function(ev){
+      var target = ev && ev.target;
+      if (!target || !target.closest || !target.closest('#form-editor')) return;
+      var removeRowButton = target.closest('.team-row-remove');
+      if (removeRowButton) {
+        ev.preventDefault();
+        var row = removeRowButton.closest('.team-row');
+        var wrap = row && row.closest('.team-wrapper');
+        if (!row || !wrap) return;
+        var rows = wrap.querySelectorAll('.team-row');
+        if (rows.length > 1) row.remove();
+        else {
+          Array.prototype.forEach.call(row.querySelectorAll('select,input,textarea'), function(el){
+            if (el.tagName.toLowerCase() === 'select') el.selectedIndex = 0;
+            else if (el.type !== 'hidden') el.value = '';
+            else el.value = '';
+          });
+        }
+        _configurePlanningEditorRoster(window.__rdo_planning_members || []);
+        _syncPlanningEditorPreviewFromRows(document.getElementById('form-editor'));
+        try { syncPobAllForms(); } catch(_){ }
+        return;
+      }
+      if (target.closest('#edit-btn-add-membro, #edit-btn-remove-membro')) {
+        window.setTimeout(function(){ _configurePlanningEditorRoster(window.__rdo_planning_members || []); }, 0);
+      }
+      if (target.closest('#edit-btn-add-planning-member')) {
+        ev.preventDefault(); _addPlanningEditorMember();
+      }
+    }, true);
+  } catch(_){ }
+
   function _applySupervisorPlanningTeamContext(planningContext, options){
     var refs = _getSupervisorPlanningTeamElements();
     var opts = options || {};
@@ -1291,6 +1564,11 @@
       _renderSupervisorPlanningTeamList(refs.list, automaticMembers);
       _toggleRdoTeamBatchAction(refs.preview, refs.rateAction, automaticMembers);
       _seedRdoTeamEvaluations(refs.form, automaticMembers);
+      try {
+        window.__rdo_planning_existing_keys = {};
+        (Array.isArray(currentTeam) ? currentTeam : []).forEach(function(member){ window.__rdo_planning_existing_keys[_planningMemberKey(member)] = true; });
+      } catch(_){ }
+      try { _configurePlanningEditorRoster(plannedMembers.length ? plannedMembers : automaticMembers); } catch(_){ }
       _setSupervisorManualTeamVisibility(refs.wrapper, true);
       try {
         var pobField = _ensurePobField(refs.form, true);
@@ -5534,6 +5812,7 @@
       payload = newFd;
     }
   } catch(e) { console.warn('RDO: normalization failed', e); }
+    _appendPlanningParticipantsToPayload(payload, form);
     if (isEdit) payload.append('rdo_id', hid.value);
     var tankFieldNames = SUPERVISOR_TANK_FIELD_NAMES;
     function _collectTankValues(scope, payloadLike){
@@ -6364,6 +6643,7 @@
     }
     var form = qs('#form-editor');
     if (!form) return;
+    if (!_validatePlanningEditorNewMembers(form)) return;
     if (!_validateRdoFormBeforeSubmit(form)) return;
     try { await _ensureRdoTranslationsBeforeSubmit(form); } catch(e) {
       try { console.warn('Falha ao concluir traducoes no editor; backend fara o fallback.', e); } catch(_){ }
@@ -7480,6 +7760,7 @@
   async function openSupervisorModal(context){
     if (blockRdoEditAccess()) return false;
     context = context || {};
+    try { window.__rdo_planning_excluded = {}; } catch(_){ }
     var isEditContext = _isSupervisorEditContext(context);
     try {
       var retornoForm = document.getElementById('form-supervisor');
@@ -7765,7 +8046,7 @@
     try {
       if (!el) return false;
       if (String(el.type || '').toLowerCase() === 'hidden') return true;
-      if (el.matches && el.matches('#edit-save-btn, #edit-save-btn-header, .editor-close, .editor-cancel, #edit-btn-load-details, #edit-btn-add-membro, #edit-btn-remove-membro')) return true;
+      if (el.matches && el.matches('#edit-save-btn, #edit-save-btn-header, .editor-close, .editor-cancel, #edit-btn-load-details, #edit-btn-add-membro, #edit-btn-remove-membro, #edit-btn-add-planning-member, #edit-planning-member-select, .rdo-team-rate-batch-button')) return true;
       if (el.matches && el.matches('#edit-data-inicio, input[name="rdo_data_inicio"], input[name="data_inicio"], input[name="data"]')) return true;
       if (el.matches && el.matches('select[name="equipe_nome[]"], select[name="equipe_funcao[]"], input[name="equipe_nome[]"], input[name="equipe_funcao[]"], input[name="equipe_pessoa_id[]"], input[name="equipe_em_servico[]"]')) return true;
     } catch(_){ }
@@ -7776,7 +8057,7 @@
     try {
       if (!target) return false;
       if (_isAllowedInSupervisorLimitedEditor(target)) return true;
-      if (target.closest && target.closest('.editor-close, .editor-cancel, #edit-save-btn, #edit-save-btn-header, #edit-btn-load-details')) return true;
+      if (target.closest && target.closest('.editor-close, .editor-cancel, #edit-save-btn, #edit-save-btn-header, #edit-btn-load-details, #edit-btn-add-planning-member, #edit-planning-member-select, .rdo-team-rate-batch-button')) return true;
       if (target.closest && target.closest('#edit-equipe-wrapper')) return true;
       var dateCard = target.closest ? target.closest('#edit-sec-identificacao .card') : null;
       if (dateCard && dateCard.querySelector && dateCard.querySelector('#edit-data-inicio, input[name="rdo_data_inicio"], input[name="data_inicio"], input[name="data"]')) return true;
@@ -7958,6 +8239,7 @@
           Array.prototype.forEach.call(equipeSection.children, function(child){
             try {
               if (child.id === 'edit-equipe-wrapper') return;
+              if (child.classList && child.classList.contains('rdo-planning-team-preview')) return;
               if (child.id === 'edit-supervisor-mode-note') return;
               _editorMarkLimitedHidden(child);
             } catch(_){ }
@@ -10223,7 +10505,7 @@
                 function syncNow(){ try { syncPobAllForms(); } catch(_){ } }
                 var add = document.getElementById('edit-btn-add-membro'); var rem = document.getElementById('edit-btn-remove-membro');
                 function addMember(){ try { var base = wrap.querySelector('.team-row'); if (!base) return; var clone = base.cloneNode(true); Array.prototype.forEach.call(clone.querySelectorAll('select,input,textarea'), function(el){ if(el.tagName.toLowerCase()==='select') el.selectedIndex=0; else el.value=''; }); base.parentNode.insertBefore(clone, wrap.querySelector('.team-footer')); syncNow(); } catch(_){} }
-                function removeMember(){ try { var rows = wrap.querySelectorAll('.team-row'); if (rows.length<=1) return; var last = rows[rows.length-1]; if(last && last.parentNode) last.parentNode.removeChild(last); syncNow(); } catch(_){} }
+                function removeMember(){ try { var rows = wrap.querySelectorAll('.team-row'); if (rows.length<=1) return; var last = rows[rows.length-1]; if(last && last.parentNode) last.parentNode.removeChild(last); syncNow(); _configurePlanningEditorRoster(window.__rdo_planning_members || []); _syncPlanningEditorPreviewFromRows(document.getElementById('form-editor')); } catch(_){} }
                 if (add) add.addEventListener('click', function(ev){ ev.preventDefault(); addMember(); });
                 if (rem) rem.addEventListener('click', function(ev){ ev.preventDefault(); removeMember(); });
                 if (!wrap.__pobSyncBound) {
@@ -10274,7 +10556,13 @@
                 _syncEditorPrevisaoTerminoLock(!!(data && data.previsao_termino_locked));
               }
             } catch(_){ }
-            try { _editorApplyLimitedMode(); } catch(_){ }
+             try {
+               var planningJson = document.getElementById('edit-planning-members-json');
+               if (planningJson && planningJson.textContent) window.__rdo_planning_members = JSON.parse(planningJson.textContent) || [];
+             } catch(_){ }
+             try { _capturePlanningEditorExistingMembers(document.getElementById('form-editor')); } catch(_){ }
+             try { _configurePlanningEditorRoster(window.__rdo_planning_members || []); } catch(_){ }
+             try { _editorApplyLimitedMode(); } catch(_){ }
             try { _editorApplyReadOnlyMode(); } catch(_){ }
             try {
               if (_isEditorReadOnlyMode()) window.setTimeout(_editorApplyReadOnlyMode, 180);

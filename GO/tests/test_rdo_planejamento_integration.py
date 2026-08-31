@@ -265,6 +265,33 @@ class RdoPlanejamentoIntegrationTests(TestCase):
             [pessoa_presente.pk],
         )
 
+    def test_create_rdo_planejado_exclui_membro_somente_deste_rdo(self):
+        os_obj = self._create_os(8208)
+        planejamento = self._create_planejamento(os_obj)
+        pessoa_a = Pessoa.objects.create(nome='PRESENTE NO RDO', funcao=self.funcao_a)
+        pessoa_b = Pessoa.objects.create(nome='AUSENTE NO RDO', funcao=self.funcao_b)
+        self._add_planejamento_membro(planejamento, nome=pessoa_a.nome, funcao=self.funcao_a, pessoa=pessoa_a)
+        self._add_planejamento_membro(planejamento, nome=pessoa_b.nome, funcao=self.funcao_b, pessoa=pessoa_b)
+
+        response = self.client.post(
+            reverse('rdo_create_ajax'),
+            data={
+                'ordem_servico_id': str(os_obj.pk),
+                'data': '2026-06-10',
+                'equipe_source': RDO.EQUIPE_ORIGEM_PLANEJAMENTO,
+                'equipe_planejamento_excluidos[]': [str(pessoa_b.pk)],
+                'planejamento_membros_rdo[]': [str(pessoa_a.pk)],
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rdo = RDO.objects.get(pk=response.json()['id'])
+        self.assertEqual(list(rdo.membros_equipe.values_list('pessoa_id', flat=True)), [pessoa_a.pk])
+        self.assertEqual(rdo.pob, 1)
+        planejamento.refresh_from_db()
+        self.assertEqual(planejamento.membros.filter(status=PlanejamentoEquipeMembro.STATUS_ATIVO).count(), 2)
+
     def test_update_rdo_planejado_nao_duplica_equipe_existente(self):
         os_obj = self._create_os(8204)
         planejamento = self._create_planejamento(os_obj)
@@ -458,3 +485,41 @@ class RdoPlanejamentoIntegrationTests(TestCase):
         self.assertEqual(ajudante_a.avaliacao_nota, RDOMembroEquipe.AVALIACAO_BOM)
         self.assertEqual(ajudante_b.avaliacao_nota, RDOMembroEquipe.AVALIACAO_RUIM)
         self.assertIn('orientação', ajudante_b.avaliacao_justificativa.lower())
+
+    def test_edicao_rdo_planejado_permite_adicionar_membro_planejado_com_avaliacao(self):
+        os_obj = self._create_os(8210)
+        planejamento = self._create_planejamento(os_obj)
+        pessoa_a = Pessoa.objects.create(nome='MEMBRO PLANEJADO A', funcao=self.funcao_a)
+        pessoa_b = Pessoa.objects.create(nome='MEMBRO PLANEJADO B', funcao=self.funcao_b)
+        self._add_planejamento_membro(planejamento, nome=pessoa_a.nome, funcao=self.funcao_a, pessoa=pessoa_a)
+        self._add_planejamento_membro(planejamento, nome=pessoa_b.nome, funcao=self.funcao_b, pessoa=pessoa_b)
+        created = self.client.post(reverse('rdo_create_ajax'), data={'ordem_servico_id': str(os_obj.pk), 'data': '2026-06-10'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        self.assertEqual(created.status_code, 200)
+        rdo = RDO.objects.get(pk=created.json()['id'])
+        response = self.client.post(reverse('rdo_update_ajax'), data={
+            'rdo_id': str(rdo.pk), 'equipe_source': 'planejamento',
+            'equipe_nome[]': [pessoa_b.nome], 'equipe_funcao[]': [self.funcao_b],
+            'equipe_pessoa_id[]': [str(pessoa_b.pk)],
+            'equipe_avaliacoes_json': json.dumps([{'index': 0, 'nota': 'BOM'}]),
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        self.assertEqual(response.status_code, 200)
+        member = rdo.membros_equipe.get()
+        self.assertEqual(member.pessoa_id, pessoa_b.pk)
+        self.assertEqual(member.avaliacao_nota, RDOMembroEquipe.AVALIACAO_BOM)
+
+    def test_edicao_rdo_planejado_rejeita_membro_fora_da_lista(self):
+        os_obj = self._create_os(8211)
+        planejamento = self._create_planejamento(os_obj)
+        pessoa_a = Pessoa.objects.create(nome='MEMBRO PLANEJADO', funcao=self.funcao_a)
+        pessoa_fora = Pessoa.objects.create(nome='MEMBRO FORA', funcao=self.funcao_b)
+        self._add_planejamento_membro(planejamento, nome=pessoa_a.nome, funcao=self.funcao_a, pessoa=pessoa_a)
+        created = self.client.post(reverse('rdo_create_ajax'), data={'ordem_servico_id': str(os_obj.pk), 'data': '2026-06-10'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        rdo = RDO.objects.get(pk=created.json()['id'])
+        response = self.client.post(reverse('rdo_update_ajax'), data={
+            'rdo_id': str(rdo.pk), 'equipe_source': 'planejamento',
+            'equipe_nome[]': [pessoa_fora.nome], 'equipe_funcao[]': [self.funcao_b],
+            'equipe_pessoa_id[]': [str(pessoa_fora.pk)],
+            'equipe_avaliacoes_json': json.dumps([{'index': 0, 'nota': 'BOM'}]),
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('planejamento', response.json()['error'].lower())
