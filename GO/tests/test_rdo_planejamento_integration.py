@@ -215,6 +215,56 @@ class RdoPlanejamentoIntegrationTests(TestCase):
         self.assertIn('MEMBRO AVULSO', str(rdo.membros or ''))
         self.assertEqual(payload['rdo']['equipe_source'], 'manual')
 
+    def test_create_rdo_planejado_respeita_somente_membros_selecionados(self):
+        os_obj = self._create_os(8207)
+        planejamento = self._create_planejamento(os_obj)
+        pessoa_presente = Pessoa.objects.create(
+            nome='MEMBRO PRESENTE',
+            funcao=self.funcao_a,
+        )
+        pessoa_ausente = Pessoa.objects.create(
+            nome='MEMBRO AUSENTE',
+            funcao=self.funcao_b,
+        )
+        self._add_planejamento_membro(
+            planejamento,
+            nome=pessoa_presente.nome,
+            funcao=self.funcao_a,
+            pessoa=pessoa_presente,
+        )
+        self._add_planejamento_membro(
+            planejamento,
+            nome=pessoa_ausente.nome,
+            funcao=self.funcao_b,
+            pessoa=pessoa_ausente,
+        )
+
+        response = self.client.post(
+            reverse('rdo_create_ajax'),
+            data={
+                'ordem_servico_id': str(os_obj.pk),
+                'data': '2026-06-10',
+                'equipe_source': RDO.EQUIPE_ORIGEM_PLANEJAMENTO,
+                'equipe_nome[]': [pessoa_presente.nome],
+                'equipe_funcao[]': [self.funcao_a],
+                'equipe_pessoa_id[]': [str(pessoa_presente.pk)],
+                'equipe_em_servico[]': ['true'],
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_HOST='localhost',
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rdo = RDO.objects.get(pk=response.json()['id'])
+        self.assertEqual(rdo.equipe_origem, RDO.EQUIPE_ORIGEM_PLANEJAMENTO)
+        self.assertEqual(rdo.planejamento_equipe_origem_id, planejamento.pk)
+        self.assertEqual(rdo.pob, 1)
+        self.assertEqual(
+            list(rdo.membros_equipe.values_list('pessoa_id', flat=True)),
+            [pessoa_presente.pk],
+        )
+
     def test_update_rdo_planejado_nao_duplica_equipe_existente(self):
         os_obj = self._create_os(8204)
         planejamento = self._create_planejamento(os_obj)

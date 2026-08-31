@@ -812,6 +812,19 @@ def _normalize_rdo_member_text(value):
         return str(value or '').strip().lower()
 
 
+def _rdo_team_member_identity(pessoa_id=None, nome=None, funcao=None):
+    if pessoa_id not in (None, ''):
+        try:
+            return f'pessoa:{int(pessoa_id)}'
+        except Exception:
+            pass
+    normalized_name = _normalize_rdo_member_text(nome)
+    normalized_role = _normalize_rdo_member_text(funcao)
+    if not normalized_name and not normalized_role:
+        return ''
+    return f'texto:{normalized_name}|{normalized_role}'
+
+
 def _is_rdo_team_supervisor(funcao):
     normalized = _normalize_rdo_member_text(funcao)
     return bool(normalized and 'supervisor' in normalized)
@@ -1208,16 +1221,28 @@ def _persist_rdo_team_rows(rdo_obj, team_rows, source='manual', planejamento=Non
     try:
         if hasattr(rdo_obj, 'membros_equipe'):
             existing_rel_members = list(rdo_obj.membros_equipe.all().order_by('ordem', 'id'))
-            existing_eval_by_order = {}
+            existing_eval_by_identity = {}
             existing_order_by_member_id = {}
             for em in existing_rel_members:
                 ordem_val = int(getattr(em, 'ordem', 0) or 0)
-                existing_eval_by_order[ordem_val] = {
+                pessoa_obj = getattr(em, 'pessoa', None)
+                identity = _rdo_team_member_identity(
+                    pessoa_id=getattr(em, 'pessoa_id', None),
+                    nome=(
+                        getattr(pessoa_obj, 'nome', None)
+                        if pessoa_obj is not None
+                        else getattr(em, 'nome', None)
+                    ),
+                    funcao=getattr(em, 'funcao', None),
+                )
+                rating = {
                     'avaliacao_nota': _normalize_rdo_member_rating(getattr(em, 'avaliacao_nota', '')),
                     'avaliacao_justificativa': str(getattr(em, 'avaliacao_justificativa', '') or '').strip(),
                     'avaliacao_data': getattr(em, 'avaliacao_data', None),
                     'avaliacao_por': getattr(em, 'avaliacao_por', None),
                 }
+                if identity:
+                    existing_eval_by_identity[identity] = rating
                 existing_order_by_member_id[getattr(em, 'id', None)] = ordem_val
 
             evaluation_overrides = {}
@@ -1250,7 +1275,16 @@ def _persist_rdo_team_rows(rdo_obj, team_rows, source='manual', planejamento=Non
                         pessoa_obj, _resolved_nome = _resolve_pessoa_choice(row.get('nome'), pessoa_id_val)
                     except Exception:
                         pessoa_obj = None
-                rating_payload = dict(existing_eval_by_order.get(idx, {}))
+                identity = _rdo_team_member_identity(
+                    pessoa_id=getattr(pessoa_obj, 'id', None) or pessoa_id_val,
+                    nome=(
+                        getattr(pessoa_obj, 'nome', None)
+                        if pessoa_obj is not None
+                        else row.get('nome')
+                    ),
+                    funcao=row.get('funcao'),
+                )
+                rating_payload = dict(existing_eval_by_identity.get(identity, {}))
                 override = evaluation_overrides.get(idx)
                 if override and override.get('avaliacao_nota'):
                     rating_payload['avaliacao_nota'] = override.get('avaliacao_nota')
@@ -1281,9 +1315,9 @@ def _build_rdo_team_origin_payload(rdo_obj, equipe_list=None):
             RDO.EQUIPE_ORIGEM_PLANEJAMENTO if getattr(rdo_obj, 'planejamento_equipe_origem_id', None) else RDO.EQUIPE_ORIGEM_MANUAL
         )
     )
-    preview_members = list(equipe_list or [])
-    if source != RDO.EQUIPE_ORIGEM_PLANEJAMENTO or not preview_members:
-        preview_members = list((planning_context or {}).get('membros', []) or [])
+    current_planning_members = list(
+        (planning_context or {}).get('membros', []) or []
+    )
 
     message = planning_context.get('message') or ''
     if source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO:
@@ -1298,7 +1332,7 @@ def _build_rdo_team_origin_payload(rdo_obj, equipe_list=None):
             'planejamento_status': planning_context.get('planejamento_status') or '',
             'allow_manual_fallback': bool(planning_context.get('allow_manual_fallback')),
             'message': message,
-            'membros': preview_members,
+            'membros': current_planning_members,
         },
     }
 
@@ -9487,10 +9521,10 @@ def _apply_post_to_rdo(request, rdo_obj):
         if team_rows:
             if (
                 requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
-                and current_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                and planning_context.get('_planejamento_obj') is not None
             ):
                 effective_team_source = RDO.EQUIPE_ORIGEM_PLANEJAMENTO
-                planning_obj = getattr(rdo_obj, 'planejamento_equipe_origem', None) or planning_context.get('_planejamento_obj')
+                planning_obj = planning_context.get('_planejamento_obj')
             else:
                 effective_team_source = RDO.EQUIPE_ORIGEM_MANUAL
         elif planning_context.get('tem_membros_ativos') and (
@@ -11097,30 +11131,100 @@ def _apply_supervisor_limited_update_to_rdo(request, rdo_obj):
             )
             team_posted = any(key in request.POST for key in team_fields)
             if team_posted:
+                team_rows = _build_rdo_team_rows_from_request(request)
+                team_evaluations = _parse_rdo_team_evaluations(request)
+                if getattr(request, 'rdo_require_new_member_evaluation', False):
+                    existing_identities = set()
+                    for existing_member in _build_rdo_equipe_list(rdo_obj):
+                        identity = _rdo_team_member_identity(
+                            pessoa_id=existing_member.get('pessoa_id'),
+                            nome=existing_member.get('nome'),
+                            funcao=existing_member.get('funcao'),
+                        )
+                        if identity:
+                            existing_identities.add(identity)
+
+                    evaluations_by_index = {}
+                    for evaluation in team_evaluations:
+                        try:
+                            evaluation_index = int(evaluation.get('index'))
+                        except Exception:
+                            continue
+                        evaluations_by_index[evaluation_index] = evaluation
+
+                    for idx, row in enumerate(team_rows):
+                        identity = _rdo_team_member_identity(
+                            pessoa_id=row.get('pessoa_id'),
+                            nome=row.get('nome'),
+                            funcao=row.get('funcao'),
+                        )
+                        is_new_member = bool(
+                            identity and identity not in existing_identities
+                        )
+                        if not is_new_member or _is_rdo_team_supervisor(row.get('funcao')):
+                            continue
+                        evaluation = evaluations_by_index.get(idx)
+                        note = _normalize_rdo_member_rating(
+                            (evaluation or {}).get('nota')
+                        )
+                        if not note:
+                            return False, {
+                                'error': (
+                                    'Avalie todos os novos membros antes de salvar a equipe do RDO.'
+                                ),
+                                'limited_mode': True,
+                            }
+                        if note in (
+                            RDOMembroEquipe.AVALIACAO_RUIM,
+                            RDOMembroEquipe.AVALIACAO_PESSIMO,
+                        ) and not str(
+                            (evaluation or {}).get('justificativa') or ''
+                        ).strip():
+                            return False, {
+                                'error': (
+                                    'Informe a justificativa da avaliação RUIM ou PÉSSIMO para o novo membro.'
+                                ),
+                                'limited_mode': True,
+                            }
+
                 current_team_source = _normalize_rdo_team_source(
                     getattr(rdo_obj, 'equipe_origem', None)
                 )
                 requested_team_source = _normalize_rdo_team_source(
                     request.POST.get('equipe_source') or current_team_source
                 )
+                planning_for_team = getattr(
+                    rdo_obj,
+                    'planejamento_equipe_origem',
+                    None,
+                )
+                if requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO:
+                    planning_context = _get_planejamento_rdo_context(
+                        getattr(rdo_obj, 'ordem_servico', None)
+                    )
+                    current_planning = (planning_context or {}).get(
+                        '_planejamento_obj'
+                    )
+                    if current_planning is not None:
+                        planning_for_team = current_planning
                 keep_planning_source = bool(
-                    current_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
-                    and requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                    requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                    and planning_for_team is not None
                 )
                 _persist_rdo_team_rows(
                     rdo_obj,
-                    _build_rdo_team_rows_from_request(request),
+                    team_rows,
                     source=(
                         RDO.EQUIPE_ORIGEM_PLANEJAMENTO
                         if keep_planning_source
                         else RDO.EQUIPE_ORIGEM_MANUAL
                     ),
                     planejamento=(
-                        getattr(rdo_obj, 'planejamento_equipe_origem', None)
+                        planning_for_team
                         if keep_planning_source
                         else None
                     ),
-                    evaluations=_parse_rdo_team_evaluations(request),
+                    evaluations=team_evaluations,
                     actor=getattr(request, 'user', None),
                 )
 

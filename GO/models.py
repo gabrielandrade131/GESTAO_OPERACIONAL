@@ -521,6 +521,9 @@ class OrdemServico(models.Model):
         ('AJUDANTE', 'AJUDANTE'),
         ('RESGATISTA', 'RESGATISTA'),
         ('MECÂNICO', 'MECÂNICO'),
+        ('N1 IRATA', 'N1 IRATA'),
+        ('N2 IRATA', 'N2 IRATA'),
+        ('N3 IRATA', 'N3 IRATA'),
     ]
 
     COORDENADORES = [
