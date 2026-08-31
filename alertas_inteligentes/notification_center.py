@@ -1,6 +1,9 @@
 from datetime import datetime, time, timedelta, timezone as datetime_timezone
 from urllib.parse import urlencode
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9
+    from backports.zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction

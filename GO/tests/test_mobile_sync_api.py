@@ -1990,6 +1990,9 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertEqual(len(row.get('equipe') or []), 1)
         self.assertEqual(row['equipe'][0].get('nome'), 'Rafael Silva')
         self.assertEqual(row['equipe'][0].get('funcao'), 'Supervisor')
+        self.assertFalse(row.get('can_edit_full'))
+        self.assertTrue(row.get('can_edit_limited'))
+        self.assertTrue(row.get('supervisor_limited_edit'))
 
     def test_mobile_rdo_pdf_exports_multiple_rdos_in_single_page(self):
         cliente = Cliente.objects.create(nome='Cliente PDF Mobile')
@@ -2067,6 +2070,16 @@ class MobileSyncApiIdempotencyTest(TestCase):
         pessoa = Pessoa.objects.create(nome='Carlos Souza')
         payload = {
             'data': '2026-04-05',
+            'data_inicio': '2026-04-05',
+            'rdo_data_inicio': '2026-04-05',
+            'equipe_source': 'manual',
+            'equipe_avaliacoes_json': json.dumps([
+                {
+                    'index': 0,
+                    'nota': 'BOM',
+                    'justificativa': '',
+                },
+            ]),
             'equipe_nome[]': ['Carlos Souza'],
             'equipe_funcao[]': ['Supervisor'],
             'equipe_pessoa_id[]': [str(pessoa.id)],
@@ -2102,6 +2115,90 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertEqual(rdo.membros_equipe.count(), 1)
         self.assertEqual(rdo.membros_equipe.first().pessoa_id, pessoa.id)
         self.assertEqual(rdo.membros_equipe.first().funcao, 'Supervisor')
+        self.assertEqual(rdo.membros_equipe.first().avaliacao_nota, 'BOM')
+
+    def test_mobile_rdo_edit_is_limited_even_for_same_day_rdo(self):
+        cliente = Cliente.objects.create(nome='Cliente Edit Limited')
+        unidade = Unidade.objects.create(nome='Unidade Edit Limited')
+        os_obj = OrdemServico.objects.create(
+            numero_os=7003,
+            data_inicio=date(2026, 4, 2),
+            dias_de_operacao=2,
+            servico='COLETA DE AR',
+            metodo='Manual',
+            pob=1,
+            volume_tanque=Decimal('10.00'),
+            Cliente=cliente,
+            Unidade=unidade,
+            tipo_operacao='Onshore',
+            solicitante='Teste',
+            supervisor=self.user,
+        )
+        rdo = RDO.objects.create(
+            ordem_servico=os_obj,
+            rdo='4',
+            data=date(2026, 4, 2),
+            data_inicio=date(2026, 4, 2),
+            turno='Diurno',
+            observacoes_rdo_pt='texto original',
+            created_at=timezone.make_aware(
+                datetime(2026, 4, 2, 8, 0),
+                self.sao_paulo,
+            ),
+        )
+        pessoa = Pessoa.objects.create(nome='Equipe Mesmo Dia')
+
+        token_client = Client()
+        with patch(
+            'GO.views_rdo.timezone.now',
+            return_value=timezone.make_aware(
+                datetime(2026, 4, 2, 9, 0),
+                self.sao_paulo,
+            ),
+        ):
+            success_response = token_client.post(
+                f'/api/mobile/v1/rdo/{rdo.id}/edit/',
+                data=json.dumps({
+                    'data': '2026-04-03',
+                    'data_inicio': '2026-04-03',
+                    'rdo_data_inicio': '2026-04-03',
+                    'equipe_source': 'manual',
+                    'equipe_avaliacoes_json': '[]',
+                    'equipe_nome[]': [pessoa.nome],
+                    'equipe_funcao[]': ['Supervisor'],
+                    'equipe_pessoa_id[]': [str(pessoa.id)],
+                    'equipe_em_servico[]': ['true'],
+                }),
+                content_type='application/json',
+                HTTP_HOST='localhost',
+                secure=True,
+                HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+            )
+            response = token_client.post(
+                f'/api/mobile/v1/rdo/{rdo.id}/edit/',
+                data=json.dumps({
+                    'data': '2026-04-04',
+                    'observacoes': 'nao deve ser permitido',
+                }),
+                content_type='application/json',
+                HTTP_HOST='localhost',
+                secure=True,
+                HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+            )
+
+        self.assertEqual(success_response.status_code, 200)
+        self.assertTrue(success_response.json().get('success'))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(
+            'apenas data e membros',
+            response.json().get('error', '').lower(),
+        )
+        rdo.refresh_from_db()
+        self.assertEqual(rdo.data, date(2026, 4, 3))
+        self.assertEqual(rdo.turno, 'Diurno')
+        self.assertEqual(rdo.observacoes_rdo_pt, 'texto original')
+        self.assertEqual(rdo.membros_equipe.count(), 1)
+        self.assertEqual(rdo.membros_equipe.first().pessoa_id, pessoa.id)
 
     def test_mobile_sync_update_old_rdo_rejects_blocked_fields_for_supervisor(self):
         cliente = Cliente.objects.create(nome='Cliente Sync Restrito')

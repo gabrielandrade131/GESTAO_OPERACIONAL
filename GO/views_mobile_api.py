@@ -34,7 +34,6 @@ from .views_rdo import (
     _get_planejamento_rdo_context,
     _resolve_ordem_servico_embarcado_equipamentos,
     _serialize_embarcado_equipamento,
-    _resolve_supervisor_rdo_edit_access,
     _resolve_os_configured_tank_limit,
     _resolve_os_service_limit,
     _resolve_os_tank_progress,
@@ -2440,7 +2439,6 @@ def mobile_os_rdos(request, os_id):
             rdo_obj,
             user=request.user,
         )
-        edit_access = _resolve_supervisor_rdo_edit_access(request.user, rdo_obj)
         dt_val = getattr(rdo_obj, 'data', None) or getattr(rdo_obj, 'data_inicio', None)
         try:
             dt_str = dt_val.isoformat() if dt_val is not None else ''
@@ -2466,10 +2464,12 @@ def mobile_os_rdos(request, os_id):
                     ),
                     'pob': limited_payload.get('pob'),
                     'can_edit': True,
-                    'can_edit_full': bool(edit_access.get('can_edit_full')),
-                    'can_edit_limited': bool(edit_access.get('can_edit_limited')),
-                    'supervisor_limited_edit': bool(edit_access.get('is_limited')),
-                    'edit_restriction_message': edit_access.get('restriction_message') or '',
+                    'can_edit_full': False,
+                    'can_edit_limited': True,
+                    'supervisor_limited_edit': True,
+                    'edit_restriction_message': (
+                        'No Synchro Mobile, somente a data e a equipe podem ser alteradas.'
+                    ),
                     'created_at': limited_payload.get('created_at'),
                 }
             )
@@ -2508,12 +2508,11 @@ def mobile_rdo_supervisor_edit(request, rdo_id):
                 {'success': False, 'error': 'RDO não encontrado.'},
                 status=404,
             )
-        edit_access = _resolve_supervisor_rdo_edit_access(request.user, rdo_obj)
-        response_payload['can_edit_full'] = bool(edit_access.get('can_edit_full'))
-        response_payload['can_edit_limited'] = bool(edit_access.get('can_edit_limited'))
-        response_payload['supervisor_limited_edit'] = bool(edit_access.get('is_limited'))
+        response_payload['can_edit_full'] = False
+        response_payload['can_edit_limited'] = True
+        response_payload['supervisor_limited_edit'] = True
         response_payload['edit_restriction_message'] = (
-            edit_access.get('restriction_message') or ''
+            'No Synchro Mobile, somente a data e a equipe podem ser alteradas.'
         )
         return JsonResponse({'success': True, 'rdo': response_payload}, status=200)
 
@@ -2531,6 +2530,7 @@ def mobile_rdo_supervisor_edit(request, rdo_id):
     payload['rdo_id'] = str(rdo_id)
 
     request_for_view = _build_internal_post_request(request, payload)
+    request_for_view.rdo_force_limited_edit = True
     return update_rdo_ajax(request_for_view)
 
 

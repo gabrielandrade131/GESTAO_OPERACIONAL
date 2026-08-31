@@ -208,6 +208,8 @@ RDO_SUPERVISOR_LIMITED_ALLOWED_POST_KEYS = {
     'equipe_funcao[]',
     'equipe_pessoa_id[]',
     'equipe_em_servico[]',
+    'equipe_source',
+    'equipe_avaliacoes_json',
 }
 
 
@@ -11095,11 +11097,29 @@ def _apply_supervisor_limited_update_to_rdo(request, rdo_obj):
             )
             team_posted = any(key in request.POST for key in team_fields)
             if team_posted:
+                current_team_source = _normalize_rdo_team_source(
+                    getattr(rdo_obj, 'equipe_origem', None)
+                )
+                requested_team_source = _normalize_rdo_team_source(
+                    request.POST.get('equipe_source') or current_team_source
+                )
+                keep_planning_source = bool(
+                    current_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                    and requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                )
                 _persist_rdo_team_rows(
                     rdo_obj,
                     _build_rdo_team_rows_from_request(request),
-                    source=RDO.EQUIPE_ORIGEM_MANUAL,
-                    planejamento=None,
+                    source=(
+                        RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                        if keep_planning_source
+                        else RDO.EQUIPE_ORIGEM_MANUAL
+                    ),
+                    planejamento=(
+                        getattr(rdo_obj, 'planejamento_equipe_origem', None)
+                        if keep_planning_source
+                        else None
+                    ),
                     evaluations=_parse_rdo_team_evaluations(request),
                     actor=getattr(request, 'user', None),
                 )
@@ -11144,11 +11164,14 @@ def update_rdo_ajax(request):
             ordem = getattr(rdo_obj, 'ordem_servico', None)
             if ordem is not None and getattr(ordem, 'supervisor', None) != request.user:
                 return JsonResponse({'success': False, 'error': 'Sem permissão para atualizar este RDO.'}, status=403)
+        force_limited_edit = bool(
+            getattr(request, 'rdo_force_limited_edit', False)
+        )
         edit_access = _resolve_supervisor_rdo_edit_access(
             getattr(request, 'user', None),
             rdo_obj,
         )
-        if edit_access.get('is_limited'):
+        if force_limited_edit or edit_access.get('is_limited'):
             updated, payload = _apply_supervisor_limited_update_to_rdo(request, rdo_obj)
         else:
             updated, payload = _apply_post_to_rdo(request, rdo_obj)
