@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
@@ -14,6 +15,7 @@ from GO.models import (
     ResponsavelCoordenador,
     Unidade,
 )
+from GO.rdo_access import SYSTEM_READ_ONLY_GROUP_NAME
 
 
 class SupervisorMovementEvaluationApiTests(TestCase):
@@ -102,13 +104,33 @@ class SupervisorMovementEvaluationApiTests(TestCase):
         self.assertContains(response, 'home-supervisor-eval-badge is-complete', html=False)
         self.assertContains(response, 'Avaliado', html=False)
 
-    def test_usuario_que_nao_e_coordenador_nao_pode_avaliar(self):
+    def test_usuario_comum_com_acesso_de_edicao_pode_avaliar(self):
         movimentacao = self.criar_movimentacao()
         self.client.force_login(self.outro_user)
         response = self.client.post(
             reverse('api_avaliacao_supervisor_movimentacao', args=[movimentacao.pk]),
             {'nota': 'BOM'},
         )
+        self.assertEqual(response.status_code, 200)
+        avaliacao = AvaliacaoSupervisorMovimentacao.objects.get(ordem_servico=movimentacao)
+        self.assertEqual(avaliacao.avaliado_por_id, self.outro_user.pk)
+
+    def test_usuario_somente_visualizacao_nao_pode_avaliar(self):
+        movimentacao = self.criar_movimentacao()
+        grupo, _ = Group.objects.get_or_create(name=SYSTEM_READ_ONLY_GROUP_NAME)
+        self.outro_user.groups.add(grupo)
+        self.client.force_login(self.outro_user)
+
+        consulta = self.client.get(
+            reverse('api_avaliacao_supervisor_movimentacao', args=[movimentacao.pk])
+        )
+        response = self.client.post(
+            reverse('api_avaliacao_supervisor_movimentacao', args=[movimentacao.pk]),
+            {'nota': 'BOM'},
+        )
+
+        self.assertEqual(consulta.status_code, 200)
+        self.assertFalse(consulta.json()['can_evaluate'])
         self.assertEqual(response.status_code, 403)
         self.assertFalse(AvaliacaoSupervisorMovimentacao.objects.filter(ordem_servico=movimentacao).exists())
 

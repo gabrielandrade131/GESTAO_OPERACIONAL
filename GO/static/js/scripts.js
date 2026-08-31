@@ -3431,7 +3431,7 @@ function renderSupervisorEvaluation(data) {
             } else {
                 refs.message.textContent = data.can_evaluate
                     ? 'A avaliação será obrigatória antes de finalizar esta movimentação.'
-                    : 'Aguardando a avaliação do coordenador vinculado a esta movimentação.';
+                    : 'Seu perfil possui acesso somente para visualização desta avaliação.';
             }
         }
     }
