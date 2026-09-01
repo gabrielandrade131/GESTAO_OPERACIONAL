@@ -1906,7 +1906,11 @@ def _create_financeiro_from_payload(payload):
         "pt_financeiro": _clean_text(payload.get("pt_financeiro")) or "Pendente",
         "pc_ptc": _clean_text(payload.get("pc_ptc")) or "Pendente",
         "uf": _clean_text(payload.get("uf")) or "RJ",
-        "estimativo_receita": _parse_decimal_input(payload.get("estimativo_receita")),
+        "estimativo_receita": (
+            _parse_decimal_input(payload.get("estimativo_receita"))
+            if _clean_text(payload.get("estimativo_receita"))
+            else None
+        ),
         "fonte_lead": _clean_text(payload.get("fonte_lead")),
         "segmento_cliente": _clean_text(payload.get("segmento_cliente")),
         # Campos legados do Financeiro permanecem zerados; os itens reais agora sÃ£o persistidos em FinanceiroCampo.
@@ -1937,8 +1941,6 @@ def _create_financeiro_from_payload(payload):
         required_messages["servico"] = "Selecione um serviço."
     if not will_not_participate and _clean_text(payload.get("metodo")) and metodo_cadastro is None:
         required_messages["metodo"] = "Selecione ou cadastre um método ativo."
-    if not will_not_participate and fields["estimativo_receita"] <= 0:
-        required_messages["estimativo_receita"] = "Informe uma estimativa de receita válida."
     if fields["email_solicitante"]:
         try:
             validate_email(fields["email_solicitante"])
@@ -2162,7 +2164,8 @@ def _update_financeiro_from_payload(financeiro, payload):
             errors["tempo_contrato_dias"] = "Informe um tempo de contrato válido."
 
     if "estimativo_receita" in payload:
-        financeiro.estimativo_receita = _parse_decimal_input(payload.get("estimativo_receita"))
+        receita = _clean_text(payload.get("estimativo_receita"))
+        financeiro.estimativo_receita = _parse_decimal_input(receita) if receita else None
 
     os_field_map = {
         "cliente": "cliente",
