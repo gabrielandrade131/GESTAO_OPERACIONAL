@@ -17,7 +17,7 @@ from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.core.paginator import Paginator
-from django.http import FileResponse, HttpResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
@@ -25,16 +25,22 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoImagem, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
 from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf, load_offshore_template_draft
-from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
+from .rdo_access import (
+    user_can_access_commercial,
+    user_can_manage_rdo_permission_users,
+    user_can_manage_responsaveis_coordenadores,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
 def commercial_preview_required(view_func):
-    """Compatibility decorator retained after the public launch of Propostas."""
+    """Require the explicit Commercial access permission on every module endpoint."""
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
+        if not user_can_access_commercial(getattr(request, "user", None)):
+            return HttpResponseForbidden("Sem permissão para acessar o módulo Comercial.")
         return view_func(request, *args, **kwargs)
 
     return wrapped
