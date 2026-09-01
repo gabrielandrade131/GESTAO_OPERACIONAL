@@ -13,7 +13,10 @@ from alertas_inteligentes.models import (
     AlertaOperacionalInteligente,
     LeituraAlertaIA,
 )
-from alertas_inteligentes.services.rdo_immediate_analysis import analisar_rdo_imediatamente
+from alertas_inteligentes.services.rdo_immediate_analysis import (
+    agendar_analise_rdo,
+    analisar_rdo_imediatamente,
+)
 from GO.rdo_access import ALERTS_AI_GROUP_NAME, SYSTEM_READ_ONLY_GROUP_NAME
 
 
@@ -511,6 +514,106 @@ class SynchroShellTest(TestCase):
             ).json()['total'],
             1,
         )
+
+    def test_new_point_reopens_rdo_notification_and_new_rdo_creates_another_group(self):
+        ordem, operational_alert = self._create_operational_alert(number=7042)
+        operational_alert.delete()
+        first_rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='48',
+            data=timezone.localdate(),
+            turno='Diurno',
+        )
+        existing_alerts = [
+            AlertaInteligente.objects.create(
+                rdo=first_rdo,
+                tipo='PT_SEM_NUMERO',
+                referencia='pt_tarde',
+                mensagem='Número da PT ausente.',
+                prioridade='alta',
+                status='pendente',
+            ),
+            AlertaInteligente.objects.create(
+                rdo=first_rdo,
+                tipo='ATIVIDADE_SOBREPOSTA',
+                mensagem='Atividades sobrepostas.',
+                prioridade='media',
+                status='pendente',
+            ),
+        ]
+        for alert in existing_alerts:
+            LeituraAlertaIA.objects.create(
+                usuario=self.user,
+                alerta_rdo=alert,
+                lido=True,
+                lido_em=timezone.now(),
+            )
+
+        third_alert = AlertaInteligente.objects.create(
+            rdo=first_rdo,
+            tipo='RDO_TANQUE_INCOMPLETO',
+            referencia='tanque_8c',
+            mensagem='Novo ponto estrutural identificado.',
+            prioridade='alta',
+            status='pendente',
+        )
+
+        pending = self.client.get(
+            reverse('alertas_inteligentes:api_notificacoes'),
+            {'tab': 'pendentes'},
+        ).json()
+        self.assertEqual(pending['total'], 1)
+        self.assertEqual(pending['items'][0]['id'], first_rdo.pk)
+        self.assertEqual(pending['items'][0]['alert_count'], 3)
+        self.assertIn(
+            third_alert.pk,
+            {item['id'] for item in pending['items'][0]['alerts']},
+        )
+
+        second_rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='49',
+            data=timezone.localdate(),
+            turno='Diurno',
+        )
+        AlertaInteligente.objects.create(
+            rdo=second_rdo,
+            tipo='RDO_SEM_TURNO',
+            mensagem='Novo erro em outro RDO da mesma OS.',
+            prioridade='media',
+            status='pendente',
+        )
+
+        pending = self.client.get(
+            reverse('alertas_inteligentes:api_notificacoes'),
+            {'tab': 'pendentes'},
+        ).json()
+        self.assertEqual(pending['total'], 2)
+        self.assertEqual(
+            {item['id'] for item in pending['items']},
+            {first_rdo.pk, second_rdo.pk},
+        )
+
+    @override_settings(CELERY_ENABLED=False)
+    def test_analysis_fallback_runs_after_commit_without_disposable_thread(self):
+        ordem, operational_alert = self._create_operational_alert(number=99017)
+        operational_alert.delete()
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='17',
+            data=timezone.localdate(),
+            turno='Diurno',
+        )
+
+        with patch(
+            'alertas_inteligentes.services.rdo_immediate_analysis.analisar_rdo_imediatamente',
+            return_value={'processed': True, 'alerts': 1, 'error': None},
+        ) as analyze:
+            with self.captureOnCommitCallbacks(execute=True):
+                scheduled = agendar_analise_rdo(rdo)
+
+        self.assertTrue(scheduled)
+        analyze.assert_called_once_with(rdo.pk, None)
 
     def test_excel_keeps_individual_alerts_and_always_includes_corrected(self):
         from io import BytesIO

@@ -1,5 +1,4 @@
 import logging
-import threading
 
 from django.conf import settings
 from django.db import close_old_connections, transaction
@@ -101,12 +100,17 @@ def agendar_analise_rdo(rdo, *, corrigido_por=None):
                     rdo_id,
                 )
 
-        threading.Thread(
-            target=analisar_rdo_imediatamente,
-            args=(rdo_id, corrigido_por_id),
-            name=f'synchro-ai-rdo-{rdo_id}',
-            daemon=True,
-        ).start()
+        # Sem um worker persistente, uma thread daemon do Gunicorn não oferece
+        # garantia de execução: ela pode morrer em restart/timeout e deixar o
+        # RDO indefinidamente como pendente. Execute após o commit para que um
+        # RDO novo sempre seja analisado antes de a requisição terminar.
+        result = analisar_rdo_imediatamente(rdo_id, corrigido_por_id)
+        if result.get('error'):
+            logger.error(
+                'Análise imediata do RDO %s permaneceu pendente: %s',
+                rdo_id,
+                result['error'],
+            )
 
     transaction.on_commit(dispatch)
     return True
