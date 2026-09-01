@@ -759,7 +759,7 @@ document.addEventListener("DOMContentLoaded", () => {
         1: [],
         2: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
         3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalAmbienteOperacional", "proposalDataSolicitacao", "proposalDataEntrega"],
-        4: ["proposalServico", "proposalReceita"],
+        4: ["proposalServico"],
         5: ["proposalStatus"]
     };
 
@@ -2807,6 +2807,10 @@ document.addEventListener("DOMContentLoaded", () => {
                                     </button>
                                 </div>
                             </div>
+                            <div class="edit-field edit-field--span-two">
+                                <label for="scopeDescricaoProposta">Descri&ccedil;&atilde;o da proposta</label>
+                                <textarea id="scopeDescricaoProposta" rows="3" placeholder="Descreva a proposta, o escopo ou observa&ccedil;&otilde;es relevantes.">${escapeHtml(proposal.descricaoProposta || "")}</textarea>
+                            </div>
                             <div class="edit-field">
                                 <label for="scopeReceita">Estimativa Receita</label>
                                 <input id="scopeReceita" type="text" value="${escapeHtml(proposal.estimativaReceita)}">
@@ -2856,6 +2860,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="scope-services-display">
                             ${scopeServices.map((service) => `<span class="scope-services-display__tag">${escapeHtml(service)}</span>`).join("") || `<p>${escapeHtml(proposal.escopo)}</p>`}
                         </div>
+                        ${proposal.descricaoProposta ? `
+                            <div class="scope-description-display">
+                                <span>Descri&ccedil;&atilde;o da proposta</span>
+                                <p>${escapeHtml(proposal.descricaoProposta)}</p>
+                            </div>
+                        ` : ""}
                         <div class="info-kpis">
                             <div class="finance-item">
                                 <span class="material-icons" aria-hidden="true">payments</span>
@@ -3608,7 +3618,8 @@ document.addEventListener("DOMContentLoaded", () => {
             documentosDisponiveis: Boolean(rawProposal.documentosDisponiveis),
             heatMap: String(rawProposal.heatMap ?? ""),
             estimativaReceitaValor: Number(rawProposal.estimativaReceitaValor ?? parseCurrencyValue(rawProposal.estimativaReceita)) || 0,
-            estimativaReceita: rawProposal.estimativaReceita || formatCurrencyDisplay(rawProposal.estimativaReceitaValor || 0),
+            estimativaReceita: rawProposal.estimativaReceita || "",
+            descricaoProposta: rawProposal.descricaoProposta || "",
             tempoContratoDias: rawProposal.tempoContratoDias || "",
             tempoContratoDiasValor: Number(rawProposal.tempoContratoDiasValor || 0) || 0,
             followUps: Array.isArray(rawProposal.followUps) ? rawProposal.followUps : [],
@@ -5925,6 +5936,7 @@ document.addEventListener("DOMContentLoaded", () => {
             cordenador: valueOf("proposalCoordenador"),
             responsavel: valueOf("proposalResponsavel"),
             servico: valueOf("proposalServico"),
+            descricao_proposta: valueOf("proposalDescricao"),
             comentario: "",
             requisitos_cliente: "",
             requisitos_ambipar: "",
@@ -6014,7 +6026,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const firstFieldId = Object.keys(state.createProposalErrorFields)[0];
             if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalAmbienteOperacional", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
                 state.modalStep = 3;
-            } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
+            } else if (["proposalServico"].includes(firstFieldId)) {
                 state.modalStep = 4;
             } else if (["proposalStatus", "proposalMotivo"].includes(firstFieldId)) {
                 state.modalStep = 5;
@@ -6118,8 +6130,7 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalUnidade: "Selecione uma unidade.",
             proposalServico: "Selecione o serviço.",
             proposalDataSolicitacao: "Informe a data de solicitação da proposta.",
-            proposalDataEntrega: "Informe a data prevista.",
-            proposalReceita: "Informe a estimativa de receita."
+            proposalDataEntrega: "Informe a data prevista."
         };
 
         let isValid = true;
@@ -6172,8 +6183,7 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalCliente: "Selecione um cliente.",
             proposalUnidade: "Selecione uma unidade.",
             proposalServico: "Selecione o serviço.",
-            proposalDataEntrega: "Informe a data prevista.",
-            proposalReceita: "Informe a estimativa de receita."
+            proposalDataEntrega: "Informe a data prevista."
         };
 
         let isValid = true;
@@ -6681,8 +6691,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const escopos = (state.scopeDraftServices || [])
             .map((service) => String(service || "").trim())
             .filter(Boolean);
-        const estimativaReceita = refs.proposalDrawer.querySelector("#scopeReceita")?.value.trim() || proposal.estimativaReceita;
+        const estimativaReceita = refs.proposalDrawer.querySelector("#scopeReceita")?.value.trim() ?? proposal.estimativaReceita;
         const tempoContrato = refs.proposalDrawer.querySelector("#scopeTempo")?.value.trim() || proposal.tempoContratoDias;
+        const descricaoProposta = refs.proposalDrawer.querySelector("#scopeDescricaoProposta")?.value.trim() || "";
 
         if (!escopos.length) {
             state.saveProposalError = true;
@@ -6700,6 +6711,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         persistProposalUpdate(proposal.id, {
             servico: escopo,
+            descricao_proposta: descricaoProposta,
             estimativo_receita: estimativaReceita,
             tempo_contrato_dias: tempoContrato,
             campos,
@@ -7654,8 +7666,7 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalAmbienteOperacional: "Selecione Onshore ou Offshore.",
             proposalServico: "Selecione o serviço.",
             proposalDataSolicitacao: "Informe a data de solicitação da proposta.",
-            proposalDataEntrega: "Informe a data prevista.",
-            proposalReceita: "Informe a estimativa de receita."
+            proposalDataEntrega: "Informe a data prevista."
         };
 
         let isValid = true;

@@ -1140,6 +1140,7 @@ def _serialize_financeiro(financeiro):
         "uf": _clean_text(financeiro.uf),
         "embarcacaoLocal": embarcacao_local,
         "escopo": _clean_text(overrides.get("servico")) or _clean_text(financeiro.servico) or _clean_text(financeiro.comentario),
+        "descricaoProposta": _clean_text(financeiro.descricao_proposta),
         "estimativaReceita": _format_currency_br(receita) if receita_informada else "",
         "estimativaReceitaValor": float(receita) if receita_informada else None,
         "tempoContratoDias": f"{financeiro.tempo_contrato_dias} dias" if financeiro.tempo_contrato_dias else "",
@@ -1901,6 +1902,7 @@ def _create_financeiro_from_payload(payload):
         "responsavel_cadastro": responsavel_cadastro,
         "coordenador_cadastro": coordenador_cadastro,
         "servico": _clean_text(payload.get("servico")),
+        "descricao_proposta": _clean_text(payload.get("descricao_proposta")),
         "volume_tanque_exec": tank,
         "comentario": _clean_text(payload.get("comentario")),
         "requisitos_cliente": _clean_text(payload.get("requisitos_cliente")),
@@ -2111,6 +2113,7 @@ def _update_financeiro_from_payload(financeiro, payload):
         "fonte_lead": "fonte_lead",
         "segmento_cliente": "segmento_cliente",
         "ambiente_operacional": "ambiente_operacional",
+        "descricao_proposta": "descricao_proposta",
     }
     for payload_key, model_field in text_fields.items():
         if payload_key in payload:

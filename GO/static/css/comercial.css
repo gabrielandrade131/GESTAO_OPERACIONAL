@@ -3195,6 +3195,27 @@ body.comercial-is-loading .commercial-main-content {
     margin-top: 4px;
 }
 
+.scope-description-display {
+    margin: 16px 0;
+    padding: 14px 16px;
+    border: 1px solid #dce5ef;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.scope-description-display span {
+    color: #53657d;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.scope-description-display p {
+    margin: 6px 0 0;
+    color: #1b2a41;
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
 /* Keep the critical analysis independent from the commercial-data grid. */
 .critical-analysis-tab {
     width: min(100%, 980px);

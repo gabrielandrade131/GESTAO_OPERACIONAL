@@ -4845,6 +4845,7 @@ class Financeiro(models.Model):
         related_name='propostas_responsaveis',
     )
     servico = models.CharField(max_length=100, choices=OrdemServico.SERVICO_CHOICES, blank=True, null=True)
+    descricao_proposta = models.TextField(blank=True, null=True)
     volume_tanque_exec = models.ForeignKey(
         'GO.RdoTanque',
         on_delete=models.PROTECT,
