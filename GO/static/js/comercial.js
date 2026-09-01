@@ -12,9 +12,9 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
     const COLUMN_DEFINITIONS = [
-        { key: "avaliacao_inicial", label: "Avaliação Inicial", description: "Sem retorno, em análise, avaliando escopo", tone: "analysis" },
+        { key: "avaliacao_inicial", label: "Avaliação Inicial", description: "Sem retorno, avaliando escopo", tone: "analysis" },
         { key: "preparacao_aprovacao", label: "Preparação e Aprovação", description: "Em elaboração, aguardando aprovação", tone: "preparation" },
-        { key: "propostas_enviadas", label: "Propostas Enviadas", description: "Revisada, shortlist", tone: "sent" },
+        { key: "propostas_enviadas", label: "Propostas Enviadas", description: "Em análise, revisada, shortlist", tone: "sent" },
         { key: "negociacao", label: "Negociação", description: "Em negociação", tone: "negotiation" },
         { key: "contratadas", label: "Contratadas", description: "Fechadas / Contratadas", tone: "contracted" },
         { key: "canceladas", label: "Canceladas", description: "Propostas canceladas", tone: "cancelled" }
@@ -3407,12 +3407,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const stageMap = {
             avaliacao_inicial: "avaliacao_inicial",
             "sem retorno": "avaliacao_inicial",
-            "em analise": "avaliacao_inicial",
             "avaliando escopo": "avaliacao_inicial",
             preparacao_aprovacao: "preparacao_aprovacao",
             "em elaboracao": "preparacao_aprovacao",
             "aguardando aprovacao gestores": "preparacao_aprovacao",
             propostas_enviadas: "propostas_enviadas",
+            "em analise": "propostas_enviadas",
             shortlist: "propostas_enviadas",
             revisada: "propostas_enviadas",
             enviada: "propostas_enviadas",

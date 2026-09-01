@@ -44,7 +44,7 @@ KANBAN_STAGES = [
     {
         "key": "avaliacao_inicial",
         "label": "Avaliação Inicial",
-        "description": "Sem retorno, em análise, avaliando escopo",
+        "description": "Sem retorno, avaliando escopo",
     },
     {
         "key": "preparacao_aprovacao",
@@ -54,7 +54,7 @@ KANBAN_STAGES = [
     {
         "key": "propostas_enviadas",
         "label": "Propostas Enviadas",
-        "description": "Revisada, shortlist",
+        "description": "Em análise, revisada, shortlist",
     },
     {
         "key": "negociacao",
@@ -91,10 +91,12 @@ FOLLOWUP_STATUSES = ["Pendente", "Realizado", "Sem retorno", "Reagendado"]
 # Financeiro.status_proposta and is never overwritten by a pipeline phase.
 KANBAN_STAGE_MAP = {
     "sem retorno": "avaliacao_inicial",
-    "em analise": "avaliacao_inicial",
     "avaliando escopo": "avaliacao_inicial",
     "em elaboracao": "preparacao_aprovacao",
     "aguardando aprovacao gestores": "preparacao_aprovacao",
+    # "Em Análise" means the proposal is already with the client. The real
+    # status remains untouched; only the visual Kanban stage is derived here.
+    "em analise": "propostas_enviadas",
     "revisada": "propostas_enviadas",
     "shortlist": "propostas_enviadas",
     "enviada": "propostas_enviadas",
