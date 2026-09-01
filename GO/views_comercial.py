@@ -53,13 +53,8 @@ KANBAN_STAGES = [
     },
     {
         "key": "propostas_enviadas",
-        "label": "Propostas Enviadas",
-        "description": "Em análise, revisada, shortlist",
-    },
-    {
-        "key": "negociacao",
-        "label": "Negociação",
-        "description": "Em negociação",
+        "label": "Propostas Enviadas e Negociação",
+        "description": "Em análise, revisada, shortlist, em negociação",
     },
     {
         "key": "contratadas",
@@ -100,7 +95,7 @@ KANBAN_STAGE_MAP = {
     "revisada": "propostas_enviadas",
     "shortlist": "propostas_enviadas",
     "enviada": "propostas_enviadas",
-    "em negociacao": "negociacao",
+    "em negociacao": "propostas_enviadas",
     "fechada/contratada": "contratadas",
     "contratada": "contratadas",
     "cancelada": "canceladas",

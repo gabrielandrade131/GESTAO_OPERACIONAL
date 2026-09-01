@@ -14,8 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const COLUMN_DEFINITIONS = [
         { key: "avaliacao_inicial", label: "Avaliação Inicial", description: "Sem retorno, avaliando escopo", tone: "analysis" },
         { key: "preparacao_aprovacao", label: "Preparação e Aprovação", description: "Em elaboração, aguardando aprovação", tone: "preparation" },
-        { key: "propostas_enviadas", label: "Propostas Enviadas", description: "Em análise, revisada, shortlist", tone: "sent" },
-        { key: "negociacao", label: "Negociação", description: "Em negociação", tone: "negotiation" },
+        { key: "propostas_enviadas", label: "Propostas Enviadas e Negociação", description: "Em análise, revisada, shortlist, em negociação", tone: "sent" },
         { key: "contratadas", label: "Contratadas", description: "Fechadas / Contratadas", tone: "contracted" },
         { key: "canceladas", label: "Canceladas", description: "Propostas canceladas", tone: "cancelled" }
     ];
@@ -3416,8 +3415,8 @@ document.addEventListener("DOMContentLoaded", () => {
             shortlist: "propostas_enviadas",
             revisada: "propostas_enviadas",
             enviada: "propostas_enviadas",
-            negociacao: "negociacao",
-            "em negociacao": "negociacao",
+            negociacao: "propostas_enviadas",
+            "em negociacao": "propostas_enviadas",
             contratadas: "contratadas",
             "fechada/contratada": "contratadas",
             contratada: "contratadas",
