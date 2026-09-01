@@ -252,6 +252,17 @@ class SynchroShellTest(TestCase):
             f'id="ai-notification-center-open" href="{reverse("alertas_inteligentes:assistente_rdo")}"',
         )
 
+    def test_notification_summary_api_returns_daily_compact_snapshot(self):
+        _, alert = self._create_operational_alert(message='Atualização dinâmica do sino')
+
+        response = self.client.get(reverse('alertas_inteligentes:api_notificacoes_resumo'))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['unread_count'], 1)
+        self.assertEqual(payload['compact_items'][0]['id'], alert.pk)
+
     def test_notification_read_state_is_persisted_per_user_and_updates_unread_badge(self):
         _, alert = self._create_operational_alert(number=99002)
         endpoint = reverse(

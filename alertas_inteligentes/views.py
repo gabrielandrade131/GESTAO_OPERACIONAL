@@ -75,6 +75,24 @@ def api_notificacoes(request):
     return JsonResponse(payload)
 
 
+def api_notificacoes_resumo(request):
+    """Lightweight payload used to keep the shared header bell current."""
+    forbidden = _notification_api_forbidden(request)
+    if forbidden:
+        return forbidden
+    if request.method != "GET":
+        return JsonResponse({"success": False, "error": "Método não permitido."}, status=405)
+
+    snapshot = notification_snapshot(request.user)
+    return JsonResponse(
+        {
+            "success": True,
+            "unread_count": snapshot["unread_count"],
+            "compact_items": snapshot["items"],
+        }
+    )
+
+
 def api_notificacoes_exportar_excel(request):
     forbidden = _notification_api_forbidden(request)
     if forbidden:

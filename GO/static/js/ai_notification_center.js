@@ -37,7 +37,8 @@
         requestId: 0,
         initialized: false,
         toastTimer: null,
-        previousOverflow: ""
+        previousOverflow: "",
+        snapshotRequestInFlight: false
     };
 
     function element(tag, className, text) {
@@ -154,6 +155,20 @@
         }
         badge.textContent = unread > 99 ? "99+" : String(unread);
         badge.setAttribute("aria-label", unread + " alertas da IA não lidos");
+    }
+
+    async function refreshCompactSnapshot() {
+        if (state.snapshotRequestInFlight || document.hidden || !center.dataset.snapshotUrl) return;
+        state.snapshotRequestInFlight = true;
+        try {
+            const payload = await request(center.dataset.snapshotUrl);
+            updateBellBadge(Number(payload.unread_count || 0));
+            renderCompact(payload.compact_items || []);
+        } catch (_) {
+            // A polling failure must not disrupt the page or the notification center.
+        } finally {
+            state.snapshotRequestInFlight = false;
+        }
     }
 
     function renderPriorityOptions(priorities) {
@@ -676,6 +691,10 @@
         event.stopPropagation();
         toggleRead({ source: button.dataset.source, id: Number(button.dataset.alertId), is_read: false, key: button.dataset.source + ":" + button.dataset.alertId }, true);
     });
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) refreshCompactSnapshot();
+    });
+    window.setInterval(refreshCompactSnapshot, 30000);
 
     center.setAttribute("aria-hidden", "true");
 }());
