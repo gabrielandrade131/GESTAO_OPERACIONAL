@@ -22,21 +22,63 @@ def _dedupe_tank_values(values):
         return list(values or [])
 
 
-def _split_multi_text(raw):
-    try:
-        if raw is None:
-            return []
-        text = str(raw).replace('\r\n', '\n').replace(';', ',')
-        return [part.strip() for part in text.split(',') if part and part.strip()]
-    except Exception:
+def _parse_service_values(raw):
+    """Parse services without treating commas inside registered names as separators."""
+    text = str(raw or '').strip()
+    if not text:
         return []
+
+    aliases = {}
+    try:
+        for value, label in OrdemServico.SERVICO_CHOICES:
+            aliases[str(value).strip().casefold()] = str(value).strip()
+            aliases[str(label).strip().casefold()] = str(value).strip()
+    except Exception:
+        aliases = {}
+
+    def canonical(chunk):
+        chunk = str(chunk or '').strip()
+        return aliases.get(chunk.casefold(), chunk)
+
+    if '||' in text or ';' in text:
+        delimiter = '||' if '||' in text else ';'
+        return [canonical(part) for part in text.split(delimiter) if part.strip()]
+
+    exact = aliases.get(text.casefold())
+    if exact:
+        return [exact]
+
+    choices = sorted(aliases.items(), key=lambda item: len(item[0]), reverse=True)
+
+    def consume(remaining):
+        remaining = remaining.strip()
+        if not remaining:
+            return []
+        folded = remaining.casefold()
+        for alias, value in choices:
+            if not folded.startswith(alias):
+                continue
+            suffix = remaining[len(alias):]
+            if not suffix:
+                return [value]
+            if not suffix.startswith(','):
+                continue
+            parsed_suffix = consume(suffix[1:])
+            if parsed_suffix is not None:
+                return [value] + parsed_suffix
+        return None
+
+    parsed = consume(text)
+    if parsed is not None:
+        return parsed
+    return [canonical(part) for part in text.split(',') if part.strip()]
 
 
 def validate_required_tank_rows_post(post_data):
     try:
         if post_data is None:
             return None
-        services = _split_multi_text(
+        services = _parse_service_values(
             post_data.get('servicos')
             or post_data.get('servico')
             or post_data.get('edit_servico_hidden')
@@ -331,16 +373,16 @@ class OrdemServicoForm(forms.ModelForm):
                 raw = str(label_to_value.get(raw.casefold(), raw))
             except Exception:
                 pass
-            parts = [p.strip() for p in raw.split(',') if p.strip()] if ',' in raw else [raw.strip()]
+            parts = _parse_service_values(raw)
             primary = parts[0] if parts else raw.strip()
             try:
                 valid_choices = {v for v, _ in OrdemServico.SERVICO_CHOICES}
             except Exception:
                 valid_choices = set()
-            if valid_choices and primary not in valid_choices:
+            if valid_choices and any(part not in valid_choices for part in parts):
                 self.add_error('servico', 'Selecione um serviço válido da lista.')
             cleaned_data['servico'] = primary
-            cleaned_data['servicos'] = raw
+            cleaned_data['servicos'] = ', '.join(parts)
 
         try:
             tanques_raw = self.data.get('tanques') or self.data.get('tanques_hidden') or self.data.get('edit_tanques_hidden')
@@ -422,10 +464,7 @@ class OrdemServicoForm(forms.ModelForm):
         os_existente = self.cleaned_data.get('os_existente')
 
         servico_raw = self.cleaned_data.get('servico') or instance.servico
-        if isinstance(servico_raw, str) and ',' in servico_raw:
-            servico_primary = servico_raw.split(',')[0].strip()
-        else:
-            servico_primary = servico_raw
+        servico_primary = servico_raw
 
         if box_opcao == self.NOVA_OS:
             ultimo = OrdemServico.objects.order_by('-numero_os').first()
