@@ -4764,6 +4764,16 @@ class Financeiro(models.Model):
         on_delete=models.PROTECT,
         related_name='financeiro_tipos_operacao',
     )
+    ambiente_operacional = models.CharField(
+        max_length=10,
+        choices=[
+            ('Onshore', 'Onshore'),
+            ('Offshore', 'Offshore'),
+        ],
+        blank=True,
+        null=True,
+        db_index=True,
+    )
     metodo = models.ForeignKey(
         'GO.OrdemServico',
         on_delete=models.PROTECT,

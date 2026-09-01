@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
         { key: "preparacao_aprovacao", label: "Preparação e Aprovação", description: "Em elaboração, aguardando aprovação", tone: "preparation" },
         { key: "propostas_enviadas", label: "Propostas Enviadas e Negociação", description: "Em análise, revisada, shortlist, em negociação", tone: "sent" },
         { key: "contratadas", label: "Contratadas", description: "Fechadas / Contratadas", tone: "contracted" },
+        { key: "perdidas_recusadas", label: "Perdidas / Recusadas", description: "Perdidas, recusadas ou declínios", tone: "lost" },
         { key: "canceladas", label: "Canceladas", description: "Propostas canceladas", tone: "cancelled" }
     ];
     const PIPELINE_COLUMN_PREVIEW_LIMIT = 5;
@@ -757,7 +758,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalFieldsByStep = {
         1: [],
         2: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
-        3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"],
+        3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalAmbienteOperacional", "proposalDataSolicitacao", "proposalDataEntrega"],
         4: ["proposalServico", "proposalReceita"],
         5: ["proposalStatus"]
     };
@@ -1877,8 +1878,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderProposalCard(proposal) {
         const statusTone = getStatusTone(proposal.statusProposta);
-        const pdfEndpoint = buildEndpoint(state.endpoints.pdfPattern, proposal.id);
-        const criticalAnalysisPdfEndpoint = buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id);
+        const documentosDisponiveis = Boolean(proposal.documentosDisponiveis);
+        const pdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.pdfPattern, proposal.id) : "";
+        const criticalAnalysisPdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id) : "";
 
         return `
             <article class="proposal-card" data-proposal-id="${proposal.id}" role="button" tabindex="0" aria-label="Abrir detalhes de ${escapeHtml(proposal.numeroProposta)}">
@@ -1888,7 +1890,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <p class="proposal-client">${escapeHtml(proposal.empresa)}</p>
                 <span class="proposal-badge proposal-badge--status is-${statusTone}">${escapeHtml(proposal.statusProposta || "Status não informado")}</span>
-                <p class="proposal-nature">${escapeHtml(proposal.tipoOperacao || "Opera\u00e7\u00e3o n\u00e3o informada")}</p>
+                <p class="proposal-nature">${escapeHtml(proposal.ambienteOperacional || proposal.tipoOperacao || "Opera\u00e7\u00e3o n\u00e3o informada")}</p>
                 <div class="proposal-meta-row">
                     <span class="proposal-meta">
                         <span class="material-icons" aria-hidden="true">calendar_today</span>
@@ -2716,6 +2718,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("Emissão Mês", "emissaoMes", proposal.emissaoMes, false),
                         editableField("Responsável", "responsavel", proposal.responsavel, true, RESPONSAVEIS),
                         editableField("Natureza", "natureza", proposal.natureza, true, NATUREZAS),
+                        editableField("Ambiente Operacional", "ambienteOperacional", proposal.ambienteOperacional, true, ["Onshore", "Offshore"]),
                         editableField("Unidade", "unidade", proposal.unidade, true, getDetailSelectOptions("unidades", proposal.unidade)),
                         editableField("Heat Map", "heatMap", proposal.heatMap, true, HEATMAPS),
                         editableField("Status da Proposta", "statusProposta", proposal.statusProposta, true, STATUS_OPTIONS)
@@ -3420,6 +3423,10 @@ document.addEventListener("DOMContentLoaded", () => {
             contratadas: "contratadas",
             "fechada/contratada": "contratadas",
             contratada: "contratadas",
+            perdidas_recusadas: "perdidas_recusadas",
+            "perdida/recusada": "perdidas_recusadas",
+            "perdida / recusada": "perdidas_recusadas",
+            declinio: "perdidas_recusadas",
             canceladas: "canceladas",
             cancelada: "canceladas"
         };
@@ -3597,6 +3604,8 @@ document.addEventListener("DOMContentLoaded", () => {
             kanbanStage: normalizeKanbanStage(rawProposal.kanbanStage || rawStatus),
             natureza: rawProposal.natureza || "",
             tipoOperacao: rawProposal.tipoOperacao || "",
+            ambienteOperacional: rawProposal.ambienteOperacional || "",
+            documentosDisponiveis: Boolean(rawProposal.documentosDisponiveis),
             heatMap: String(rawProposal.heatMap ?? ""),
             estimativaReceitaValor: Number(rawProposal.estimativaReceitaValor ?? parseCurrencyValue(rawProposal.estimativaReceita)) || 0,
             estimativaReceita: rawProposal.estimativaReceita || formatCurrencyDisplay(rawProposal.estimativaReceitaValor || 0),
@@ -3701,7 +3710,8 @@ document.addEventListener("DOMContentLoaded", () => {
         populateSelect("proposalResponsavel", metadata.responsaveis || RESPONSAVEIS, { placeholder: "Selecione o responsável" });
         populateSelect("proposalNatureza", metadata.naturezas || NATUREZAS, { placeholder: "Selecione a natureza" });
         populateSelect("proposalUnidade", metadata.unidades || [], { placeholder: "Selecione a unidade" });
-        populateSelect("proposalTipoOperacao", metadata.tipoOperacaoOptions || ["Onshore", "Offshore"], { placeholder: "Selecione o tipo de operação" });
+        populateSelect("proposalTipoOperacao", metadata.tipoOperacaoOptions || [], { placeholder: "Selecione o tipo de operação" });
+        populateSelect("proposalAmbienteOperacional", metadata.ambienteOperacionalOptions || ["Onshore", "Offshore"], { placeholder: "Selecione Onshore ou Offshore" });
         populateSelect("proposalMetodo", metadata.metodoOptions || [], { placeholder: "Selecione o método" });
         populateSelect("proposalCoordenador", metadata.coordenadorOptions || [], { placeholder: "Selecione o coordenador" });
         populateSelect("proposalStatus", metadata.statusOptions || STATUS_OPTIONS, { placeholder: "Selecione o status" });
@@ -5909,6 +5919,7 @@ document.addEventListener("DOMContentLoaded", () => {
             email_solicitante: valueOf("proposalEmailSolicitante"),
             telefone_solicitante: valueOf("proposalTelefoneSolicitante"),
             tipo_operacao: valueOf("proposalTipoOperacao"),
+            ambiente_operacional: valueOf("proposalAmbienteOperacional"),
             metodo: valueOf("proposalMetodo"),
             status_proposta: valueOf("proposalStatus"),
             cordenador: valueOf("proposalCoordenador"),
@@ -6001,7 +6012,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (Object.keys(state.createProposalErrorFields).length) {
             const firstFieldId = Object.keys(state.createProposalErrorFields)[0];
-            if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
+            if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalAmbienteOperacional", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
                 state.modalStep = 3;
             } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
                 state.modalStep = 4;
@@ -6412,7 +6423,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const updatedValues = readFieldValues([
             "rev", "responsavel", "dataEntregaProposta", "dataSolicitacaoProposta", "dataFechamento", "previsaoContratacao", "followUp",
-            "natureza", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
+            "natureza", "ambienteOperacional", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
             "empresa", "uf", "embarcacaoLocal", "solicitante", "emailSolicitante", "telefoneSolicitante", "po", "rfi", "fonteLead", "segmentoCliente", "comentario"
         ]);
 
@@ -6590,7 +6601,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const updatedValues = readFieldValues([
             "rev", "responsavel", "dataEntregaProposta", "dataSolicitacaoProposta", "dataFechamento", "previsaoContratacao", "followUp",
-            "natureza", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
+            "natureza", "ambienteOperacional", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
             "empresa", "uf", "embarcacaoLocal", "solicitante", "emailSolicitante", "telefoneSolicitante", "po", "rfi", "fonteLead", "segmentoCliente", "comentario"
         ]);
 
@@ -6612,6 +6623,7 @@ document.addEventListener("DOMContentLoaded", () => {
             previsao_contratacao: updatedValues.previsaoContratacao,
             follow_up: updatedValues.followUp,
             natureza: updatedValues.natureza,
+            ambiente_operacional: updatedValues.ambienteOperacional,
             unidade: updatedValues.unidade,
             embarcacao_local: updatedValues.embarcacaoLocal,
             heat_map: updatedValues.heatMap,
@@ -7639,6 +7651,7 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalCliente: "Selecione um cliente.",
             proposalUnidade: "Selecione uma unidade.",
             proposalTipoOperacao: "Selecione o tipo de operação.",
+            proposalAmbienteOperacional: "Selecione Onshore ou Offshore.",
             proposalServico: "Selecione o serviço.",
             proposalDataSolicitacao: "Informe a data de solicitação da proposta.",
             proposalDataEntrega: "Informe a data prevista.",
