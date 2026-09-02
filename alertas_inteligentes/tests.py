@@ -44,6 +44,7 @@ from alertas_inteligentes.services.rdos_tanque_incompleto import (
 )
 from alertas_inteligentes.services.rdo_validator import (
     criar_alerta,
+    sincronizar_alertas_rdo_apos_analise,
     sincronizar_alertas_anomalia_da_os,
     validar_campos_basicos,
     validar_dados_operacionais,
@@ -1870,9 +1871,89 @@ class RdoValidatorConsolidacaoTests(TestCase):
         self.assertEqual(alerta.prioridade, "alta")
         self.assertIn("RDOs 20 e 21", alerta.mensagem)
         self.assertIn("06/08/2026", alerta.mensagem)
-        self.assertIn("mesma observação", alerta.mensagem)
-        self.assertIn("sem atividades, equipe, tanque, fotos, POB", alerta.mensagem)
+        self.assertIn("observação 100%", alerta.mensagem)
+        self.assertIn("cópia menos completa: atividades, equipe, tanque, fotos, POB", alerta.mensagem)
         self.assertIn("Nenhum RDO foi excluído automaticamente", alerta.mensagem)
+
+    def test_same_date_and_shift_with_different_content_is_not_duplicate(self):
+        rdo_a = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="24",
+            data=date(2026, 8, 8),
+            turno="Diurno",
+            observacoes_rdo_pt="Limpeza mecânica do tanque 4C.",
+            exist_pt=True,
+            pt_manha="PT-100",
+        )
+        rdo_b = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo="25",
+            data=date(2026, 8, 8),
+            turno="Diurno",
+            observacoes_rdo_pt="Treinamento de segurança da equipe de bordo.",
+            exist_pt=True,
+            pt_manha="PT-200",
+        )
+        RDOAtividade.objects.create(rdo=rdo_a, ordem=0, atividade="limpeza mecânica")
+        RDOAtividade.objects.create(rdo=rdo_b, ordem=0, atividade="treinamento na unidade")
+        RdoTanque.objects.create(rdo=rdo_a, tanque_codigo="4C-COT")
+        RdoTanque.objects.create(rdo=rdo_b, tanque_codigo="8C-COT")
+
+        self.assertEqual(validar_rdo_duplicado(rdo_a), [])
+        self.assertEqual(validar_rdo_duplicado(rdo_b), [])
+
+    def test_duplicate_content_is_detected_when_only_photos_are_missing(self):
+        common = {
+            "ordem_servico": self.os_obj,
+            "data": date(2026, 8, 9),
+            "turno": "Diurno",
+            "observacoes_rdo_pt": "Continuidade da limpeza mecânica do tanque 4C.",
+            "exist_pt": True,
+            "pt_manha": "PT-321",
+            "pob": 6,
+        }
+        rdo_with_photos = RDO.objects.create(rdo="26", fotos_json='["foto-1.jpg"]', **common)
+        rdo_without_photos = RDO.objects.create(rdo="27", **common)
+        for rdo in (rdo_with_photos, rdo_without_photos):
+            RDOAtividade.objects.create(rdo=rdo, ordem=0, atividade="limpeza mecânica")
+            RdoTanque.objects.create(rdo=rdo, tanque_codigo="4C-COT", nome_tanque="4C-COT")
+
+        alertas = validar_rdo_duplicado(rdo_without_photos)
+
+        self.assertEqual(len(alertas), 1)
+        alerta = alertas[0]
+        self.assertEqual(alerta.rdo, rdo_with_photos)
+        self.assertEqual(alerta.prioridade, "alta")
+        self.assertIn("Similaridade analisada: 100%", alerta.mensagem)
+        self.assertIn("fotos", alerta.mensagem)
+
+    def test_changing_either_member_of_pair_resolves_duplicate_alert(self):
+        common = {
+            "ordem_servico": self.os_obj,
+            "data": date(2026, 8, 10),
+            "turno": "Diurno",
+            "observacoes_rdo_pt": "Inspeção interna do tanque 6A.",
+            "exist_pt": True,
+            "pt_manha": "PT-654",
+        }
+        first = RDO.objects.create(rdo="28", **common)
+        second = RDO.objects.create(rdo="29", **common)
+        for rdo in (first, second):
+            RDOAtividade.objects.create(rdo=rdo, ordem=0, atividade="acesso ao tanque")
+            RdoTanque.objects.create(rdo=rdo, tanque_codigo="6A-COT")
+
+        active = validar_rdo_duplicado(second)
+        alert = active[0]
+        sincronizar_alertas_rdo_apos_analise(second, active)
+        self.assertEqual(alert.status, "pendente")
+
+        second.turno = "Noturno"
+        second.save(update_fields=["turno"])
+        sincronizar_alertas_rdo_apos_analise(second, validar_rdo_duplicado(second))
+
+        alert.refresh_from_db()
+        self.assertEqual(alert.status, "resolvido")
+        self.assertEqual(alert.motivo_encerramento, "correcao_confirmada")
 
     def test_nao_considera_turnos_diferentes_como_rdos_duplicados(self):
         rdo_diurno = RDO.objects.create(

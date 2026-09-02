@@ -546,11 +546,15 @@
             return;
         }
         items.forEach(function (item) {
-            const article = element("article", "synchro-alert-item" + (!item.is_read ? " synchro-alert-item--unread" : ""));
+            const article = element(
+                "article",
+                "synchro-alert-item synchro-alert-item--" + (item.priority || "media")
+                + (!item.is_read ? " synchro-alert-item--unread" : "")
+            );
             article.dataset.source = item.source;
             article.dataset.alertId = item.id;
-            const head = element("div", "synchro-alert-item-head");
-            head.append(element("span", "synchro-alert-dot"), element("strong", "", item.title), element("time", "", item.created_time));
+            const head = element("div", "synchro-alert-item-top");
+            head.append(element("strong", "", item.title), element("time", "", item.created_time));
             article.append(head, element("p", "", item.summary || item.message));
             const actions = element("div", "synchro-alert-item-actions");
             actions.append(element("span", "synchro-alert-category", item.priority_label));
