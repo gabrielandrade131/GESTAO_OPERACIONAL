@@ -256,7 +256,14 @@ def criar_alerta(
     return AlertaInteligente.objects.create(**create_kwargs)
 
 
-def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_id=None):
+def sincronizar_alertas_rdo_apos_analise(
+    rdo,
+    alertas_ativos,
+    *,
+    corrigido_por_id=None,
+    origem_correcao=None,
+    justificativa_correcao=None,
+):
     """Confirma correções sem depender da leitura ou abertura da notificação.
 
     Os validadores reutilizam o alerta pendente com a mesma identidade
@@ -302,7 +309,7 @@ def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_i
         obsoletos = obsoletos.exclude(pk__in=pares_obsoletos_ids)
 
     agora = timezone.now()
-    origem = "usuario" if corrigido_por_id else "nao_identificada"
+    origem = origem_correcao or ("usuario" if corrigido_por_id else "nao_identificada")
     # Uma anomalia pode desaparecer apenas porque a base estatística mudou.
     # Isso não comprova que alguém corrigiu o RDO e não deve gerar crédito
     # para o usuário que realizou uma edição sem relação com a anomalia.
@@ -335,7 +342,7 @@ def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_i
             corrigido_por_id=corrigido_por_id,
             motivo_encerramento="correcao_confirmada",
             origem_correcao=origem,
-            justificativa=(
+            justificativa=justificativa_correcao or (
                 "Correção confirmada automaticamente após nova análise do RDO "
                 "ou do outro registro do par de possível duplicidade."
             ),

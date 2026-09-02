@@ -19,6 +19,8 @@
     const loadMoreButton = document.getElementById("ai-notification-load-more");
     const subtitle = document.getElementById("ai-notification-center-subtitle");
     const toast = document.getElementById("ai-notification-toast");
+    const reanalyseModal = document.getElementById("ai-notification-reanalyse-modal");
+    const reanalyseConfirm = document.getElementById("ai-notification-reanalyse-confirm");
     const tabs = Array.from(center.querySelectorAll("[data-ai-tab]"));
     const correctionMetrics = document.getElementById("ai-notification-correction-metrics");
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -380,6 +382,13 @@
         }
 
         const actions = element("div", "ai-notification-center__actions");
+        if (item.source && item.source.indexOf("rdo") === 0 && !item.is_corrected) {
+            const reanalyse = element("button", "ai-notification-center__secondary-action ai-notification-center__reanalyse-action");
+            reanalyse.type = "button";
+            reanalyse.append(element("span", "material-icons", "refresh"), document.createTextNode("Reanalisar RDO"));
+            reanalyse.addEventListener("click", function () { reanalyseRdo(item, reanalyse); });
+            actions.append(reanalyse);
+        }
         const read = element("button", "ai-notification-center__primary-action", item.is_read ? "Marcar como não lido" : "Marcar como lido");
         read.type = "button";
         read.addEventListener("click", function () { toggleRead(item, !item.is_read); });
@@ -408,6 +417,60 @@
             },
             body: JSON.stringify({ lido: isRead })
         });
+    }
+
+    function confirmReanalysis(trigger) {
+        if (!reanalyseModal || !reanalyseConfirm) return Promise.resolve(true);
+        return new Promise(function (resolve) {
+            const cancelButtons = Array.from(reanalyseModal.querySelectorAll("[data-reanalyse-cancel]"));
+            let settled = false;
+            function close(confirmed) {
+                if (settled) return;
+                settled = true;
+                reanalyseModal.hidden = true;
+                reanalyseConfirm.removeEventListener("click", approve);
+                cancelButtons.forEach(function (node) { node.removeEventListener("click", cancel); });
+                document.removeEventListener("keydown", onKeydown, true);
+                if (trigger && document.contains(trigger)) trigger.focus();
+                resolve(confirmed);
+            }
+            function approve() { close(true); }
+            function cancel() { close(false); }
+            function onKeydown(event) {
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    close(false);
+                }
+            }
+            reanalyseConfirm.addEventListener("click", approve);
+            cancelButtons.forEach(function (node) { node.addEventListener("click", cancel); });
+            document.addEventListener("keydown", onKeydown, true);
+            reanalyseModal.hidden = false;
+            window.setTimeout(function () { reanalyseConfirm.focus(); }, 0);
+        });
+    }
+
+    async function reanalyseRdo(item, button) {
+        if (!(await confirmReanalysis(button))) return;
+        button.disabled = true;
+        button.classList.add("is-loading");
+        try {
+            const response = await request(templateUrl(center.dataset.reanalyseUrlTemplate, item), {
+                method: "POST",
+                headers: { "Accept": "application/json", "X-CSRFToken": csrfToken() }
+            });
+            if (!response.success) throw new Error(response.error || "Não foi possível reanalisar o RDO.");
+            showToast(response.message || "Reanálise concluída.");
+            updateBellBadge(response.unread_count);
+            renderCompact(response.compact_items || []);
+            await loadPage(1, false);
+            center.classList.remove("is-detail-open");
+        } catch (error) {
+            showToast(error.message || "Não foi possível reanalisar o RDO.", true);
+            button.disabled = false;
+            button.classList.remove("is-loading");
+        }
     }
 
     async function selectItem(item, markOpenedAsRead) {

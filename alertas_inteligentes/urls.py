@@ -31,6 +31,11 @@ urlpatterns = [
         views.api_notificacao_leitura,
         name="api_notificacao_leitura",
     ),
+    path(
+        "api/notificacoes/<str:source>/<int:alert_id>/reanalisar/",
+        views.api_notificacao_reanalisar_rdo,
+        name="api_notificacao_reanalisar_rdo",
+    ),
     path("resolver/<int:alerta_id>/", views.resolver_alerta, name="resolver_alerta"),
     path("ignorar/<int:alerta_id>/", views.ignorar_alerta, name="ignorar_alerta"),
     path(

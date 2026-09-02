@@ -348,6 +348,76 @@ def api_notificacao_leitura(request, source, alert_id):
     )
 
 
+def api_notificacao_reanalisar_rdo(request, source, alert_id):
+    """Revalida, sob demanda, o RDO que originou uma notificação."""
+    forbidden = _notification_api_forbidden(request)
+    if forbidden:
+        return forbidden
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "Método não permitido."}, status=405)
+    if source not in {"rdo", "rdo_grupo_todos", "rdo_grupo_ativos", "rdo_grupo_corrigidos"}:
+        return JsonResponse({"success": False, "error": "Este alerta não possui RDO para reanálise."}, status=400)
+
+    result = get_accessible_alert(request.user, source, alert_id)
+    if not result:
+        return JsonResponse({"success": False, "error": "Alerta não encontrado."}, status=404)
+    alert_or_group, _ = result
+    alerts = alert_or_group if isinstance(alert_or_group, list) else [alert_or_group]
+    rdo = alerts[0].rdo
+    original_alert_ids = [alert.pk for alert in alerts]
+
+    from .services.rdo_immediate_analysis import analisar_rdo_imediatamente
+
+    outcome = analisar_rdo_imediatamente(rdo.pk, forcar_reanalise=True)
+    if outcome.get("error"):
+        return JsonResponse(
+            {"success": False, "error": "Não foi possível concluir a reanálise. Tente novamente."},
+            status=500,
+        )
+    if not outcome.get("processed"):
+        return JsonResponse(
+            {"success": False, "error": "Este RDO já está sendo analisado. Aguarde alguns instantes."},
+            status=409,
+        )
+
+    refreshed = AlertaInteligente.objects.filter(pk__in=original_alert_ids)
+    false_alert_ids = list(
+        refreshed.filter(
+            status="resolvido",
+            motivo_encerramento="correcao_confirmada",
+            origem_correcao="automatica",
+        ).values_list("pk", flat=True)
+    )
+    active_alert_ids = list(
+        refreshed.filter(status__in=["pendente", "em_analise"]).values_list("pk", flat=True)
+    )
+    rdo_number = getattr(rdo, "rdo", None) or rdo.pk
+    if false_alert_ids:
+        quantity_label = "alerta" if len(false_alert_ids) == 1 else "alertas"
+        verb = "foi" if len(false_alert_ids) == 1 else "foram"
+        confirmed = "confirmado" if len(false_alert_ids) == 1 else "confirmados"
+        moved = "movido" if len(false_alert_ids) == 1 else "movidos"
+        message = (
+            f"Reanálise concluída: {len(false_alert_ids)} {quantity_label} do RDO {rdo_number} "
+            f"não {verb} {confirmed} pelos dados atuais e {verb} {moved} para Corrigidas."
+        )
+    elif active_alert_ids:
+        message = f"Reanálise concluída: o alerta do RDO {rdo_number} continua válido com os dados atuais."
+    else:
+        message = f"Reanálise concluída para o RDO {rdo_number}."
+    snapshot = notification_snapshot(request.user)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": message,
+            "false_alert_count": len(false_alert_ids),
+            "active_alert_count": len(active_alert_ids),
+            "unread_count": snapshot["unread_count"],
+            "compact_items": snapshot["items"],
+        }
+    )
+
+
 def api_notificacoes_marcar_todas_lidas(request):
     forbidden = _notification_api_forbidden(request)
     if forbidden:

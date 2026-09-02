@@ -441,6 +441,44 @@ class SynchroShellTest(TestCase):
         )
         self.assertEqual(empty.json()['total'], 0)
 
+    def test_user_can_reanalyse_an_rdo_and_close_a_false_alert(self):
+        ordem, operational_alert = self._create_operational_alert(number=99012)
+        operational_alert.delete()
+        rdo = RDO.objects.create(
+            ordem_servico=ordem,
+            rdo='21',
+            data=timezone.localdate(),
+            turno='Diurno',
+            exist_pt=True,
+            select_turnos=['Manhã'],
+            pt_manha='PT-VALIDA',
+            status_analise_ia='analisado',
+        )
+        alert = AlertaInteligente.objects.create(
+            rdo=rdo,
+            tipo='PT_SEM_TURNO',
+            mensagem='Foi informado que houve abertura de PT, mas nenhum turno foi marcado.',
+            prioridade='alta',
+            status='pendente',
+        )
+
+        response = self.client.post(
+            reverse(
+                'alertas_inteligentes:api_notificacao_reanalisar_rdo',
+                args=['rdo', alert.pk],
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+        self.assertEqual(response.json()['false_alert_count'], 1)
+        self.assertIn('não foi confirmado', response.json()['message'])
+        alert.refresh_from_db()
+        self.assertEqual(alert.status, 'resolvido')
+        self.assertEqual(alert.motivo_encerramento, 'correcao_confirmada')
+        self.assertEqual(alert.origem_correcao, 'automatica')
+        self.assertIn('reanálise solicitada pelo usuário', alert.justificativa)
+
     def test_multiple_alerts_from_same_rdo_are_consolidated_and_read_together(self):
         ordem, operational_alert = self._create_operational_alert(number=99014)
         operational_alert.delete()

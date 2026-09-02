@@ -8,7 +8,12 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
-def analisar_rdo_imediatamente(rdo_id, corrigido_por_id=None):
+def analisar_rdo_imediatamente(
+    rdo_id,
+    corrigido_por_id=None,
+    *,
+    forcar_reanalise=False,
+):
     """Claim and analyse one RDO without allowing a failure to affect its creation."""
     from GO.models import RDO
     from alertas_inteligentes.services.rdo_validator import (
@@ -25,9 +30,12 @@ def analisar_rdo_imediatamente(rdo_id, corrigido_por_id=None):
     close_old_connections()
     try:
         with transaction.atomic():
+            eligible_statuses = ['pendente', 'erro']
+            if forcar_reanalise:
+                eligible_statuses.append('analisado')
             claimed = RDO.objects.filter(
                 pk=rdo_id,
-                status_analise_ia__in=['pendente', 'erro'],
+                status_analise_ia__in=eligible_statuses,
             ).update(
                 status_analise_ia='em_analise',
                 erro_analise_ia=None,
@@ -41,6 +49,12 @@ def analisar_rdo_imediatamente(rdo_id, corrigido_por_id=None):
                 rdo,
                 alerts,
                 corrigido_por_id=corrigido_por_id,
+                origem_correcao="automatica" if forcar_reanalise else None,
+                justificativa_correcao=(
+                    "Alerta não confirmado após reanálise solicitada pelo usuário. "
+                    "O RDO atual não apresenta mais esta inconsistência."
+                    if forcar_reanalise else None
+                ),
             )
             sincronizar_alertas_anomalia_da_os(
                 rdo.ordem_servico,
