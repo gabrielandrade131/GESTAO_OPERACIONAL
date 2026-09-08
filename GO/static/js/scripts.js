@@ -1213,7 +1213,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // remover o botão '×' do texto
                 return t.childNodes && t.childNodes.length ? t.childNodes[0].nodeValue.trim() : t.textContent.trim();
             }).filter(v => v);
-            hidden.value = vals.join(', ');
+            hidden.value = vals.join(' || ');
             // se existir um sincronizador de tanques, chamar
             try {
                 if (typeof container.onTagsChanged === 'function') container.onTagsChanged(vals);
@@ -1288,9 +1288,34 @@ document.addEventListener('DOMContentLoaded', function() {
         container.loadFromString = function(str) {
             container.clear();
             if (!str) return;
-            let parts = String(str).split(',').map(p => p.trim()).filter(p => p);
-            if (parts.length <= 1 && String(str).indexOf(';') !== -1) {
-                parts = String(str).split(';').map(p => p.trim()).filter(p => p);
+            const raw = String(str);
+            let parts = raw.indexOf('||') !== -1
+                ? raw.split('||').map(p => p.trim()).filter(Boolean)
+                : (raw.indexOf(';') !== -1
+                    ? raw.split(';').map(p => p.trim()).filter(Boolean)
+                    : []);
+            if (!parts.length) {
+                const listId = input.getAttribute('list');
+                const dl = listId ? document.getElementById(listId) : null;
+                const choices = dl ? Array.from(dl.options || [])
+                    .map(opt => (opt.value || opt.textContent || '').trim())
+                    .filter(Boolean)
+                    .sort((a, b) => b.length - a.length) : [];
+                const consume = function(remaining) {
+                    remaining = String(remaining || '').trim();
+                    if (!remaining) return [];
+                    const folded = normalizeStr(remaining);
+                    for (const choice of choices) {
+                        if (!folded.startsWith(normalizeStr(choice))) continue;
+                        const suffix = remaining.slice(choice.length);
+                        if (!suffix) return [choice];
+                        if (suffix.charAt(0) !== ',') continue;
+                        const tail = consume(suffix.slice(1));
+                        if (tail !== null) return [choice].concat(tail);
+                    }
+                    return null;
+                };
+                parts = consume(raw) || raw.split(',').map(p => p.trim()).filter(Boolean);
             }
             parts.forEach(p => {
                 // usar adição raw para garantir que valores vindos do servidor sejam carregados
@@ -2436,7 +2461,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const servHidden = document.getElementById('servico_hidden');
             if (servContainer && servHidden) {
                 const vals = Array.from(servContainer.querySelectorAll('.tag-item')).map(t => t.childNodes && t.childNodes.length ? t.childNodes[0].nodeValue.trim() : t.textContent.trim()).filter(v => v);
-                servHidden.value = vals.join(', ');
+                servHidden.value = vals.join(' || ');
             }
         } catch (e) {}
         try { updateTankHiddenFields(); } catch(e) {}
@@ -3431,7 +3456,7 @@ function renderSupervisorEvaluation(data) {
             } else {
                 refs.message.textContent = data.can_evaluate
                     ? 'A avaliação será obrigatória antes de finalizar esta movimentação.'
-                    : 'Aguardando a avaliação do coordenador vinculado a esta movimentação.';
+                    : 'Seu perfil possui acesso somente para visualização desta avaliação.';
             }
         }
     }
@@ -4237,7 +4262,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const editServHidden = document.getElementById('edit_servico_hidden');
                 if (editServContainer && editServHidden) {
                     const vals = Array.from(editServContainer.querySelectorAll('.tag-item')).map(t => t.childNodes && t.childNodes.length ? t.childNodes[0].nodeValue.trim() : t.textContent.trim()).filter(v => v);
-                    editServHidden.value = vals.join(', ');
+                    editServHidden.value = vals.join(' || ');
                 }
             } catch(e) {}
             try { updateTankHiddenFields(); } catch(e) {}

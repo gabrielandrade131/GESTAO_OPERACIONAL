@@ -521,6 +521,9 @@ class OrdemServico(models.Model):
         ('AJUDANTE', 'AJUDANTE'),
         ('RESGATISTA', 'RESGATISTA'),
         ('MECÂNICO', 'MECÂNICO'),
+        ('N1 IRATA', 'N1 IRATA'),
+        ('N2 IRATA', 'N2 IRATA'),
+        ('N3 IRATA', 'N3 IRATA'),
     ]
 
     COORDENADORES = [
@@ -4761,6 +4764,16 @@ class Financeiro(models.Model):
         on_delete=models.PROTECT,
         related_name='financeiro_tipos_operacao',
     )
+    ambiente_operacional = models.CharField(
+        max_length=10,
+        choices=[
+            ('Onshore', 'Onshore'),
+            ('Offshore', 'Offshore'),
+        ],
+        blank=True,
+        null=True,
+        db_index=True,
+    )
     metodo = models.ForeignKey(
         'GO.OrdemServico',
         on_delete=models.PROTECT,
@@ -4832,6 +4845,7 @@ class Financeiro(models.Model):
         related_name='propostas_responsaveis',
     )
     servico = models.CharField(max_length=100, choices=OrdemServico.SERVICO_CHOICES, blank=True, null=True)
+    descricao_proposta = models.TextField(blank=True, null=True)
     volume_tanque_exec = models.ForeignKey(
         'GO.RdoTanque',
         on_delete=models.PROTECT,

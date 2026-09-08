@@ -10,6 +10,7 @@ from .rdo_access import (
     user_has_rdo_view_only_access,
     user_has_read_only_access,
     user_can_use_alerts_ai,
+    user_can_access_commercial,
 )
 
 MOBILE_UA_RE = re.compile(r"Mobile|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop", re.I)
@@ -53,6 +54,7 @@ def rdo_permission_flags(request):
         'can_open_or_edit_rdo': user_can_open_or_edit_rdo(user),
         'can_manage_rdo_permission_users': user_can_manage_rdo_permission_users(user),
         'can_manage_responsaveis_coordenadores': user_can_manage_responsaveis_coordenadores(user),
+        'can_access_commercial': user_can_access_commercial(user),
         'is_rdo_view_only_user': user_has_rdo_view_only_access(user),
         'is_read_only_user': user_has_read_only_access(user),
     }
@@ -158,7 +160,8 @@ def synchro_shell(request):
     return {
         'can_use_alerts_ai': can_use_ai,
         'can_access_synchro_ai': can_access_synchro_ai,
-        'can_access_commercial_preview': authenticated,
+        'can_access_commercial_preview': user_can_access_commercial(user),
+        'can_access_commercial': user_can_access_commercial(user),
         'daily_ai_alert_count': alert_count,
         'daily_ai_alerts': alerts,
         'synchro_active_module': _active_shell_module(request),

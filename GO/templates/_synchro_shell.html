@@ -101,8 +101,10 @@
 <section class="ai-notification-center" id="ai-notification-center" role="dialog" aria-modal="true"
          aria-labelledby="ai-notification-center-title" aria-hidden="true" hidden
          data-list-url="{% url 'alertas_inteligentes:api_notificacoes' %}"
+         data-snapshot-url="{% url 'alertas_inteligentes:api_notificacoes_resumo' %}"
          data-detail-url-template="{% url 'alertas_inteligentes:api_notificacao_detalhe' 'SOURCE' 999999999 %}"
          data-read-url-template="{% url 'alertas_inteligentes:api_notificacao_leitura' 'SOURCE' 999999999 %}"
+         data-reanalyse-url-template="{% url 'alertas_inteligentes:api_notificacao_reanalisar_rdo' 'SOURCE' 999999999 %}"
          data-mark-all-url="{% url 'alertas_inteligentes:api_notificacoes_marcar_todas_lidas' %}">
     <header class="ai-notification-center__header">
         <div>
@@ -178,9 +180,20 @@
         </article>
     </div>
     <div class="ai-notification-center__toast" id="ai-notification-toast" role="status" aria-live="polite" hidden></div>
+    <div class="ai-notification-reanalyse-modal" id="ai-notification-reanalyse-modal" hidden>
+        <div class="ai-notification-reanalyse-modal__backdrop" data-reanalyse-cancel="true"></div>
+        <section class="ai-notification-reanalyse-modal__card" role="dialog" aria-modal="true"
+                 aria-labelledby="ai-notification-reanalyse-title" aria-describedby="ai-notification-reanalyse-description">
+        <h3 id="ai-notification-reanalyse-title">Reanalisar este RDO?</h3>
+        <p id="ai-notification-reanalyse-description">A IA vai conferir os dados atuais novamente. Deseja continuar?</p>
+        <div class="ai-notification-reanalyse-modal__actions">
+            <button type="button" class="ai-notification-center__secondary-action" data-reanalyse-cancel="true">Voltar</button>
+            <button type="button" class="ai-notification-center__primary-action" id="ai-notification-reanalyse-confirm">Sim, reanalisar</button>
+        </div>
+        </section>
+    </div>
 </section>
-<script src="{% static 'js/ai_notification_center.js' %}?v=20260828c" defer></script>
+<script src="{% static 'js/ai_notification_center.js' %}?v=20260902c" defer></script>
 {% endif %}
 
 {% include '_password_change_modal.html' %}
-

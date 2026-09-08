@@ -961,30 +961,12 @@ def _serialize_supervisor_movement_evaluation(avaliacao):
     }
 
 
-def _coordenador_da_movimentacao(os_obj):
-    coordenador = getattr(os_obj, 'coordenador_cadastro', None)
-    if coordenador is not None:
-        return coordenador
-    nome = str(getattr(os_obj, 'coordenador', '') or '').strip()
-    if not nome:
-        return None
-    return ResponsavelCoordenador.objects.filter(
-        nome__iexact=nome,
-        coordenador=True,
-    ).first()
-
-
 def _user_can_evaluate_movement_supervisor(user, os_obj):
-    if not user or not getattr(user, 'is_authenticated', False):
-        return False
-    if getattr(user, 'is_superuser', False):
-        return True
-    coordenador = _coordenador_da_movimentacao(os_obj)
+    del os_obj  # A permissão acompanha o acesso de edição da Home, não o coordenador atribuído.
     return bool(
-        coordenador
-        and coordenador.ativo
-        and coordenador.usuario_id
-        and coordenador.usuario_id == user.pk
+        user
+        and getattr(user, 'is_authenticated', False)
+        and not user_has_read_only_access(user)
     )
 
 
@@ -2911,7 +2893,7 @@ def api_avaliacao_supervisor_movimentacao(request, os_id):
     if not can_evaluate:
         return JsonResponse({
             'success': False,
-            'error': 'Somente o coordenador desta movimentação pode avaliar o supervisor.',
+            'error': 'Seu usuário possui acesso somente para visualização.',
         }, status=403)
     if not os_obj.supervisor_id:
         return JsonResponse({

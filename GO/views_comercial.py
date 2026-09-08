@@ -17,7 +17,7 @@ from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.core.paginator import Paginator
-from django.http import FileResponse, HttpResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
@@ -25,16 +25,22 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoImagem, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
 from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf, load_offshore_template_draft
-from .rdo_access import user_can_manage_rdo_permission_users, user_can_manage_responsaveis_coordenadores
+from .rdo_access import (
+    user_can_access_commercial,
+    user_can_manage_rdo_permission_users,
+    user_can_manage_responsaveis_coordenadores,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
 def commercial_preview_required(view_func):
-    """Compatibility decorator retained after the public launch of Propostas."""
+    """Require the explicit Commercial access permission on every module endpoint."""
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
+        if not user_can_access_commercial(getattr(request, "user", None)):
+            return HttpResponseForbidden("Sem permissão para acessar o módulo Comercial.")
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -44,7 +50,7 @@ KANBAN_STAGES = [
     {
         "key": "avaliacao_inicial",
         "label": "Avaliação Inicial",
-        "description": "Sem retorno, em análise, avaliando escopo",
+        "description": "Sem retorno, avaliando escopo",
     },
     {
         "key": "preparacao_aprovacao",
@@ -53,18 +59,18 @@ KANBAN_STAGES = [
     },
     {
         "key": "propostas_enviadas",
-        "label": "Propostas Enviadas",
-        "description": "Revisada, shortlist",
-    },
-    {
-        "key": "negociacao",
-        "label": "Negociação",
-        "description": "Em negociação",
+        "label": "Propostas Enviadas e Negociação",
+        "description": "Em análise, revisada, shortlist, em negociação",
     },
     {
         "key": "contratadas",
         "label": "Contratadas",
         "description": "Fechadas / Contratadas",
+    },
+    {
+        "key": "perdidas_recusadas",
+        "label": "Perdidas / Recusadas",
+        "description": "Perdidas, recusadas ou declÃ­nios",
     },
     {
         "key": "canceladas",
@@ -87,20 +93,30 @@ COMMERCIAL_NATURE_OPTIONS = [
 
 FOLLOWUP_STATUSES = ["Pendente", "Realizado", "Sem retorno", "Reagendado"]
 
+# The operation selects the document family. Commercial nature (for example,
+# "Spot") is a separate classification and must never enable a document flow.
+DOCUMENT_OPERATION_OPTIONS = ("Onshore", "Offshore")
+DOCUMENT_OPERATION_KEYS = {"onshore", "offshore"}
+
 # This mapping is intentionally visual only. The real proposal status remains in
 # Financeiro.status_proposta and is never overwritten by a pipeline phase.
 KANBAN_STAGE_MAP = {
     "sem retorno": "avaliacao_inicial",
-    "em analise": "avaliacao_inicial",
     "avaliando escopo": "avaliacao_inicial",
     "em elaboracao": "preparacao_aprovacao",
     "aguardando aprovacao gestores": "preparacao_aprovacao",
+    # "Em Análise" means the proposal is already with the client. The real
+    # status remains untouched; only the visual Kanban stage is derived here.
+    "em analise": "propostas_enviadas",
     "revisada": "propostas_enviadas",
     "shortlist": "propostas_enviadas",
     "enviada": "propostas_enviadas",
-    "em negociacao": "negociacao",
+    "em negociacao": "propostas_enviadas",
     "fechada/contratada": "contratadas",
     "contratada": "contratadas",
+    "perdida/recusada": "perdidas_recusadas",
+    "perdida / recusada": "perdidas_recusadas",
+    "declinio": "perdidas_recusadas",
     "cancelada": "canceladas",
 }
 
@@ -297,6 +313,12 @@ def _resolve_tipo_operacao_label(financeiro):
     return _clean_text(getattr(related, "tipo_operacao", ""))
 
 
+def _document_operation_key(value):
+    """Return an eligible operation key, or an empty value for non-document flows."""
+    normalized = _normalize_key(value)
+    return normalized if normalized in DOCUMENT_OPERATION_KEYS else ""
+
+
 def _resolve_resumo_period(mes_value, ano_value, modo_value):
     today = timezone.localdate()
     requested_month = _clean_text(mes_value)
@@ -437,7 +459,7 @@ def build_resumo_propostas_context(mes=None, ano=None, modo=None):
         else:
             receita_status_money[bucket] += valor
 
-        tipo_operacao = _normalize_key(_get_proposal_operation(item))
+        tipo_operacao = _document_operation_key(_get_proposal_operation(item))
         if tipo_operacao == "offshore":
             segment_row = segmento_template["Offshore"]
             segment_row["emAnalise" if bucket == "em_analise" else "emElaboracao" if bucket == "em_elaboracao" else "fechadaContratada" if bucket == "fechada_contratada" else "perdidaRecusada"] += valor
@@ -510,14 +532,18 @@ def build_resumo_propostas_context(mes=None, ano=None, modo=None):
             "total": _serialize_resumo_table_money(segmento_template["Onshore"]["total"]),
         },
     ]
+    segmento_total = {
+        key: segmento_template["Offshore"][key] + segmento_template["Onshore"][key]
+        for key in ("emAnalise", "emElaboracao", "fechadaContratada", "perdidaRecusada", "total")
+    }
     segmentos.append(
         {
             "segmento": "Total",
-            "emAnalise": _serialize_resumo_table_money(status_money["em_analise"]),
-            "emElaboracao": _serialize_resumo_table_money(status_money["em_elaboracao"]),
-            "fechadaContratada": _serialize_resumo_table_money(status_money["fechada_contratada"]),
-            "perdidaRecusada": _serialize_resumo_table_money(status_money["perdida_recusada"]),
-            "total": _serialize_resumo_table_money(total_emitido_periodo),
+            "emAnalise": _serialize_resumo_table_money(segmento_total["emAnalise"]),
+            "emElaboracao": _serialize_resumo_table_money(segmento_total["emElaboracao"]),
+            "fechadaContratada": _serialize_resumo_table_money(segmento_total["fechadaContratada"]),
+            "perdidaRecusada": _serialize_resumo_table_money(segmento_total["perdidaRecusada"]),
+            "total": _serialize_resumo_table_money(segmento_total["total"]),
         }
     )
 
@@ -1077,6 +1103,9 @@ def _serialize_financeiro(financeiro):
     )
     campos, total_campos = _serialize_financeiro_campos(financeiro)
     critical_analysis = _serialize_critical_analysis(financeiro)
+    tipo_operacao_serializada = _clean_text(overrides.get("tipo_operacao")) if "tipo_operacao" in overrides else tipo_operacao
+    ambiente_operacional = _clean_text(getattr(financeiro, "ambiente_operacional", ""))
+    documentos_disponiveis = bool(_document_operation_key(ambiente_operacional or tipo_operacao_serializada))
 
     return {
         # Use the internal identity for requests: commercial numbers may repeat in history.
@@ -1094,7 +1123,9 @@ def _serialize_financeiro(financeiro):
         "previsaoContratacao": _format_date_br(financeiro.previsao_contratacao),
         "followUp": commercial_bundle["summary"],
         "natureza": _clean_text(financeiro.natureza),
-        "tipoOperacao": _clean_text(overrides.get("tipo_operacao")) if "tipo_operacao" in overrides else tipo_operacao,
+        "tipoOperacao": tipo_operacao_serializada,
+        "ambienteOperacional": ambiente_operacional,
+        "documentosDisponiveis": documentos_disponiveis,
         "unidade": unidade_nome,
         "heatMap": str(financeiro.heat_map if financeiro.heat_map is not None else ""),
         "statusProposta": status_display,
@@ -1109,6 +1140,7 @@ def _serialize_financeiro(financeiro):
         "uf": _clean_text(financeiro.uf),
         "embarcacaoLocal": embarcacao_local,
         "escopo": _clean_text(overrides.get("servico")) or _clean_text(financeiro.servico) or _clean_text(financeiro.comentario),
+        "descricaoProposta": _clean_text(financeiro.descricao_proposta),
         "estimativaReceita": _format_currency_br(receita) if receita_informada else "",
         "estimativaReceitaValor": float(receita) if receita_informada else None,
         "tempoContratoDias": f"{financeiro.tempo_contrato_dias} dias" if financeiro.tempo_contrato_dias else "",
@@ -1468,6 +1500,7 @@ def _build_metadata():
             "Aguardando aprovação gestores",
         ]],
         "tipoOperacaoOptions": [choice[0] for choice in OrdemServico.TIPO_OP_CHOICES],
+        "ambienteOperacionalOptions": list(DOCUMENT_OPERATION_OPTIONS),
         "metodoOptions": list(MetodoOperacional.objects.filter(ativo=True).order_by("nome").values_list("nome", flat=True)),
         "coordenadorOptions": list(ResponsavelCoordenador.objects.filter(ativo=True, coordenador=True).order_by("nome").values_list("nome", flat=True)),
         "ufOptions": [choice[0] for choice in Financeiro._meta.get_field("uf").choices],
@@ -1741,6 +1774,35 @@ def _resolve_os_by_value(field_name, raw_value):
     return None
 
 
+def _matches_existing_os_reference(financeiro, field_name, raw_value):
+    """Keep an unchanged legacy reference when its source record is no longer searchable."""
+    value = _normalize_key(raw_value)
+    if not value:
+        return False
+
+    overrides = _build_commercial_bundle(financeiro).get("overrides") or {}
+    override_field = {"cliente": "empresa", "unidade": "unidade"}.get(field_name)
+    if override_field and value == _normalize_key(overrides.get(override_field)):
+        return True
+
+    current_reference = getattr(financeiro, field_name, None)
+    if current_reference is None:
+        return False
+
+    if field_name == "cliente":
+        current_value = _resolve_cliente_name(current_reference)
+    elif field_name == "unidade":
+        current_value = _resolve_unidade_name(current_reference)
+    elif field_name == "tipo_operacao":
+        current_value = _resolve_os_string(current_reference, "tipo_operacao")
+    elif field_name == "cordenador":
+        current_value = _resolve_os_string(current_reference, "coordenador")
+    else:
+        current_value = ""
+
+    return value == _normalize_key(current_value)
+
+
 def _resolve_active_method(raw_value):
     name = _clean_text(raw_value)
     if not name:
@@ -1826,6 +1888,7 @@ def _create_financeiro_from_payload(payload):
         "email_solicitante": _clean_text(payload.get("email_solicitante")),
         "telefone_solicitante": _clean_text(payload.get("telefone_solicitante")),
         "tipo_operacao": resolved_refs["tipo_operacao"] or base_os,
+        "ambiente_operacional": _clean_text(payload.get("ambiente_operacional")),
         "metodo": base_os,
         "metodo_cadastro": metodo_cadastro,
         "data_inicio_frente": base_os,
@@ -1839,6 +1902,7 @@ def _create_financeiro_from_payload(payload):
         "responsavel_cadastro": responsavel_cadastro,
         "coordenador_cadastro": coordenador_cadastro,
         "servico": _clean_text(payload.get("servico")),
+        "descricao_proposta": _clean_text(payload.get("descricao_proposta")),
         "volume_tanque_exec": tank,
         "comentario": _clean_text(payload.get("comentario")),
         "requisitos_cliente": _clean_text(payload.get("requisitos_cliente")),
@@ -1850,7 +1914,11 @@ def _create_financeiro_from_payload(payload):
         "pt_financeiro": _clean_text(payload.get("pt_financeiro")) or "Pendente",
         "pc_ptc": _clean_text(payload.get("pc_ptc")) or "Pendente",
         "uf": _clean_text(payload.get("uf")) or "RJ",
-        "estimativo_receita": _parse_decimal_input(payload.get("estimativo_receita")),
+        "estimativo_receita": (
+            _parse_decimal_input(payload.get("estimativo_receita"))
+            if _clean_text(payload.get("estimativo_receita"))
+            else None
+        ),
         "fonte_lead": _clean_text(payload.get("fonte_lead")),
         "segmento_cliente": _clean_text(payload.get("segmento_cliente")),
         # Campos legados do Financeiro permanecem zerados; os itens reais agora sÃ£o persistidos em FinanceiroCampo.
@@ -1871,6 +1939,8 @@ def _create_financeiro_from_payload(payload):
         required_messages["natureza"] = "Selecione a natureza."
     if not will_not_participate and not fields["status_proposta"]:
         required_messages["status_proposta"] = "Selecione o status da proposta."
+    if not will_not_participate and not _document_operation_key(fields["ambiente_operacional"]):
+        required_messages["ambiente_operacional"] = "Selecione Onshore ou Offshore como ambiente operacional."
     if not will_not_participate and not _clean_text(payload.get("cliente")):
         required_messages["cliente"] = "Selecione um cliente."
     if not will_not_participate and not _clean_text(payload.get("unidade")):
@@ -1879,8 +1949,6 @@ def _create_financeiro_from_payload(payload):
         required_messages["servico"] = "Selecione um serviço."
     if not will_not_participate and _clean_text(payload.get("metodo")) and metodo_cadastro is None:
         required_messages["metodo"] = "Selecione ou cadastre um método ativo."
-    if not will_not_participate and fields["estimativo_receita"] <= 0:
-        required_messages["estimativo_receita"] = "Informe uma estimativa de receita válida."
     if fields["email_solicitante"]:
         try:
             validate_email(fields["email_solicitante"])
@@ -2044,10 +2112,17 @@ def _update_financeiro_from_payload(financeiro, payload):
         "uf": "uf",
         "fonte_lead": "fonte_lead",
         "segmento_cliente": "segmento_cliente",
+        "ambiente_operacional": "ambiente_operacional",
+        "descricao_proposta": "descricao_proposta",
     }
     for payload_key, model_field in text_fields.items():
         if payload_key in payload:
             setattr(financeiro, model_field, _clean_text(payload.get(payload_key)))
+
+    if "ambiente_operacional" in payload:
+        ambiente_operacional = _clean_text(payload.get("ambiente_operacional"))
+        if ambiente_operacional and not _document_operation_key(ambiente_operacional):
+            errors["ambiente_operacional"] = "Selecione Onshore ou Offshore como ambiente operacional."
 
     if will_not_participate:
         financeiro.natureza = financeiro.natureza or "Spot"
@@ -2098,7 +2173,8 @@ def _update_financeiro_from_payload(financeiro, payload):
             errors["tempo_contrato_dias"] = "Informe um tempo de contrato válido."
 
     if "estimativo_receita" in payload:
-        financeiro.estimativo_receita = _parse_decimal_input(payload.get("estimativo_receita"))
+        receita = _clean_text(payload.get("estimativo_receita"))
+        financeiro.estimativo_receita = _parse_decimal_input(receita) if receita else None
 
     os_field_map = {
         "cliente": "cliente",
@@ -2114,6 +2190,8 @@ def _update_financeiro_from_payload(financeiro, payload):
         if not cleaned_value:
             continue
         resolved = _resolve_os_by_value(payload_key, cleaned_value)
+        if resolved is None and _matches_existing_os_reference(financeiro, model_field, cleaned_value):
+            continue
         if resolved is None:
             errors[payload_key] = f"Não foi possível localizar a referência para {payload_key.replace('_', ' ')}."
             continue
@@ -2732,20 +2810,29 @@ def comercial_excluir_anexo_proposta(request, anexo_id):
 
 
 def _get_proposal_operation(proposta):
-    """Return the commercial operation, including the historical-import override."""
+    """Return the document operation, preferring the explicit operational environment."""
+    ambiente_operacional = _clean_text(getattr(proposta, "ambiente_operacional", ""))
+    if ambiente_operacional:
+        return ambiente_operacional
+
+    # Existing proposals created before the dedicated field can still use a
+    # legacy Onshore/Offshore value. Other legacy values (for example Spot)
+    # are intentionally not document-eligible.
     overrides = _build_commercial_bundle(proposta).get("overrides") or {}
     return _clean_text(overrides.get("tipo_operacao")) or _resolve_tipo_operacao(proposta)
 
 
+def _has_document_operation(proposta):
+    return bool(_document_operation_key(_get_proposal_operation(proposta)))
+
+
 def _is_offshore_proposal(proposta):
-    return _get_proposal_operation(proposta).casefold() == "offshore"
+    return _document_operation_key(_get_proposal_operation(proposta)) == "offshore"
 
 
 def _is_onshore_proposal(proposta):
     """Identify the commercial operation without relying on its display case."""
-    operation = _get_proposal_operation(proposta)
-    normalized = unicodedata.normalize("NFKD", operation).encode("ascii", "ignore").decode("ascii")
-    return normalized.strip().casefold() == "onshore"
+    return _document_operation_key(_get_proposal_operation(proposta)) == "onshore"
 
 
 def _document_revision_payload(documento, proposta):
@@ -2972,6 +3059,8 @@ def _get_document_revision(proposta, user):
 @require_GET
 def comercial_revisao_documento_proposta(request, proposta_id):
     proposta = get_object_or_404(Financeiro.objects.select_related("tipo_operacao").prefetch_related("campos", "documentos_revisados__linhas"), pk=proposta_id)
+    if not _has_document_operation(proposta):
+        return JsonResponse({"success": False, "message": "PDFs e revis\u00e3o documental est\u00e3o dispon\u00edveis somente para opera\u00e7\u00f5es Onshore ou Offshore."}, status=400)
     if _is_onshore_proposal(proposta):
         document_type = request.GET.get("document_type", "").strip()
         if document_type:
@@ -3308,6 +3397,8 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
         revisao_payload = None
         document_image_paths = []
         template_key = None
+        if not _has_document_operation(proposta):
+            raise OfficialProposalPdfError("PDFs de proposta est\u00e3o dispon\u00edveis somente para opera\u00e7\u00f5es Onshore ou Offshore.")
         if _is_offshore_proposal(proposta):
             documento = PropostaDocumentoRevisao.objects.filter(
                 proposta=proposta,
@@ -3350,6 +3441,8 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
             template_key = type_to_template[document_type]
             if document_type == PropostaDocumentoRevisao.TIPO_PC_ONSHORE:
                 document_image_paths = [str(image.imagem.path) for image in documento.imagens.all() if image.imagem]
+        else:
+            raise OfficialProposalPdfError("N\u00e3o foi poss\u00edvel identificar o tipo de opera\u00e7\u00e3o da proposta.")
         pdf_content, filename = generate_official_proposal_pdf(
             proposta,
             serialized=serialized,
@@ -3634,6 +3727,13 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
         pk=proposta_id,
     )
 
+    if not _has_document_operation(proposta):
+        return HttpResponse(
+            "O PDF da análise crítica está disponível somente para operações Onshore ou Offshore.",
+            status=400,
+            content_type="text/plain; charset=utf-8",
+        )
+
     try:
         serialized = _serialize_financeiro(proposta)
         # The report built below is the dedicated critical-analysis document.
@@ -3784,8 +3884,9 @@ def comercial_gerar_pdf_analise_critica(request, proposta_id):
         ))
         story.append(Spacer(1, 0.42 * cm))
 
-        offshore = str(serialized.get("tipoOperacao") or "").strip().lower() == "offshore"
-        onshore = str(serialized.get("tipoOperacao") or "").strip().lower() == "onshore"
+        ambiente_operacional = serialized.get("ambienteOperacional") or serialized.get("tipoOperacao")
+        offshore = _document_operation_key(ambiente_operacional) == "offshore"
+        onshore = _document_operation_key(ambiente_operacional) == "onshore"
         story.append(form_table(
             [
                 [field_label("Cliente:"), paragraph(serialized.get("empresa"))],

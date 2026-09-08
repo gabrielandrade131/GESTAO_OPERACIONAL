@@ -12,9 +12,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'css/comercial.css' %}?v=20260828b">
+<link rel="stylesheet" href="{% static 'css/comercial.css' %}?v=20260901b">
     <link rel="stylesheet" href="{% static 'css/proposal_pdf_preview.css' %}?v=20260818g">
-    <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260826c">
+    <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260902a">
 </head>
 <body class="comercial-body comercial-is-loading">
     <div class="logout-overlay" id="logoutOverlay">
@@ -326,6 +326,7 @@
                             <span class="pipeline-legend__item is-sent">Revisada</span>
                             <span class="pipeline-legend__item is-negotiation">Em Negociação</span>
                             <span class="pipeline-legend__item is-contracted">Fechada / Contratada</span>
+                            <span class="pipeline-legend__item is-lost">Perdida / Recusada</span>
                             <span class="pipeline-legend__item is-cancelled">Cancelada</span>
                             <span class="pipeline-legend__item is-closed">Outros (encerradas)</span>
                         </div>
@@ -771,13 +772,20 @@
                                 </div>
                             </div>
                             <div class="commercial-step-section__content">
-                                <div class="proposal-form-grid proposal-form-grid--three">
+                                <div class="proposal-form-grid proposal-form-grid--operational">
                                     <label class="proposal-field">
                                         <span>Tipo de Operação <em>*</em></span>
                                         <select id="proposalTipoOperacao" data-required="true">
                                             <option value="">Selecione o tipo de operação</option>
                                         </select>
                                         <small class="proposal-field__error">Selecione o tipo de operação.</small>
+                                    </label>
+                                    <label class="proposal-field">
+                                        <span>Ambiente Operacional <em>*</em></span>
+                                        <select id="proposalAmbienteOperacional" data-required="true">
+                                            <option value="">Selecione Onshore ou Offshore</option>
+                                        </select>
+                                        <small class="proposal-field__error">Selecione Onshore ou Offshore.</small>
                                     </label>
                                     <div class="proposal-field proposal-field--quick-create">
                                         <div class="proposal-field__label-row">
@@ -890,6 +898,10 @@
                                     <label class="proposal-field proposal-field--contract-days">
                                         <span>Tempo de Contrato em dias</span>
                                         <input type="text" id="proposalPrazo">
+                                    </label>
+                                    <label class="proposal-field proposal-field--span-two">
+                                        <span>Descrição da proposta</span>
+                                        <textarea id="proposalDescricao" rows="3" placeholder="Descreva a proposta, o escopo ou observações relevantes."></textarea>
                                     </label>
                                 </div>
                             </div>
@@ -1099,6 +1111,6 @@
     {{ commercial_bootstrap|json_script:"commercial-bootstrap" }}
     <script src="{% static 'js/scripts.js' %}?v=20260824a"></script>
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
-<script src="{% static 'js/comercial.js' %}?v=20260828b"></script>
+<script src="{% static 'js/comercial.js' %}?v=20260901f"></script>
 </body>
 </html>

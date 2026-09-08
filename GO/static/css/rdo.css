@@ -130,6 +130,134 @@
     color: #64748b;
 }
 
+.rdo-planning-team-preview__hint{
+    margin: 0;
+    padding: 9px 11px;
+    border-radius: 10px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.rdo-planning-team-controls{
+    display:flex;
+    align-items:end;
+    gap:8px;
+    flex-wrap:wrap;
+    padding-top:2px;
+}
+.rdo-planning-team-controls label{
+    width:100%;
+    font-size:.78rem;
+    font-weight:700;
+    color:#334155;
+}
+.rdo-planning-team-controls select{ min-width:260px; flex:1; }
+.planning-picker-label{font-size:.78rem;font-weight:700;color:#334155;margin-left:4px}
+.planning-picker-select{min-width:260px;max-width:360px}
+.rdo-planning-team-member__remove{border:0;background:transparent;color:#b91c1c;font-size:.72rem;font-weight:700;cursor:pointer;padding:3px 0}
+
+/* Equipe: mesma estrutura nos modais normal e de supervisor. */
+.team-wrapper .team-row{
+    display:grid !important;
+    grid-template-columns:minmax(0, 1fr) minmax(0, 1fr) auto !important;
+    gap:12px 16px;
+    align-items:start;
+}
+.team-wrapper .team-row .form-field{min-width:0;margin-bottom:0}
+.team-wrapper .team-row select,
+.team-wrapper .team-row .dropdown-select{width:100%;min-width:0}
+.team-row-remove{
+    align-self:center;
+    min-height:42px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+    padding:0 11px;
+    border:1px solid #fecaca;
+    border-radius:9px;
+    background:#fff;
+    color:#b91c1c;
+    font-weight:700;
+    font-size:.78rem;
+    cursor:pointer;
+}
+.team-row-remove:hover{background:#fff1f2;border-color:#fca5a5}
+.team-row-remove .material-icons{font-size:17px}
+#edit-btn-remove-membro,#btn-remove-membro{display:none !important}
+.team-wrapper .team-footer{
+    display:flex;
+    align-items:flex-end;
+    gap:10px;
+    flex-wrap:wrap;
+    margin:14px 0;
+}
+.team-wrapper .team-footer .team-limit-hint{flex:1 1 260px}
+.planning-picker{display:grid;gap:4px;min-width:min(100%, 430px);flex:1 1 380px}
+.planning-picker-label{margin:0}
+.planning-picker__controls{display:flex;align-items:center;gap:8px;min-width:0}
+.planning-picker-select{flex:1 1 220px;width:auto;max-width:none}
+
+@media (max-width:700px){
+    .team-wrapper .team-row{grid-template-columns:minmax(0, 1fr) !important;gap:10px}
+    .team-row-remove{width:100%;min-height:44px}
+    .team-wrapper .team-footer{align-items:stretch;gap:10px}
+    .team-wrapper .team-footer > .btn-rdo{min-height:44px}
+    .planning-picker{flex-basis:100%;min-width:0}
+    .planning-picker__controls{align-items:stretch;flex-direction:column}
+    .planning-picker-select{width:100%;min-height:44px}
+    .planning-picker__controls .btn-rdo{width:100%;min-height:44px}
+    .team-wrapper .team-footer .team-limit-hint{flex-basis:100%;font-size:.78rem;line-height:1.35}
+}
+
+/* Acabamento do editor completo: leitura por colaborador e ações agrupadas. */
+#edit-equipe-wrapper{
+    display:grid;
+    gap:10px;
+    padding:4px 0 0;
+}
+#edit-equipe-wrapper .team-row{
+    padding:12px 14px;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    background:linear-gradient(180deg,#fff,#fcfdff);
+    box-shadow:0 2px 7px rgba(15,23,42,.035);
+}
+#edit-equipe-wrapper .team-row .form-field{gap:5px}
+#edit-equipe-wrapper .team-row .form-field label{
+    color:#334155;
+    font-size:.76rem;
+    letter-spacing:.01em;
+}
+#edit-equipe-wrapper .team-row select{
+    min-height:42px;
+    border-color:#dbe3ec;
+    background-color:#fff;
+}
+#edit-equipe-wrapper .team-footer{
+    padding:14px 0 2px;
+    margin:2px 0 0;
+    border-top:1px solid #e2e8f0;
+}
+#edit-equipe-wrapper .planning-picker{
+    padding:9px 10px;
+    border:1px solid #dbe7bd;
+    border-radius:10px;
+    background:#fbfff4;
+}
+#edit-equipe-wrapper .planning-picker-label{color:#3f5268}
+#edit-equipe-wrapper #edit-btn-add-planning-member{white-space:nowrap;min-height:38px}
+#edit-equipe-wrapper #edit-btn-remove-membro{white-space:nowrap;min-height:38px}
+
+@media (max-width:700px){
+    #edit-equipe-wrapper .team-row{padding:12px}
+    #edit-equipe-wrapper .team-footer{padding-top:12px}
+    #edit-equipe-wrapper .planning-picker{padding:10px}
+}
+
 .rdo-planning-team-list{
     display: grid;
     gap: 10px;

@@ -7,6 +7,7 @@ SUPERVISOR_GROUP_NAME = 'Supervisor'
 RDO_DELETE_GROUP_NAME = 'RDO - Excluir'
 RDO_PERMISSION_MANAGER_GROUP_NAME = 'RDO - Gerenciar Permissões'
 ALERTS_AI_GROUP_NAME = 'IA - Alertas'
+COMMERCIAL_ACCESS_GROUP_NAME = 'Comercial - Acessar Propostas'
 RESPONSAVEIS_COORDENADORES_MANAGER_GROUP_NAME = 'Sistema - Gerenciar Responsaveis e Coordenadores'
 SYSTEM_READ_ONLY_GROUP_NAME = 'Sistema - Somente Visualizacao'
 RDO_VIEW_ONLY_GROUP_NAME = 'RDO - Somente Visualizacao'
@@ -19,6 +20,7 @@ def ensure_rdo_access_groups():
     delete_group, _ = Group.objects.get_or_create(name=RDO_DELETE_GROUP_NAME)
     manager_group, _ = Group.objects.get_or_create(name=RDO_PERMISSION_MANAGER_GROUP_NAME)
     alerts_ai_group, _ = Group.objects.get_or_create(name=ALERTS_AI_GROUP_NAME)
+    commercial_access_group, _ = Group.objects.get_or_create(name=COMMERCIAL_ACCESS_GROUP_NAME)
     responsaveis_coordenadores_group, _ = Group.objects.get_or_create(
         name=RESPONSAVEIS_COORDENADORES_MANAGER_GROUP_NAME
     )
@@ -44,6 +46,7 @@ def ensure_rdo_access_groups():
         'delete_group': delete_group,
         'manager_group': manager_group,
         'alerts_ai_group': alerts_ai_group,
+        'commercial_access_group': commercial_access_group,
         'responsaveis_coordenadores_group': responsaveis_coordenadores_group,
         'read_only_group': read_only_group,
         'rdo_view_only_group': rdo_view_only_group,
@@ -171,6 +174,19 @@ def user_can_use_alerts_ai(user):
             return False
         ensure_rdo_access_groups()
         return bool(user.groups.filter(name=ALERTS_AI_GROUP_NAME).exists())
+    except Exception:
+        return False
+
+
+def user_can_access_commercial(user):
+    """Commercial proposals are available only to explicitly authorized users."""
+    try:
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        if getattr(user, 'is_superuser', False):
+            return True
+        ensure_rdo_access_groups()
+        return bool(user.groups.filter(name=COMMERCIAL_ACCESS_GROUP_NAME).exists())
     except Exception:
         return False
 

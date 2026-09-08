@@ -12,11 +12,11 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
     const COLUMN_DEFINITIONS = [
-        { key: "avaliacao_inicial", label: "Avaliação Inicial", description: "Sem retorno, em análise, avaliando escopo", tone: "analysis" },
+        { key: "avaliacao_inicial", label: "Avaliação Inicial", description: "Sem retorno, avaliando escopo", tone: "analysis" },
         { key: "preparacao_aprovacao", label: "Preparação e Aprovação", description: "Em elaboração, aguardando aprovação", tone: "preparation" },
-        { key: "propostas_enviadas", label: "Propostas Enviadas", description: "Revisada, shortlist", tone: "sent" },
-        { key: "negociacao", label: "Negociação", description: "Em negociação", tone: "negotiation" },
+        { key: "propostas_enviadas", label: "Propostas Enviadas e Negociação", description: "Em análise, revisada, shortlist, em negociação", tone: "sent" },
         { key: "contratadas", label: "Contratadas", description: "Fechadas / Contratadas", tone: "contracted" },
+        { key: "perdidas_recusadas", label: "Perdidas / Recusadas", description: "Perdidas, recusadas ou declínios", tone: "lost" },
         { key: "canceladas", label: "Canceladas", description: "Propostas canceladas", tone: "cancelled" }
     ];
     const PIPELINE_COLUMN_PREVIEW_LIMIT = 5;
@@ -758,8 +758,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalFieldsByStep = {
         1: [],
         2: ["proposalRev", "proposalEmissao", "proposalResponsavel", "proposalNatureza", "proposalHeatMap"],
-        3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"],
-        4: ["proposalServico", "proposalReceita"],
+        3: ["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalAmbienteOperacional", "proposalDataSolicitacao", "proposalDataEntrega"],
+        4: ["proposalServico"],
         5: ["proposalStatus"]
     };
 
@@ -1878,8 +1878,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderProposalCard(proposal) {
         const statusTone = getStatusTone(proposal.statusProposta);
-        const pdfEndpoint = buildEndpoint(state.endpoints.pdfPattern, proposal.id);
-        const criticalAnalysisPdfEndpoint = buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id);
+        const documentosDisponiveis = Boolean(proposal.documentosDisponiveis);
+        const pdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.pdfPattern, proposal.id) : "";
+        const criticalAnalysisPdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id) : "";
 
         return `
             <article class="proposal-card" data-proposal-id="${proposal.id}" role="button" tabindex="0" aria-label="Abrir detalhes de ${escapeHtml(proposal.numeroProposta)}">
@@ -1889,7 +1890,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <p class="proposal-client">${escapeHtml(proposal.empresa)}</p>
                 <span class="proposal-badge proposal-badge--status is-${statusTone}">${escapeHtml(proposal.statusProposta || "Status não informado")}</span>
-                <p class="proposal-nature">${escapeHtml(proposal.tipoOperacao || "Opera\u00e7\u00e3o n\u00e3o informada")}</p>
+                <p class="proposal-nature">${escapeHtml(proposal.ambienteOperacional || proposal.tipoOperacao || "Opera\u00e7\u00e3o n\u00e3o informada")}</p>
                 <div class="proposal-meta-row">
                     <span class="proposal-meta">
                         <span class="material-icons" aria-hidden="true">calendar_today</span>
@@ -2717,6 +2718,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("Emissão Mês", "emissaoMes", proposal.emissaoMes, false),
                         editableField("Responsável", "responsavel", proposal.responsavel, true, RESPONSAVEIS),
                         editableField("Natureza", "natureza", proposal.natureza, true, NATUREZAS),
+                        editableField("Ambiente Operacional", "ambienteOperacional", proposal.ambienteOperacional, true, ["Onshore", "Offshore"]),
                         editableField("Unidade", "unidade", proposal.unidade, true, getDetailSelectOptions("unidades", proposal.unidade)),
                         editableField("Heat Map", "heatMap", proposal.heatMap, true, HEATMAPS),
                         editableField("Status da Proposta", "statusProposta", proposal.statusProposta, true, STATUS_OPTIONS)
@@ -2805,6 +2807,10 @@ document.addEventListener("DOMContentLoaded", () => {
                                     </button>
                                 </div>
                             </div>
+                            <div class="edit-field edit-field--span-two">
+                                <label for="scopeDescricaoProposta">Descri&ccedil;&atilde;o da proposta</label>
+                                <textarea id="scopeDescricaoProposta" rows="3" placeholder="Descreva a proposta, o escopo ou observa&ccedil;&otilde;es relevantes.">${escapeHtml(proposal.descricaoProposta || "")}</textarea>
+                            </div>
                             <div class="edit-field">
                                 <label for="scopeReceita">Estimativa Receita</label>
                                 <input id="scopeReceita" type="text" value="${escapeHtml(proposal.estimativaReceita)}">
@@ -2854,6 +2860,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="scope-services-display">
                             ${scopeServices.map((service) => `<span class="scope-services-display__tag">${escapeHtml(service)}</span>`).join("") || `<p>${escapeHtml(proposal.escopo)}</p>`}
                         </div>
+                        ${proposal.descricaoProposta ? `
+                            <div class="scope-description-display">
+                                <span>Descri&ccedil;&atilde;o da proposta</span>
+                                <p>${escapeHtml(proposal.descricaoProposta)}</p>
+                            </div>
+                        ` : ""}
                         <div class="info-kpis">
                             <div class="finance-item">
                                 <span class="material-icons" aria-hidden="true">payments</span>
@@ -3407,20 +3419,24 @@ document.addEventListener("DOMContentLoaded", () => {
         const stageMap = {
             avaliacao_inicial: "avaliacao_inicial",
             "sem retorno": "avaliacao_inicial",
-            "em analise": "avaliacao_inicial",
             "avaliando escopo": "avaliacao_inicial",
             preparacao_aprovacao: "preparacao_aprovacao",
             "em elaboracao": "preparacao_aprovacao",
             "aguardando aprovacao gestores": "preparacao_aprovacao",
             propostas_enviadas: "propostas_enviadas",
+            "em analise": "propostas_enviadas",
             shortlist: "propostas_enviadas",
             revisada: "propostas_enviadas",
             enviada: "propostas_enviadas",
-            negociacao: "negociacao",
-            "em negociacao": "negociacao",
+            negociacao: "propostas_enviadas",
+            "em negociacao": "propostas_enviadas",
             contratadas: "contratadas",
             "fechada/contratada": "contratadas",
             contratada: "contratadas",
+            perdidas_recusadas: "perdidas_recusadas",
+            "perdida/recusada": "perdidas_recusadas",
+            "perdida / recusada": "perdidas_recusadas",
+            declinio: "perdidas_recusadas",
             canceladas: "canceladas",
             cancelada: "canceladas"
         };
@@ -3598,9 +3614,12 @@ document.addEventListener("DOMContentLoaded", () => {
             kanbanStage: normalizeKanbanStage(rawProposal.kanbanStage || rawStatus),
             natureza: rawProposal.natureza || "",
             tipoOperacao: rawProposal.tipoOperacao || "",
+            ambienteOperacional: rawProposal.ambienteOperacional || "",
+            documentosDisponiveis: Boolean(rawProposal.documentosDisponiveis),
             heatMap: String(rawProposal.heatMap ?? ""),
             estimativaReceitaValor: Number(rawProposal.estimativaReceitaValor ?? parseCurrencyValue(rawProposal.estimativaReceita)) || 0,
-            estimativaReceita: rawProposal.estimativaReceita || formatCurrencyDisplay(rawProposal.estimativaReceitaValor || 0),
+            estimativaReceita: rawProposal.estimativaReceita || "",
+            descricaoProposta: rawProposal.descricaoProposta || "",
             tempoContratoDias: rawProposal.tempoContratoDias || "",
             tempoContratoDiasValor: Number(rawProposal.tempoContratoDiasValor || 0) || 0,
             followUps: Array.isArray(rawProposal.followUps) ? rawProposal.followUps : [],
@@ -3702,7 +3721,8 @@ document.addEventListener("DOMContentLoaded", () => {
         populateSelect("proposalResponsavel", metadata.responsaveis || RESPONSAVEIS, { placeholder: "Selecione o responsável" });
         populateSelect("proposalNatureza", metadata.naturezas || NATUREZAS, { placeholder: "Selecione a natureza" });
         populateSelect("proposalUnidade", metadata.unidades || [], { placeholder: "Selecione a unidade" });
-        populateSelect("proposalTipoOperacao", metadata.tipoOperacaoOptions || ["Onshore", "Offshore"], { placeholder: "Selecione o tipo de operação" });
+        populateSelect("proposalTipoOperacao", metadata.tipoOperacaoOptions || [], { placeholder: "Selecione o tipo de operação" });
+        populateSelect("proposalAmbienteOperacional", metadata.ambienteOperacionalOptions || ["Onshore", "Offshore"], { placeholder: "Selecione Onshore ou Offshore" });
         populateSelect("proposalMetodo", metadata.metodoOptions || [], { placeholder: "Selecione o método" });
         populateSelect("proposalCoordenador", metadata.coordenadorOptions || [], { placeholder: "Selecione o coordenador" });
         populateSelect("proposalStatus", metadata.statusOptions || STATUS_OPTIONS, { placeholder: "Selecione o status" });
@@ -5910,11 +5930,13 @@ document.addEventListener("DOMContentLoaded", () => {
             email_solicitante: valueOf("proposalEmailSolicitante"),
             telefone_solicitante: valueOf("proposalTelefoneSolicitante"),
             tipo_operacao: valueOf("proposalTipoOperacao"),
+            ambiente_operacional: valueOf("proposalAmbienteOperacional"),
             metodo: valueOf("proposalMetodo"),
             status_proposta: valueOf("proposalStatus"),
             cordenador: valueOf("proposalCoordenador"),
             responsavel: valueOf("proposalResponsavel"),
             servico: valueOf("proposalServico"),
+            descricao_proposta: valueOf("proposalDescricao"),
             comentario: "",
             requisitos_cliente: "",
             requisitos_ambipar: "",
@@ -6002,9 +6024,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (Object.keys(state.createProposalErrorFields).length) {
             const firstFieldId = Object.keys(state.createProposalErrorFields)[0];
-            if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
+            if (["proposalCliente", "proposalUnidade", "proposalTipoOperacao", "proposalAmbienteOperacional", "proposalDataSolicitacao", "proposalDataEntrega"].includes(firstFieldId)) {
                 state.modalStep = 3;
-            } else if (["proposalServico", "proposalReceita"].includes(firstFieldId)) {
+            } else if (["proposalServico"].includes(firstFieldId)) {
                 state.modalStep = 4;
             } else if (["proposalStatus", "proposalMotivo"].includes(firstFieldId)) {
                 state.modalStep = 5;
@@ -6108,8 +6130,7 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalUnidade: "Selecione uma unidade.",
             proposalServico: "Selecione o serviço.",
             proposalDataSolicitacao: "Informe a data de solicitação da proposta.",
-            proposalDataEntrega: "Informe a data prevista.",
-            proposalReceita: "Informe a estimativa de receita."
+            proposalDataEntrega: "Informe a data prevista."
         };
 
         let isValid = true;
@@ -6162,8 +6183,7 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalCliente: "Selecione um cliente.",
             proposalUnidade: "Selecione uma unidade.",
             proposalServico: "Selecione o serviço.",
-            proposalDataEntrega: "Informe a data prevista.",
-            proposalReceita: "Informe a estimativa de receita."
+            proposalDataEntrega: "Informe a data prevista."
         };
 
         let isValid = true;
@@ -6413,7 +6433,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const updatedValues = readFieldValues([
             "rev", "responsavel", "dataEntregaProposta", "dataSolicitacaoProposta", "dataFechamento", "previsaoContratacao", "followUp",
-            "natureza", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
+            "natureza", "ambienteOperacional", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
             "empresa", "uf", "embarcacaoLocal", "solicitante", "emailSolicitante", "telefoneSolicitante", "po", "rfi", "fonteLead", "segmentoCliente", "comentario"
         ]);
 
@@ -6591,7 +6611,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const updatedValues = readFieldValues([
             "rev", "responsavel", "dataEntregaProposta", "dataSolicitacaoProposta", "dataFechamento", "previsaoContratacao", "followUp",
-            "natureza", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
+            "natureza", "ambienteOperacional", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
             "empresa", "uf", "embarcacaoLocal", "solicitante", "emailSolicitante", "telefoneSolicitante", "po", "rfi", "fonteLead", "segmentoCliente", "comentario"
         ]);
 
@@ -6613,6 +6633,7 @@ document.addEventListener("DOMContentLoaded", () => {
             previsao_contratacao: updatedValues.previsaoContratacao,
             follow_up: updatedValues.followUp,
             natureza: updatedValues.natureza,
+            ambiente_operacional: updatedValues.ambienteOperacional,
             unidade: updatedValues.unidade,
             embarcacao_local: updatedValues.embarcacaoLocal,
             heat_map: updatedValues.heatMap,
@@ -6670,8 +6691,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const escopos = (state.scopeDraftServices || [])
             .map((service) => String(service || "").trim())
             .filter(Boolean);
-        const estimativaReceita = refs.proposalDrawer.querySelector("#scopeReceita")?.value.trim() || proposal.estimativaReceita;
+        const estimativaReceita = refs.proposalDrawer.querySelector("#scopeReceita")?.value.trim() ?? proposal.estimativaReceita;
         const tempoContrato = refs.proposalDrawer.querySelector("#scopeTempo")?.value.trim() || proposal.tempoContratoDias;
+        const descricaoProposta = refs.proposalDrawer.querySelector("#scopeDescricaoProposta")?.value.trim() || "";
 
         if (!escopos.length) {
             state.saveProposalError = true;
@@ -6689,6 +6711,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         persistProposalUpdate(proposal.id, {
             servico: escopo,
+            descricao_proposta: descricaoProposta,
             estimativo_receita: estimativaReceita,
             tempo_contrato_dias: tempoContrato,
             campos,
@@ -7640,10 +7663,10 @@ document.addEventListener("DOMContentLoaded", () => {
             proposalCliente: "Selecione um cliente.",
             proposalUnidade: "Selecione uma unidade.",
             proposalTipoOperacao: "Selecione o tipo de operação.",
+            proposalAmbienteOperacional: "Selecione Onshore ou Offshore.",
             proposalServico: "Selecione o serviço.",
             proposalDataSolicitacao: "Informe a data de solicitação da proposta.",
-            proposalDataEntrega: "Informe a data prevista.",
-            proposalReceita: "Informe a estimativa de receita."
+            proposalDataEntrega: "Informe a data prevista."
         };
 
         let isValid = true;

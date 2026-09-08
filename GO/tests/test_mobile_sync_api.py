@@ -18,6 +18,8 @@ from GO.models import (
     Modelo,
     OrdemServico,
     Pessoa,
+    PlanejamentoEquipeMembro,
+    PlanejamentoEquipeOS,
     RDO,
     RDOMembroEquipe,
     RdoEquipamentoRetornoPrevisto,
@@ -1955,13 +1957,41 @@ class MobileSyncApiIdempotencyTest(TestCase):
             solicitante='Teste',
             supervisor=self.user,
         )
+        funcao_planejada = next(
+            value for value, _ in OrdemServico.FUNCOES if value
+        )
+        planejamento = PlanejamentoEquipeOS.objects.create(
+            ordem_servico=os_obj,
+            status=PlanejamentoEquipeOS.STATUS_CONCLUIDO,
+            criado_por=self.user,
+            atualizado_por=self.user,
+        )
+        pessoa = Pessoa.objects.create(
+            nome='Rafael Silva',
+            funcao=funcao_planejada,
+        )
+        pessoa_nova = Pessoa.objects.create(
+            nome='Colaborador Novo',
+            funcao=funcao_planejada,
+        )
+        for ordem, integrante in enumerate((pessoa, pessoa_nova)):
+            PlanejamentoEquipeMembro.objects.create(
+                planejamento=planejamento,
+                pessoa=integrante,
+                nome_snapshot=integrante.nome,
+                funcao_planejada=funcao_planejada,
+                status=PlanejamentoEquipeMembro.STATUS_ATIVO,
+                ordem=ordem,
+                criado_por=self.user,
+                atualizado_por=self.user,
+            )
         rdo = RDO.objects.create(
             ordem_servico=os_obj,
             rdo='18',
             data=date.today(),
             data_inicio=date.today(),
+            equipe_origem=RDO.EQUIPE_ORIGEM_MANUAL,
         )
-        pessoa = Pessoa.objects.create(nome='Rafael Silva')
         RDOMembroEquipe.objects.create(
             rdo=rdo,
             pessoa=pessoa,
@@ -1990,7 +2020,43 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertEqual(len(row.get('equipe') or []), 1)
         self.assertEqual(row['equipe'][0].get('nome'), 'Rafael Silva')
         self.assertEqual(row['equipe'][0].get('funcao'), 'Supervisor')
+        self.assertEqual(row.get('equipe_source'), RDO.EQUIPE_ORIGEM_MANUAL)
+        planning_members = row['planejamento_rdo']['membros']
+        self.assertEqual(len(planning_members), 2)
+        self.assertEqual(
+            [member.get('nome') for member in planning_members],
+            ['Rafael Silva', 'Colaborador Novo'],
+        )
         self.assertFalse(row.get('can_edit_full'))
+
+        edit_response = token_client.post(
+            f'/api/mobile/v1/rdo/{rdo.id}/edit/',
+            data=json.dumps({
+                'data': date.today().isoformat(),
+                'equipe_source': RDO.EQUIPE_ORIGEM_PLANEJAMENTO,
+                'equipe_avaliacoes_json': json.dumps([
+                    {'index': 0, 'nota': 'BOM', 'justificativa': ''},
+                    {'index': 1, 'nota': 'BOM', 'justificativa': ''},
+                ]),
+                'equipe_nome[]': [pessoa.nome, pessoa_nova.nome],
+                'equipe_funcao[]': ['Supervisor', funcao_planejada],
+                'equipe_pessoa_id[]': [str(pessoa.id), str(pessoa_nova.id)],
+                'equipe_em_servico[]': ['true', 'true'],
+            }),
+            content_type='application/json',
+            HTTP_HOST='localhost',
+            secure=True,
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+
+        self.assertEqual(edit_response.status_code, 200)
+        rdo.refresh_from_db()
+        self.assertEqual(rdo.equipe_origem, RDO.EQUIPE_ORIGEM_PLANEJAMENTO)
+        self.assertEqual(rdo.planejamento_equipe_origem_id, planejamento.id)
+        self.assertEqual(
+            list(rdo.membros_equipe.order_by('ordem').values_list('pessoa_id', flat=True)),
+            [pessoa.id, pessoa_nova.id],
+        )
         self.assertTrue(row.get('can_edit_limited'))
         self.assertTrue(row.get('supervisor_limited_edit'))
 
@@ -2156,6 +2222,22 @@ class MobileSyncApiIdempotencyTest(TestCase):
                 self.sao_paulo,
             ),
         ):
+            missing_evaluation_response = token_client.post(
+                f'/api/mobile/v1/rdo/{rdo.id}/edit/',
+                data=json.dumps({
+                    'data': '2026-04-03',
+                    'equipe_source': 'manual',
+                    'equipe_avaliacoes_json': '[]',
+                    'equipe_nome[]': [pessoa.nome],
+                    'equipe_funcao[]': ['Ajudante'],
+                    'equipe_pessoa_id[]': [str(pessoa.id)],
+                    'equipe_em_servico[]': ['true'],
+                }),
+                content_type='application/json',
+                HTTP_HOST='localhost',
+                secure=True,
+                HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+            )
             success_response = token_client.post(
                 f'/api/mobile/v1/rdo/{rdo.id}/edit/',
                 data=json.dumps({
@@ -2163,7 +2245,13 @@ class MobileSyncApiIdempotencyTest(TestCase):
                     'data_inicio': '2026-04-03',
                     'rdo_data_inicio': '2026-04-03',
                     'equipe_source': 'manual',
-                    'equipe_avaliacoes_json': '[]',
+                    'equipe_avaliacoes_json': json.dumps([
+                        {
+                            'index': 0,
+                            'nota': 'BOM',
+                            'justificativa': '',
+                        },
+                    ]),
                     'equipe_nome[]': [pessoa.nome],
                     'equipe_funcao[]': ['Supervisor'],
                     'equipe_pessoa_id[]': [str(pessoa.id)],
@@ -2186,6 +2274,11 @@ class MobileSyncApiIdempotencyTest(TestCase):
                 HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
             )
 
+        self.assertEqual(missing_evaluation_response.status_code, 400)
+        self.assertIn(
+            'avalie todos os novos membros',
+            missing_evaluation_response.json().get('error', '').lower(),
+        )
         self.assertEqual(success_response.status_code, 200)
         self.assertTrue(success_response.json().get('success'))
         self.assertEqual(response.status_code, 400)
@@ -2199,6 +2292,83 @@ class MobileSyncApiIdempotencyTest(TestCase):
         self.assertEqual(rdo.observacoes_rdo_pt, 'texto original')
         self.assertEqual(rdo.membros_equipe.count(), 1)
         self.assertEqual(rdo.membros_equipe.first().pessoa_id, pessoa.id)
+
+    def test_mobile_rdo_edit_preserves_evaluations_by_member_identity(self):
+        cliente = Cliente.objects.create(nome='Cliente Edit Identity')
+        unidade = Unidade.objects.create(nome='Unidade Edit Identity')
+        os_obj = OrdemServico.objects.create(
+            numero_os=7004,
+            data_inicio=date(2026, 4, 1),
+            dias_de_operacao=2,
+            servico='COLETA DE AR',
+            metodo='Manual',
+            pob=2,
+            volume_tanque=Decimal('10.00'),
+            Cliente=cliente,
+            Unidade=unidade,
+            tipo_operacao='Onshore',
+            solicitante='Teste',
+            supervisor=self.user,
+        )
+        rdo = RDO.objects.create(
+            ordem_servico=os_obj,
+            rdo='5',
+            data=date(2026, 4, 1),
+            data_inicio=date(2026, 4, 1),
+        )
+        pessoa_a = Pessoa.objects.create(nome='Pessoa A')
+        pessoa_b = Pessoa.objects.create(nome='Pessoa B')
+        pessoa_c = Pessoa.objects.create(nome='Pessoa C')
+        RDOMembroEquipe.objects.create(
+            rdo=rdo,
+            pessoa=pessoa_a,
+            funcao='Ajudante',
+            ordem=0,
+            avaliacao_nota=RDOMembroEquipe.AVALIACAO_OTIMO,
+        )
+        RDOMembroEquipe.objects.create(
+            rdo=rdo,
+            pessoa=pessoa_b,
+            funcao='Ajudante',
+            ordem=1,
+            avaliacao_nota=RDOMembroEquipe.AVALIACAO_RUIM,
+            avaliacao_justificativa='Avaliação anterior da pessoa B',
+        )
+
+        response = Client().post(
+            f'/api/mobile/v1/rdo/{rdo.id}/edit/',
+            data=json.dumps({
+                'data': '2026-04-02',
+                'equipe_source': 'manual',
+                'equipe_avaliacoes_json': json.dumps([
+                    {
+                        'index': 1,
+                        'nota': 'BOM',
+                        'justificativa': '',
+                    },
+                ]),
+                'equipe_nome[]': [pessoa_b.nome, pessoa_c.nome],
+                'equipe_funcao[]': ['Ajudante', 'Ajudante'],
+                'equipe_pessoa_id[]': [str(pessoa_b.id), str(pessoa_c.id)],
+                'equipe_em_servico[]': ['true', 'true'],
+            }),
+            content_type='application/json',
+            HTTP_HOST='localhost',
+            secure=True,
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        membros = list(rdo.membros_equipe.order_by('ordem'))
+        self.assertEqual([membro.pessoa_id for membro in membros], [pessoa_b.id, pessoa_c.id])
+        self.assertEqual(
+            [membro.avaliacao_nota for membro in membros],
+            [RDOMembroEquipe.AVALIACAO_RUIM, RDOMembroEquipe.AVALIACAO_BOM],
+        )
+        self.assertEqual(
+            membros[0].avaliacao_justificativa,
+            'Avaliação anterior da pessoa B',
+        )
 
     def test_mobile_sync_update_old_rdo_rejects_blocked_fields_for_supervisor(self):
         cliente = Cliente.objects.create(nome='Cliente Sync Restrito')

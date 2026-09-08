@@ -19,6 +19,8 @@
     const loadMoreButton = document.getElementById("ai-notification-load-more");
     const subtitle = document.getElementById("ai-notification-center-subtitle");
     const toast = document.getElementById("ai-notification-toast");
+    const reanalyseModal = document.getElementById("ai-notification-reanalyse-modal");
+    const reanalyseConfirm = document.getElementById("ai-notification-reanalyse-confirm");
     const tabs = Array.from(center.querySelectorAll("[data-ai-tab]"));
     const correctionMetrics = document.getElementById("ai-notification-correction-metrics");
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -37,7 +39,8 @@
         requestId: 0,
         initialized: false,
         toastTimer: null,
-        previousOverflow: ""
+        previousOverflow: "",
+        snapshotRequestInFlight: false
     };
 
     function element(tag, className, text) {
@@ -154,6 +157,20 @@
         }
         badge.textContent = unread > 99 ? "99+" : String(unread);
         badge.setAttribute("aria-label", unread + " alertas da IA não lidos");
+    }
+
+    async function refreshCompactSnapshot() {
+        if (state.snapshotRequestInFlight || document.hidden || !center.dataset.snapshotUrl) return;
+        state.snapshotRequestInFlight = true;
+        try {
+            const payload = await request(center.dataset.snapshotUrl);
+            updateBellBadge(Number(payload.unread_count || 0));
+            renderCompact(payload.compact_items || []);
+        } catch (_) {
+            // A polling failure must not disrupt the page or the notification center.
+        } finally {
+            state.snapshotRequestInFlight = false;
+        }
     }
 
     function renderPriorityOptions(priorities) {
@@ -365,6 +382,13 @@
         }
 
         const actions = element("div", "ai-notification-center__actions");
+        if (item.source && item.source.indexOf("rdo") === 0 && !item.is_corrected) {
+            const reanalyse = element("button", "ai-notification-center__secondary-action ai-notification-center__reanalyse-action");
+            reanalyse.type = "button";
+            reanalyse.append(element("span", "material-icons", "refresh"), document.createTextNode("Reanalisar RDO"));
+            reanalyse.addEventListener("click", function () { reanalyseRdo(item, reanalyse); });
+            actions.append(reanalyse);
+        }
         const read = element("button", "ai-notification-center__primary-action", item.is_read ? "Marcar como não lido" : "Marcar como lido");
         read.type = "button";
         read.addEventListener("click", function () { toggleRead(item, !item.is_read); });
@@ -393,6 +417,60 @@
             },
             body: JSON.stringify({ lido: isRead })
         });
+    }
+
+    function confirmReanalysis(trigger) {
+        if (!reanalyseModal || !reanalyseConfirm) return Promise.resolve(true);
+        return new Promise(function (resolve) {
+            const cancelButtons = Array.from(reanalyseModal.querySelectorAll("[data-reanalyse-cancel]"));
+            let settled = false;
+            function close(confirmed) {
+                if (settled) return;
+                settled = true;
+                reanalyseModal.hidden = true;
+                reanalyseConfirm.removeEventListener("click", approve);
+                cancelButtons.forEach(function (node) { node.removeEventListener("click", cancel); });
+                document.removeEventListener("keydown", onKeydown, true);
+                if (trigger && document.contains(trigger)) trigger.focus();
+                resolve(confirmed);
+            }
+            function approve() { close(true); }
+            function cancel() { close(false); }
+            function onKeydown(event) {
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    close(false);
+                }
+            }
+            reanalyseConfirm.addEventListener("click", approve);
+            cancelButtons.forEach(function (node) { node.addEventListener("click", cancel); });
+            document.addEventListener("keydown", onKeydown, true);
+            reanalyseModal.hidden = false;
+            window.setTimeout(function () { reanalyseConfirm.focus(); }, 0);
+        });
+    }
+
+    async function reanalyseRdo(item, button) {
+        if (!(await confirmReanalysis(button))) return;
+        button.disabled = true;
+        button.classList.add("is-loading");
+        try {
+            const response = await request(templateUrl(center.dataset.reanalyseUrlTemplate, item), {
+                method: "POST",
+                headers: { "Accept": "application/json", "X-CSRFToken": csrfToken() }
+            });
+            if (!response.success) throw new Error(response.error || "Não foi possível reanalisar o RDO.");
+            showToast(response.message || "Reanálise concluída.");
+            updateBellBadge(response.unread_count);
+            renderCompact(response.compact_items || []);
+            await loadPage(1, false);
+            center.classList.remove("is-detail-open");
+        } catch (error) {
+            showToast(error.message || "Não foi possível reanalisar o RDO.", true);
+            button.disabled = false;
+            button.classList.remove("is-loading");
+        }
     }
 
     async function selectItem(item, markOpenedAsRead) {
@@ -531,11 +609,15 @@
             return;
         }
         items.forEach(function (item) {
-            const article = element("article", "synchro-alert-item" + (!item.is_read ? " synchro-alert-item--unread" : ""));
+            const article = element(
+                "article",
+                "synchro-alert-item synchro-alert-item--" + (item.priority || "media")
+                + (!item.is_read ? " synchro-alert-item--unread" : "")
+            );
             article.dataset.source = item.source;
             article.dataset.alertId = item.id;
-            const head = element("div", "synchro-alert-item-head");
-            head.append(element("span", "synchro-alert-dot"), element("strong", "", item.title), element("time", "", item.created_time));
+            const head = element("div", "synchro-alert-item-top");
+            head.append(element("strong", "", item.title), element("time", "", item.created_time));
             article.append(head, element("p", "", item.summary || item.message));
             const actions = element("div", "synchro-alert-item-actions");
             actions.append(element("span", "synchro-alert-category", item.priority_label));
@@ -676,6 +758,10 @@
         event.stopPropagation();
         toggleRead({ source: button.dataset.source, id: Number(button.dataset.alertId), is_read: false, key: button.dataset.source + ":" + button.dataset.alertId }, true);
     });
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) refreshCompactSnapshot();
+    });
+    window.setInterval(refreshCompactSnapshot, 30000);
 
     center.setAttribute("aria-hidden", "true");
 }());

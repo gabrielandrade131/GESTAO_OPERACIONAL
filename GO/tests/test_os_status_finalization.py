@@ -5,6 +5,7 @@ from django.contrib.auth.models import Group, User
 from django.test import Client, TestCase
 from django.urls import reverse
 
+from GO.forms import _parse_service_values
 from GO.models import (
     AvaliacaoSupervisorMovimentacao,
     Cliente,
@@ -164,6 +165,51 @@ class OrdemServicoStatusFinalizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         criada = OrdemServico.objects.get(pk=response.json()['os']['id'])
         self.assertEqual(criada.servico, 'ADEQUAÇÃO DE EQUIPAMENTOS')
+
+    def test_nova_os_aceita_pmoc_com_virgulas_no_nome(self):
+        pmoc = next(value for value, _ in OrdemServico.SERVICO_CHOICES if value.endswith('PMOC'))
+        response = self.client.post(
+            reverse('lista_servicos'),
+            data={
+                'box_opcao': 'nova',
+                'os_existente': '',
+                'Cliente': str(self.cliente.pk),
+                'Unidade': str(self.unidade.pk),
+                'solicitante': 'Solicitante Teste',
+                'servico': pmoc,
+                'metodo': 'Manual',
+                'pob': '1',
+                'data_inicio': '2026-03-01',
+                'tipo_operacao': 'Onshore',
+                'status_operacao': 'Programada',
+                'status_geral': 'Programada',
+                'status_comercial': 'Em aberto',
+                'status_planejamento': 'Pendente',
+                'coordenador': self.coordenador,
+                'supervisor': str(self.supervisor.pk),
+                'volume_tanque': '0',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_HOST='localhost',
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        criada = OrdemServico.objects.get(pk=response.json()['os']['id'])
+        self.assertEqual(criada.servico, pmoc)
+        self.assertEqual(criada.servicos, pmoc)
+
+    def test_parser_aceita_pmoc_em_selecao_multipla_sem_ambiguidade(self):
+        pmoc = next(value for value, _ in OrdemServico.SERVICO_CHOICES if value.endswith('PMOC'))
+
+        self.assertEqual(
+            _parse_service_values(f'{pmoc} || COLETA DE AR'),
+            [pmoc, 'COLETA DE AR'],
+        )
+        self.assertEqual(
+            _parse_service_values(f'{pmoc}, COLETA DE AR'),
+            [pmoc, 'COLETA DE AR'],
+        )
 
     def test_nova_movimentacao_sem_supervisor_pode_ser_finalizada(self):
         response = self.client.post(

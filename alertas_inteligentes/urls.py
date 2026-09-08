@@ -7,6 +7,11 @@ urlpatterns = [
     path("", views.listar_alertas, name="listar_alertas"),
     path("api/notificacoes/", views.api_notificacoes, name="api_notificacoes"),
     path(
+        "api/notificacoes/resumo/",
+        views.api_notificacoes_resumo,
+        name="api_notificacoes_resumo",
+    ),
+    path(
         "api/notificacoes/exportar-excel/",
         views.api_notificacoes_exportar_excel,
         name="api_notificacoes_exportar_excel",
@@ -25,6 +30,11 @@ urlpatterns = [
         "api/notificacoes/<str:source>/<int:alert_id>/leitura/",
         views.api_notificacao_leitura,
         name="api_notificacao_leitura",
+    ),
+    path(
+        "api/notificacoes/<str:source>/<int:alert_id>/reanalisar/",
+        views.api_notificacao_reanalisar_rdo,
+        name="api_notificacao_reanalisar_rdo",
     ),
     path("resolver/<int:alerta_id>/", views.resolver_alerta, name="resolver_alerta"),
     path("ignorar/<int:alerta_id>/", views.ignorar_alerta, name="ignorar_alerta"),

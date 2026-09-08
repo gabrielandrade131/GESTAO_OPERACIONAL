@@ -47,9 +47,11 @@
 
             <section class="synchro-nav-group" aria-labelledby="nav-negocios">
                 <h2 id="nav-negocios">Negócios</h2>
+                {% if can_access_commercial %}
                 <a href="{% url 'comercial_propostas' %}" class="menu-btn{% if synchro_active_module == 'comercial' %} is-active{% endif %}"{% if synchro_active_module == 'comercial' %} aria-current="page"{% endif %}>
                     <span class="material-icons" aria-hidden="true">business_center</span><span>Propostas</span>
                 </a>
+                {% endif %}
             </section>
 
             {% if can_edit_system or can_manage_rdo_permission_users %}

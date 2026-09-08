@@ -762,6 +762,7 @@
     </div>
     <input type="hidden" name="equipe_source" value="{{ r.equipe_source|default:'manual' }}" />
     <input type="hidden" name="equipe_avaliacoes_json" value="{{ r.equipe_avaliacoes_json|default:'[]'|escape }}" />
+    {{ r.planejamento_rdo.membros|default:'[]'|json_script:"edit-planning-members-json" }}
     {% if r.equipe_source == 'planejamento' and r.equipe %}
         <div class="rdo-planning-team-banner" data-tone="success">Equipe carregada automaticamente a partir do Planejamento.</div>
         <section class="rdo-planning-team-preview">
@@ -780,6 +781,7 @@
                     <article
                         class="rdo-planning-team-member"
                         data-team-member-id="{{ member.id|default:'' }}"
+                        data-team-member-pessoa-id="{{ member.pessoa_id|default:'' }}"
                         data-team-member-index="{{ forloop.counter0 }}"
                         data-team-member-name="{{ member.nome|default:'-'|escape }}"
                         data-team-member-role="{{ member.funcao|default:'-'|escape }}"
@@ -801,11 +803,12 @@
                     </article>
                 {% endfor %}
             </div>
+            <p class="rdo-planning-team-preview__hint">A equipe pode ser ajustada somente com colaboradores ativos do planejamento atual. Avalie qualquer novo colaborador antes de salvar.</p>
         </section>
     {% elif r.planejamento_rdo.tem_planejamento and not r.planejamento_rdo.tem_membros_ativos %}
         <div class="rdo-planning-team-banner" data-tone="warning">{{ r.planejamento_rdo.message|default:'Existe planejamento para esta OS, mas nao ha membros ativos planejados. Preencha a equipe manualmente.' }}</div>
     {% endif %}
-    <div class="team-wrapper compact-rows" id="edit-equipe-wrapper" {% if r.equipe_source == 'planejamento' and r.equipe %}hidden aria-hidden="true"{% endif %}>
+    <div class="team-wrapper compact-rows" id="edit-equipe-wrapper" aria-label="Equipe selecionada para este RDO">
         {# Se houver equipe no payload, renderizar cada membro como uma linha; senão, renderizar a linha vazia prototype #}
         {% if r.equipe %}
             {% for member in r.equipe %}
@@ -829,6 +832,7 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <button type="button" class="team-row-remove" aria-label="Remover este colaborador" title="Remover este colaborador"><span class="material-icons" aria-hidden="true">person_remove</span><span>Remover</span></button>
                 </div>
             {% endfor %}
         {% else %}
@@ -852,12 +856,24 @@
                         {% endfor %}
                     </select>
                 </div>
+                <button type="button" class="team-row-remove" aria-label="Remover este colaborador" title="Remover este colaborador"><span class="material-icons" aria-hidden="true">person_remove</span><span>Remover</span></button>
             </div>
         {% endif %}
         <div class="team-footer">
-            <button type="button" class="btn-rdo small" id="edit-btn-add-membro">Adicionar membro</button>
+            {% if r.equipe_source != 'planejamento' %}<button type="button" class="btn-rdo small" id="edit-btn-add-membro">Adicionar membro</button>{% endif %}
+            {% if r.equipe_source == 'planejamento' %}
+                <div class="planning-picker">
+                    <label class="planning-picker-label" for="edit-planning-member-select">Adicionar do planejamento</label>
+                    <div class="planning-picker__controls">
+                        <select id="edit-planning-member-select" class="planning-picker-select">
+                            <option value="">Selecione um colaborador planejado...</option>
+                        </select>
+                        <button type="button" class="btn-rdo small" id="edit-btn-add-planning-member">Adicionar selecionado</button>
+                    </div>
+                </div>
+            {% endif %}
             <button type="button" id="edit-btn-remove-membro" class="btn-rdo outline small">Remover último membro</button>
-            <span class="team-limit-hint"></span>
+            <span class="team-limit-hint">Em RDOs vindos do planejamento, somente a lista planejada pode ser usada.</span>
         </div>
     </div>
     <div class="rdo-grid cols-3">

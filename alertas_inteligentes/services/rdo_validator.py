@@ -1,7 +1,11 @@
 ﻿import json
+import re
+import unicodedata
 from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Q
 from django.utils import timezone
 
 from alertas_inteligentes.models import AlertaInteligente
@@ -252,7 +256,14 @@ def criar_alerta(
     return AlertaInteligente.objects.create(**create_kwargs)
 
 
-def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_id=None):
+def sincronizar_alertas_rdo_apos_analise(
+    rdo,
+    alertas_ativos,
+    *,
+    corrigido_por_id=None,
+    origem_correcao=None,
+    justificativa_correcao=None,
+):
     """Confirma correções sem depender da leitura ou abertura da notificação.
 
     Os validadores reutilizam o alerta pendente com a mesma identidade
@@ -264,15 +275,41 @@ def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_i
         for alerta in (alertas_ativos or [])
         if getattr(alerta, "pk", None)
     }
+    referencias_duplicidade_ativas = {
+        alerta.referencia
+        for alerta in (alertas_ativos or [])
+        if (
+            getattr(alerta, "tipo", "") == "RDO_DUPLICADO"
+            and getattr(alerta, "referencia", "")
+        )
+    }
+    rdo_id = getattr(rdo, "pk", None)
+    pares_obsoletos_ids = []
+    if rdo_id:
+        pares_obsoletos = AlertaInteligente.objects.filter(
+            tipo="RDO_DUPLICADO",
+            status__in=["pendente", "em_analise"],
+        ).filter(
+            Q(referencia__startswith=f"duplicidade_rdos_{rdo_id}_")
+            | Q(referencia__endswith=f"_{rdo_id}")
+        )
+        if referencias_duplicidade_ativas:
+            pares_obsoletos = pares_obsoletos.exclude(
+                referencia__in=referencias_duplicidade_ativas
+            )
+        pares_obsoletos_ids = list(pares_obsoletos.values_list("pk", flat=True))
+
     obsoletos = AlertaInteligente.objects.filter(
         rdo=rdo,
         status__in=["pendente", "em_analise"],
     )
     if ids_ativos:
         obsoletos = obsoletos.exclude(pk__in=ids_ativos)
+    if pares_obsoletos_ids:
+        obsoletos = obsoletos.exclude(pk__in=pares_obsoletos_ids)
 
     agora = timezone.now()
-    origem = "usuario" if corrigido_por_id else "nao_identificada"
+    origem = origem_correcao or ("usuario" if corrigido_por_id else "nao_identificada")
     # Uma anomalia pode desaparecer apenas porque a base estatística mudou.
     # Isso não comprova que alguém corrigiu o RDO e não deve gerar crédito
     # para o usuário que realizou uma edição sem relação com a anomalia.
@@ -295,6 +332,8 @@ def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_i
 
     corrigidos = obsoletos.exclude(pk__in=anomalias_ids)
     ids_corrigidos = list(corrigidos.values_list("pk", flat=True))
+    ids_corrigidos.extend(pares_obsoletos_ids)
+    ids_corrigidos = list(dict.fromkeys(ids_corrigidos))
     if ids_corrigidos:
         AlertaInteligente.objects.filter(pk__in=ids_corrigidos).update(
             status="resolvido",
@@ -303,7 +342,10 @@ def sincronizar_alertas_rdo_apos_analise(rdo, alertas_ativos, *, corrigido_por_i
             corrigido_por_id=corrigido_por_id,
             motivo_encerramento="correcao_confirmada",
             origem_correcao=origem,
-            justificativa="Correção confirmada automaticamente após nova análise do RDO.",
+            justificativa=justificativa_correcao or (
+                "Correção confirmada automaticamente após nova análise do RDO "
+                "ou do outro registro do par de possível duplicidade."
+            ),
         )
     return ids_corrigidos
     
@@ -406,12 +448,190 @@ def _rdo_duplicate_snapshot(rdo):
     }
 
 
+def _normalize_duplicate_text(value):
+    value = text(value)
+    if not value:
+        return ""
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    return " ".join(re.findall(r"[a-z0-9]+", value.lower()))
+
+
+def _duplicate_text_similarity(left, right):
+    left = _normalize_duplicate_text(left)
+    right = _normalize_duplicate_text(right)
+    if not left or not right:
+        return None
+    left_tokens = set(left.split())
+    right_tokens = set(right.split())
+    union = left_tokens | right_tokens
+    token_similarity = len(left_tokens & right_tokens) / len(union) if union else 0
+    return round((token_similarity + SequenceMatcher(None, left, right).ratio()) / 2, 4)
+
+
+def _duplicate_set_similarity(left, right):
+    left = {item for item in left if item}
+    right = {item for item in right if item}
+    if not left or not right:
+        return None
+    return round(len(left & right) / len(left | right), 4)
+
+
+def _duplicate_activity_signature(rdo):
+    try:
+        return {
+            _normalize_duplicate_text(activity.atividade)
+            for activity in rdo.atividades_rdo.all()
+            if _normalize_duplicate_text(activity.atividade)
+        }
+    except Exception:
+        return set()
+
+
+def _duplicate_tank_signature(rdo):
+    labels = set()
+    try:
+        for tank in rdo.tanques.all():
+            label = _normalize_duplicate_text(
+                get_field(tank, "tanque_codigo", "nome_tanque")
+            )
+            if label:
+                labels.add(label)
+    except Exception:
+        pass
+    if not labels:
+        label = _normalize_duplicate_text(
+            get_field(rdo, "tanque_codigo", "nome_tanque")
+        )
+        if label:
+            labels.add(label)
+    return labels
+
+
+def _duplicate_team_signature(rdo):
+    members = set()
+    try:
+        for member in rdo.membros_equipe.filter(em_servico=True):
+            name = _normalize_duplicate_text(
+                get_field(getattr(member, "pessoa", None), "nome")
+                or get_field(member, "nome")
+            )
+            if name:
+                members.add(name)
+    except Exception:
+        pass
+    return members
+
+
+def _duplicate_pt_similarity(left, right):
+    fields = ("exist_pt", "select_turnos", "pt_manha", "pt_tarde", "pt_noite")
+    compared = []
+    for field in fields:
+        left_value = get_field(left, field)
+        right_value = get_field(right, field)
+        if left_value in (None, "") or right_value in (None, ""):
+            continue
+        if field == "confinado" and left_value is False and right_value is False:
+            continue
+        compared.append(
+            _normalize_duplicate_text(left_value)
+            == _normalize_duplicate_text(right_value)
+        )
+    if not compared:
+        return None
+    if len(compared) == 1 and get_field(left, "exist_pt") is False:
+        return None
+    return round(sum(compared) / len(compared), 4)
+
+
+def _duplicate_execution_similarity(left, right):
+    fields = (
+        "servico_exec", "metodo_exec", "tipo_tanque", "numero_compartimentos",
+        "confinado", "sentido_limpeza", "operadores_simultaneos",
+    )
+    compared = []
+    for field in fields:
+        left_value = get_field(left, field)
+        right_value = get_field(right, field)
+        if left_value in (None, "") or right_value in (None, ""):
+            continue
+        compared.append(
+            _normalize_duplicate_text(left_value)
+            == _normalize_duplicate_text(right_value)
+        )
+    return round(sum(compared) / len(compared), 4) if compared else None
+
+
+def _duplicate_operational_similarity(left, right):
+    fields = (
+        "ensacamento", "icamento", "cambagem", "quantidade_bombeada", "bombeio",
+        "total_liquido", "total_solidos", "total_residuos", "percentual_avanco",
+        "limpeza_mecanizada_diaria", "limpeza_fina_diaria",
+    )
+    compared = []
+    for field in fields:
+        left_value = to_number(get_field(left, field))
+        right_value = to_number(get_field(right, field))
+        if left_value is None or right_value is None:
+            continue
+        tolerance = max(0.01, max(abs(left_value), abs(right_value)) * 0.02)
+        compared.append(abs(left_value - right_value) <= tolerance)
+    if len(compared) < 2:
+        return None
+    return round(sum(compared) / len(compared), 4)
+
+
+def _rdo_duplicate_similarity(left, right):
+    """Compara apenas conteúdo preenchido; ausência não é tratada como igualdade."""
+    signals = {}
+    observation_similarity = _duplicate_text_similarity(
+        get_field(left, "observacoes_rdo_pt", "observacoes"),
+        get_field(right, "observacoes_rdo_pt", "observacoes"),
+    )
+    if observation_similarity is not None:
+        signals["observação"] = observation_similarity
+
+    for label, similarity in (
+        ("atividades", _duplicate_set_similarity(
+            _duplicate_activity_signature(left), _duplicate_activity_signature(right)
+        )),
+        ("tanques", _duplicate_set_similarity(
+            _duplicate_tank_signature(left), _duplicate_tank_signature(right)
+        )),
+        ("equipe", _duplicate_set_similarity(
+            _duplicate_team_signature(left), _duplicate_team_signature(right)
+        )),
+        ("PT", _duplicate_pt_similarity(left, right)),
+        ("execução", _duplicate_execution_similarity(left, right)),
+        ("dados operacionais", _duplicate_operational_similarity(left, right)),
+    ):
+        if similarity is not None:
+            signals[label] = similarity
+
+    if not signals:
+        return {"is_duplicate": False, "score": 0, "signals": {}, "strong_signals": []}
+
+    weights = {
+        "observação": 3, "atividades": 3, "tanques": 3, "equipe": 2,
+        "PT": 1, "execução": 2, "dados operacionais": 2,
+    }
+    total_weight = sum(weights[label] for label in signals)
+    score = sum(signals[label] * weights[label] for label in signals) / total_weight
+    strong_signals = [label for label, value in signals.items() if value >= 0.85]
+    return {
+        "is_duplicate": score >= 0.85 and len(strong_signals) >= 2,
+        "score": round(score, 4),
+        "signals": signals,
+        "strong_signals": strong_signals,
+    }
+
+
 def validar_rdo_duplicado(rdo):
-    """Identifica provável duplicidade sem excluir ou alterar nenhum RDO."""
+    """Identifica cópias prováveis comparando o conteúdo dos RDOs."""
     data = get_field(rdo, "data", "data_inicio")
     turno = lower(get_field(rdo, "turno"))
     os_obj = get_field(rdo, "ordem_servico", default=None)
-    if not data or not os_obj:
+    if not data or not turno or not os_obj:
         return []
 
     numero_os = get_field(os_obj, "numero_os", default=None)
@@ -429,36 +649,35 @@ def validar_rdo_duplicado(rdo):
     if not candidatos:
         return []
 
-    atual = _rdo_duplicate_snapshot(rdo)
     alertas = []
     for candidato in candidatos:
+        comparison = _rdo_duplicate_similarity(rdo, candidato)
+        if not comparison["is_duplicate"]:
+            continue
+
+        atual = _rdo_duplicate_snapshot(rdo)
         comparado = _rdo_duplicate_snapshot(candidato)
         if atual["score"] < comparado["score"]:
             suspeito, completo = rdo, candidato
-            dados_suspeito, dados_completo = atual, comparado
         elif comparado["score"] < atual["score"]:
             suspeito, completo = candidato, rdo
-            dados_suspeito, dados_completo = comparado, atual
         else:
             suspeito, completo = (
                 (rdo, candidato)
                 if (getattr(rdo, "id", 0) or 0) > (getattr(candidato, "id", 0) or 0)
                 else (candidato, rdo)
             )
-            dados_suspeito, dados_completo = (
-                (atual, comparado) if suspeito.pk == rdo.pk else (comparado, atual)
-            )
 
         ids = sorted([int(rdo.pk), int(candidato.pk)])
-        mesma_observacao = bool(
-            dados_suspeito["observacao"]
-            and dados_suspeito["observacao"] == dados_completo["observacao"]
-        )
+        anchor = rdo if int(rdo.pk) == ids[0] else candidato
+        dados_suspeito = atual if suspeito.pk == rdo.pk else comparado
         data_br = formatar_data_br(data)
         turno_label = text(get_field(rdo, "turno")) or "não informado"
-        evidencias = []
-        if mesma_observacao:
-            evidencias.append("os dois registros possuem a mesma observação")
+        evidencias = [
+            f"{label} {round(value * 100)}%"
+            for label, value in comparison["signals"].items()
+            if value >= 0.6
+        ]
         ausencias = []
         if dados_suspeito["atividades"] == 0:
             ausencias.append("atividades")
@@ -470,29 +689,29 @@ def validar_rdo_duplicado(rdo):
             ausencias.append("fotos")
         if dados_suspeito["pob"] <= 0:
             ausencias.append("POB")
-        if ausencias:
-            evidencias.append(
-                f"o RDO {get_field(suspeito, 'rdo', default=suspeito.pk)} está sem "
-                + ", ".join(ausencias)
-            )
-
         numero_suspeito = get_field(suspeito, "rdo", default=suspeito.pk)
         numero_completo = get_field(completo, "rdo", default=completo.pk)
         mensagem = (
-            f"Possível duplicidade: os RDOs {numero_suspeito} e {numero_completo} são da mesma OS, "
-            f"foram registrados em {data_br} e estão no turno {turno_label}."
+            f"Possível duplicidade confirmada por conteúdo: os RDOs {numero_suspeito} e {numero_completo} "
+            f"são da mesma OS, foram registrados em {data_br} e estão no turno {turno_label}. "
+            f"Similaridade analisada: {round(comparison['score'] * 100)}%."
         )
         if evidencias:
-            mensagem += " O Synchro destacou este caso porque " + "; e ".join(evidencias) + "."
+            mensagem += " Campos compatíveis: " + "; ".join(evidencias) + "."
+        if ausencias:
+            mensagem += (
+                f" O RDO {numero_suspeito} parece ser a cópia menos completa: "
+                + ", ".join(ausencias) + "."
+            )
         mensagem += (
             f" Compare os dois registros antes de decidir. Nenhum RDO foi excluído automaticamente."
         )
         alertas.append(
             criar_alerta(
-                suspeito,
+                anchor,
                 "RDO_DUPLICADO",
                 mensagem,
-                "alta" if mesma_observacao and len(ausencias) >= 2 else "media",
+                "alta" if comparison["score"] >= 0.92 and len(comparison["strong_signals"]) >= 3 else "media",
                 "coordenacao",
                 referencia=f"duplicidade_rdos_{ids[0]}_{ids[1]}",
             )

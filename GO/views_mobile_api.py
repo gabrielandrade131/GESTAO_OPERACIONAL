@@ -2531,6 +2531,7 @@ def mobile_rdo_supervisor_edit(request, rdo_id):
 
     request_for_view = _build_internal_post_request(request, payload)
     request_for_view.rdo_force_limited_edit = True
+    request_for_view.rdo_require_new_member_evaluation = True
     return update_rdo_ajax(request_for_view)
 
 
