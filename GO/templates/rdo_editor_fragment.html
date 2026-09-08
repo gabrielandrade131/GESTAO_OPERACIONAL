@@ -764,12 +764,12 @@
     <input type="hidden" name="equipe_avaliacoes_json" value="{{ r.equipe_avaliacoes_json|default:'[]'|escape }}" />
     {{ r.planejamento_rdo.membros|default:'[]'|json_script:"edit-planning-members-json" }}
     {% if r.equipe_source == 'planejamento' and r.equipe %}
-        <div class="rdo-planning-team-banner" data-tone="success">Equipe carregada automaticamente a partir do Planejamento.</div>
+        <div class="rdo-planning-team-banner" data-tone="success">Equipe vinculada ao Planejamento deste RDO.</div>
         <section class="rdo-planning-team-preview">
             <header class="rdo-planning-team-preview__head">
                 <div class="rdo-planning-team-preview__head-copy">
                     <h4>Equipe do Planejamento</h4>
-                    <p>Equipe vinculada automaticamente a este RDO.</p>
+                    <p>Colaboradores vinculados a este RDO. Para remover quem não atuou, clique no botão de remover.</p>
                 </div>
                 <button type="button" class="rdo-team-rate-batch-button">
                     <span class="material-icons" aria-hidden="true">grade</span>
@@ -786,12 +786,19 @@
                         data-team-member-name="{{ member.nome|default:'-'|escape }}"
                         data-team-member-role="{{ member.funcao|default:'-'|escape }}"
                     >
+                        <input type="hidden" name="equipe_nome[]" value="{{ member.nome|default:''|escape }}" />
+                        <input type="hidden" name="equipe_funcao[]" value="{{ member.funcao|default:''|escape }}" />
+                        <input type="hidden" name="equipe_pessoa_id[]" value="{{ member.pessoa_id|default:'' }}" />
+                        <input type="hidden" name="equipe_em_servico[]" value="1" />
                         <span class="rdo-planning-team-member__icon material-icons" aria-hidden="true">person</span>
                         <div class="rdo-planning-team-member__content">
                             <strong>{{ member.nome|default:'-' }}</strong>
                             <span>{{ member.funcao|default:'-' }}</span>
                         </div>
                         <div class="rdo-planning-team-member__actions">
+                            <button type="button" class="rdo-planning-team-member__remove" data-remove-planning-member="{{ member.pessoa_id|default:member.id }}" data-remove-planning-index="{{ forloop.counter0 }}" aria-label="Remover deste RDO" title="Remover este colaborador deste RDO">
+                                <span class="material-icons" aria-hidden="true" style="font-size:14px;vertical-align:middle;">close</span> Remover
+                            </button>
                             <div class="rdo-planning-team-member__meta">
                                 {% if member.avaliado %}
                                     <span class="rdo-team-rating-badge" data-rating="{{ member.avaliacao_nota|default:'' }}">
@@ -803,11 +810,12 @@
                     </article>
                 {% endfor %}
             </div>
-            <p class="rdo-planning-team-preview__hint">A equipe pode ser ajustada somente com colaboradores ativos do planejamento atual. Avalie qualquer novo colaborador antes de salvar.</p>
+            <p class="rdo-planning-team-preview__hint">Equipe vinculada à OS. Você pode remover colaboradores que não atuaram neste RDO.</p>
         </section>
     {% elif r.planejamento_rdo.tem_planejamento and not r.planejamento_rdo.tem_membros_ativos %}
         <div class="rdo-planning-team-banner" data-tone="warning">{{ r.planejamento_rdo.message|default:'Existe planejamento para esta OS, mas nao ha membros ativos planejados. Preencha a equipe manualmente.' }}</div>
     {% endif %}
+    {% if r.equipe_source != 'planejamento' %}
     <div class="team-wrapper compact-rows" id="edit-equipe-wrapper" aria-label="Equipe selecionada para este RDO">
         {# Se houver equipe no payload, renderizar cada membro como uma linha; senão, renderizar a linha vazia prototype #}
         {% if r.equipe %}
@@ -860,22 +868,11 @@
             </div>
         {% endif %}
         <div class="team-footer">
-            {% if r.equipe_source != 'planejamento' %}<button type="button" class="btn-rdo small" id="edit-btn-add-membro">Adicionar membro</button>{% endif %}
-            {% if r.equipe_source == 'planejamento' %}
-                <div class="planning-picker">
-                    <label class="planning-picker-label" for="edit-planning-member-select">Adicionar do planejamento</label>
-                    <div class="planning-picker__controls">
-                        <select id="edit-planning-member-select" class="planning-picker-select">
-                            <option value="">Selecione um colaborador planejado...</option>
-                        </select>
-                        <button type="button" class="btn-rdo small" id="edit-btn-add-planning-member">Adicionar selecionado</button>
-                    </div>
-                </div>
-            {% endif %}
+            <button type="button" class="btn-rdo small" id="edit-btn-add-membro">Adicionar membro</button>
             <button type="button" id="edit-btn-remove-membro" class="btn-rdo outline small">Remover último membro</button>
-            <span class="team-limit-hint">Em RDOs vindos do planejamento, somente a lista planejada pode ser usada.</span>
         </div>
     </div>
+    {% endif %}
     <div class="rdo-grid cols-3">
         <div class="form-field">
             <label>Fotos existentes</label>

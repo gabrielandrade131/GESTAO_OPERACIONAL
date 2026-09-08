@@ -507,19 +507,135 @@ class RdoPlanejamentoIntegrationTests(TestCase):
         self.assertEqual(member.pessoa_id, pessoa_b.pk)
         self.assertEqual(member.avaliacao_nota, RDOMembroEquipe.AVALIACAO_BOM)
 
-    def test_edicao_rdo_planejado_rejeita_membro_fora_da_lista(self):
+    def test_criacao_e_edicao_bloqueiam_novos_membros_fora_do_planejamento_ativo(self):
         os_obj = self._create_os(8211)
         planejamento = self._create_planejamento(os_obj)
         pessoa_a = Pessoa.objects.create(nome='MEMBRO PLANEJADO', funcao=self.funcao_a)
         pessoa_fora = Pessoa.objects.create(nome='MEMBRO FORA', funcao=self.funcao_b)
         self._add_planejamento_membro(planejamento, nome=pessoa_a.nome, funcao=self.funcao_a, pessoa=pessoa_a)
-        created = self.client.post(reverse('rdo_create_ajax'), data={'ordem_servico_id': str(os_obj.pk), 'data': '2026-06-10'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
-        rdo = RDO.objects.get(pk=created.json()['id'])
-        response = self.client.post(reverse('rdo_update_ajax'), data={
-            'rdo_id': str(rdo.pk), 'equipe_source': 'planejamento',
-            'equipe_nome[]': [pessoa_fora.nome], 'equipe_funcao[]': [self.funcao_b],
+
+        # 1. Criação com membro fora do planejamento deve falhar
+        created_invalid = self.client.post(reverse('rdo_create_ajax'), data={
+            'ordem_servico_id': str(os_obj.pk),
+            'data': '2026-06-10',
+            'equipe_nome[]': [pessoa_fora.nome],
+            'equipe_funcao[]': [self.funcao_b],
             'equipe_pessoa_id[]': [str(pessoa_fora.pk)],
-            'equipe_avaliacoes_json': json.dumps([{'index': 0, 'nota': 'BOM'}]),
         }, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('planejamento', response.json()['error'].lower())
+        self.assertEqual(created_invalid.status_code, 400)
+        self.assertIn('exclusivamente entre os colaboradores ativos', created_invalid.json().get('error', ''))
+
+        # 2. Criação com membro do planejamento tem sucesso
+        created = self.client.post(reverse('rdo_create_ajax'), data={'ordem_servico_id': str(os_obj.pk), 'data': '2026-06-10'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        self.assertEqual(created.status_code, 200)
+        rdo = RDO.objects.get(pk=created.json()['id'])
+
+        # 3. Edição tentando adicionar novo membro não planejado deve falhar
+        response_invalid = self.client.post(reverse('rdo_update_ajax'), data={
+            'rdo_id': str(rdo.pk),
+            'equipe_source': 'planejamento',
+            'equipe_nome[]': [pessoa_a.nome, pessoa_fora.nome],
+            'equipe_funcao[]': [self.funcao_a, self.funcao_b],
+            'equipe_pessoa_id[]': [str(pessoa_a.pk), str(pessoa_fora.pk)],
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        self.assertEqual(response_invalid.status_code, 400)
+        self.assertIn('exclusivamente entre os colaboradores ativos', response_invalid.json().get('error', ''))
+
+        # 4. Edição salvando membro original tem sucesso
+        response_valid = self.client.post(reverse('rdo_update_ajax'), data={
+            'rdo_id': str(rdo.pk),
+            'equipe_source': 'planejamento',
+            'equipe_nome[]': [pessoa_a.nome],
+            'equipe_funcao[]': [self.funcao_a],
+            'equipe_pessoa_id[]': [str(pessoa_a.pk)],
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True)
+        self.assertEqual(response_valid.status_code, 200)
+        rdo.refresh_from_db()
+        membros = list(rdo.membros_equipe.all())
+        self.assertEqual(len(membros), 1)
+        self.assertEqual(membros[0].pessoa_id, pessoa_a.pk)
+
+    def test_edicao_rdo_antigo_quando_planejamento_mudou_salva_com_sucesso(self):
+        os_obj = self._create_os(8212)
+        planejamento = self._create_planejamento(os_obj)
+        pessoa_a = Pessoa.objects.create(nome='MEMBRO INICIAL A', funcao=self.funcao_a)
+        pessoa_b = Pessoa.objects.create(nome='MEMBRO INICIAL B', funcao=self.funcao_b)
+        pessoa_c = Pessoa.objects.create(nome='MEMBRO SUBSTITUTO C', funcao=self.funcao_b)
+
+        membro_a = self._add_planejamento_membro(planejamento, nome=pessoa_a.nome, funcao=self.funcao_a, pessoa=pessoa_a)
+        membro_b = self._add_planejamento_membro(planejamento, nome=pessoa_b.nome, funcao=self.funcao_b, pessoa=pessoa_b)
+
+        # 1. RDO antigo é criado no dia 2026-06-10 com a equipe daquele dia (A e B)
+        created = self.client.post(
+            reverse('rdo_create_ajax'),
+            data={'ordem_servico_id': str(os_obj.pk), 'data': '2026-06-10'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True
+        )
+        self.assertEqual(created.status_code, 200)
+        rdo = RDO.objects.get(pk=created.json()['id'])
+        self.assertEqual(rdo.membros_equipe.count(), 2)
+
+        # 2. Dias depois, o planejamento da OS é alterado: membro B é substituído por C
+        membro_b.status = PlanejamentoEquipeMembro.STATUS_SUBSTITUIDO
+        membro_b.save()
+        self._add_planejamento_membro(
+            planejamento,
+            nome=pessoa_c.nome,
+            funcao=self.funcao_b,
+            pessoa=pessoa_c,
+            substitui=membro_b,
+        )
+
+        # 3. Usuário percebe erro e edita o RDO antigo (mantendo a equipe que realmente trabalhou: A e B)
+        response = self.client.post(
+            reverse('rdo_update_ajax'),
+            data={
+                'rdo_id': str(rdo.pk),
+                'data': '2026-06-10',
+                'observacoes_pt': 'Correção de observação no RDO antigo',
+                'equipe_nome[]': [pessoa_a.nome, pessoa_b.nome],
+                'equipe_funcao[]': [self.funcao_a, self.funcao_b],
+                'equipe_pessoa_id[]': [str(pessoa_a.pk), str(pessoa_b.pk)],
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True
+        )
+        self.assertEqual(response.status_code, 200)
+        rdo.refresh_from_db()
+        self.assertEqual(rdo.observacoes_rdo_pt, 'Correção de observação no RDO antigo')
+        membros = list(rdo.membros_equipe.order_by('ordem'))
+        self.assertEqual(len(membros), 2)
+        self.assertEqual([m.pessoa.nome for m in membros], [pessoa_a.nome, pessoa_b.nome])
+
+    def test_edicao_rdo_sem_planejamento_ativo_salva_com_sucesso(self):
+        os_obj = self._create_os(8213)
+        planejamento = self._create_planejamento(os_obj)
+        pessoa_a = Pessoa.objects.create(nome='MEMBRO UNICO', funcao=self.funcao_a)
+        membro = self._add_planejamento_membro(planejamento, nome=pessoa_a.nome, funcao=self.funcao_a, pessoa=pessoa_a)
+
+        created = self.client.post(
+            reverse('rdo_create_ajax'),
+            data={'ordem_servico_id': str(os_obj.pk), 'data': '2026-06-10'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True
+        )
+        self.assertEqual(created.status_code, 200)
+        rdo = RDO.objects.get(pk=created.json()['id'])
+
+        # Desativa todos os membros do planejamento
+        membro.status = PlanejamentoEquipeMembro.STATUS_CANCELADO
+        membro.save()
+
+        # Editar o RDO deve funcionar sem erro
+        response = self.client.post(
+            reverse('rdo_update_ajax'),
+            data={
+                'rdo_id': str(rdo.pk),
+                'observacoes_pt': 'Observação atualizada',
+                'equipe_nome[]': [pessoa_a.nome],
+                'equipe_funcao[]': [self.funcao_a],
+                'equipe_pessoa_id[]': [str(pessoa_a.pk)],
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest', HTTP_HOST='localhost', secure=True
+        )
+        self.assertEqual(response.status_code, 200)
+        rdo.refresh_from_db()
+        self.assertEqual(rdo.observacoes_rdo_pt, 'Observação atualizada')

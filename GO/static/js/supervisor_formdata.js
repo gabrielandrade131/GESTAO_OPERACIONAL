@@ -86,15 +86,16 @@
             var seen = new Set();
             var pobCount = 0;
             var rows = [];
+            rows = rows.concat(_qsa('.rdo-planning-team-list .rdo-planning-team-member', form));
             rows = rows.concat(_qsa('#edit-equipe-wrapper .team-row', form));
             rows = rows.concat(_qsa('#equipe-wrapper .team-row', form));
             rows.forEach(function(row){
                 var pidEl = row.querySelector('[name="equipe_pessoa_id[]"]') || row.querySelector('[name="equipe_pessoa_id"]');
                 var nomeEl = row.querySelector('input[name="equipe_nome[]"]') || row.querySelector('input[name="equipe_nome"]') || row.querySelector('select[name="equipe_nome[]"]') || row.querySelector('select[name="equipe_nome"]');
                 var funcEl = row.querySelector('input[name="equipe_funcao[]"]') || row.querySelector('input[name="equipe_funcao"]') || row.querySelector('select[name="equipe_funcao[]"]') || row.querySelector('select[name="equipe_funcao"]');
-                var pid = _val(pidEl);
-                var nom = _val(nomeEl);
-                var fun = _val(funcEl);
+                var pid = _val(pidEl) || String(row.getAttribute('data-team-member-pessoa-id') || '').trim();
+                var nom = _val(nomeEl) || String(row.getAttribute('data-team-member-name') || '').trim();
+                var fun = _val(funcEl) || String(row.getAttribute('data-team-member-role') || '').trim();
                 var srv = _val(row.querySelector('[name="equipe_em_servico[]"]')) || _val(row.querySelector('[name="equipe_em_servico"]'));
                 if (!srv) srv = 'true';
 
@@ -135,7 +136,7 @@
             if (!source || String(source.value || '').trim() !== 'planejamento') return;
             try { if (typeof fd.delete === 'function') fd.delete('planejamento_membros_rdo[]'); } catch(_){ }
             try { if (typeof fd.set === 'function') fd.set('planejamento_membros_rdo_definidos', '1'); else fd.append('planejamento_membros_rdo_definidos', '1'); } catch(_){ }
-            _qsa('#sup-planejamento-team-list .rdo-planning-team-member', form).forEach(function(card){
+            _qsa('.rdo-planning-team-list .rdo-planning-team-member', form).forEach(function(card){
                 var pid = String(card.getAttribute('data-team-member-pessoa-id') || '').trim();
                 if (pid) fd.append('planejamento_membros_rdo[]', pid);
             });

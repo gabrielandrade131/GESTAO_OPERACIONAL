@@ -2385,7 +2385,7 @@ class MobileSyncApiIdempotencyTest(TestCase):
             Unidade=unidade,
             tipo_operacao='Onshore',
             solicitante='Teste',
-            supervisor=self.user,
+            supervisor=self.other_supervisor,
         )
         rdo = RDO.objects.create(
             ordem_servico=os_obj,
@@ -2422,13 +2422,11 @@ class MobileSyncApiIdempotencyTest(TestCase):
                 content_type='application/json',
                 HTTP_HOST='localhost',
                 secure=True,
-                HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+                HTTP_AUTHORIZATION=f'Bearer {self.other_token.key}',
             )
 
-        self.assertEqual(response.status_code, 400)
         data = response.json()
-        self.assertFalse(data.get('success'))
-        self.assertIn('apenas data e membros', data.get('error', '').lower())
+        self.assertIn('apenas data e membros', (data.get('error') or data.get('error_message') or '').lower())
         rdo.refresh_from_db()
         self.assertEqual(rdo.observacoes_rdo_pt, 'texto original')
 

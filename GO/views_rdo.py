@@ -1031,49 +1031,16 @@ def _parse_rdo_team_evaluations(request):
 
 
 def _validate_planning_team_update(rdo_obj, team_rows, evaluations=None):
-    """Validate a team edit against the current active planning roster.
+    """Validate team evaluations and planning membership rules.
 
-    Planning-origin RDOs may be reconciled after the planning changes, but every
-    submitted member must still come from that planning. New collaborators must
-    carry an evaluation in the same save operation (the supervisor role is not
-    evaluated by the existing team-rating flow).
+    Rules:
+    1. Evaluations marked as RUIM or PESSIMO require a justification.
+    2. When creating an RDO or adding new collaborators:
+       If the OS has an active planning roster, members must belong to that planning.
+    3. When editing an existing RDO:
+       Collaborators who were already saved in the RDO prior to editing are always
+       permitted to be saved, even if the OS planning was subsequently modified or replaced.
     """
-    source = _normalize_rdo_team_source(getattr(rdo_obj, 'equipe_origem', None))
-    planning_id = getattr(rdo_obj, 'planejamento_equipe_origem_id', None)
-    if source != RDO.EQUIPE_ORIGEM_PLANEJAMENTO and not planning_id:
-        return None
-
-    planning_context = _get_planejamento_rdo_context(
-        getattr(rdo_obj, 'ordem_servico', None)
-    )
-    planning_obj = planning_context.get('_planejamento_obj')
-    if planning_obj is None:
-        return 'Este RDO veio de um planejamento, mas o planejamento atual não foi encontrado.'
-
-    def identity(pessoa_id=None, nome=None, funcao=None):
-        try:
-            pid = int(pessoa_id) if pessoa_id not in (None, '') else None
-        except Exception:
-            pid = None
-        name = str(nome or '').strip().casefold()
-        role = str(funcao or '').strip().casefold()
-        return ('id', pid, role) if pid is not None else ('name', name, role)
-
-    active_planning = {}
-    try:
-        members = planning_obj.membros.select_related('pessoa').filter(
-            status=PlanejamentoEquipeMembro.STATUS_ATIVO
-        ).order_by('ordem', 'id')
-        for member in members:
-            key = identity(
-                getattr(member, 'pessoa_id', None),
-                getattr(member, 'nome_snapshot', None),
-                getattr(member, 'funcao_planejada', None),
-            )
-            active_planning[key] = member
-    except Exception:
-        active_planning = {}
-
     evaluation_by_index = {}
     evaluation_by_pessoa_id = {}
     for item in evaluations or []:
@@ -1091,51 +1058,82 @@ def _validate_planning_team_update(rdo_obj, team_rows, evaluations=None):
             if pessoa_id is not None:
                 evaluation_by_pessoa_id[pessoa_id] = nota
 
-    existing = set()
-    try:
-        for member in rdo_obj.membros_equipe.select_related('pessoa').all():
-            existing.add(identity(
-                getattr(member, 'pessoa_id', None),
-                getattr(getattr(member, 'pessoa', None), 'nome', None) or getattr(member, 'nome', None),
-                getattr(member, 'funcao', None),
-            ))
-    except Exception:
-        pass
-
     for idx, row in enumerate(team_rows or []):
-        key = identity(row.get('pessoa_id'), row.get('nome'), row.get('funcao'))
-        if key not in active_planning:
-            return (
-                'A equipe deste RDO deve ser selecionada exclusivamente entre os '
-                'colaboradores ativos do planejamento atual.'
+        try:
+            row_pessoa_id = int(row.get('pessoa_id')) if row.get('pessoa_id') not in (None, '') else None
+        except Exception:
+            row_pessoa_id = None
+        evaluation_note = evaluation_by_pessoa_id.get(row_pessoa_id) or evaluation_by_index.get(idx)
+        if evaluation_note in (
+            RDOMembroEquipe.AVALIACAO_RUIM,
+            RDOMembroEquipe.AVALIACAO_PESSIMO,
+        ):
+            evaluation_item = next(
+                (item for item in (evaluations or []) if (
+                    (row_pessoa_id is not None and str(item.get('pessoa_id')) == str(row_pessoa_id))
+                    or str(item.get('index')) == str(idx)
+                )),
+                {},
             )
-        if key not in existing:
-            role = str(row.get('funcao') or '').strip().casefold()
-            try:
-                row_pessoa_id = int(row.get('pessoa_id')) if row.get('pessoa_id') not in (None, '') else None
-            except Exception:
-                row_pessoa_id = None
-            evaluation_note = evaluation_by_pessoa_id.get(row_pessoa_id) or evaluation_by_index.get(idx)
-            if 'supervisor' not in role and not evaluation_note:
+            if not str(evaluation_item.get('justificativa') or '').strip():
                 return (
-                    f"Avalie o novo colaborador '{row.get('nome') or 'selecionado'}' "
-                    'antes de salvar o RDO.'
+                    f"Informe a justificativa da avaliação para o membro '{row.get('nome') or 'selecionado'}'."
                 )
-            if 'supervisor' not in role and evaluation_note in (
-                RDOMembroEquipe.AVALIACAO_RUIM,
-                RDOMembroEquipe.AVALIACAO_PESSIMO,
-            ):
-                evaluation_item = next(
-                    (item for item in (evaluations or []) if (
-                        (row_pessoa_id is not None and str(item.get('pessoa_id')) == str(row_pessoa_id))
-                        or str(item.get('index')) == str(idx)
-                    )),
-                    {},
-                )
-                if not str(evaluation_item.get('justificativa') or '').strip():
-                    return (
-                        f"Informe a justificativa da avaliação para o novo membro '{row.get('nome') or 'selecionado'}'."
-                    )
+
+    if not team_rows:
+        return None
+
+    planning_context = _get_planejamento_rdo_context(getattr(rdo_obj, 'ordem_servico', None))
+    if not planning_context.get('tem_membros_ativos'):
+        return None
+
+    active_planning_identities = set()
+    active_planning_names = set()
+    for member in planning_context.get('membros', []):
+        ident = _rdo_team_member_identity(
+            pessoa_id=member.get('pessoa_id'),
+            nome=member.get('nome'),
+            funcao=member.get('funcao'),
+        )
+        if ident:
+            active_planning_identities.add(ident)
+        normalized_name = _normalize_rdo_member_text(member.get('nome'))
+        if normalized_name:
+            active_planning_names.add(normalized_name)
+
+    existing_identities = set()
+    existing_names = set()
+    if rdo_obj is not None and getattr(rdo_obj, 'pk', None) is not None:
+        for existing_member in _build_rdo_equipe_list(rdo_obj):
+            ident = _rdo_team_member_identity(
+                pessoa_id=existing_member.get('pessoa_id'),
+                nome=existing_member.get('nome'),
+                funcao=existing_member.get('funcao'),
+            )
+            if ident:
+                existing_identities.add(ident)
+            normalized_name = _normalize_rdo_member_text(existing_member.get('nome'))
+            if normalized_name:
+                existing_names.add(normalized_name)
+
+    for row in team_rows:
+        row_ident = _rdo_team_member_identity(
+            pessoa_id=row.get('pessoa_id'),
+            nome=row.get('nome'),
+            funcao=row.get('funcao'),
+        )
+        row_name = _normalize_rdo_member_text(row.get('nome'))
+
+        # Members already in this RDO prior to edit are always permitted
+        is_existing = (row_ident and row_ident in existing_identities) or (row_name and row_name in existing_names)
+        if is_existing:
+            continue
+
+        # New members (or new RDO) must belong to active planning
+        is_in_planning = (row_ident and row_ident in active_planning_identities) or (row_name and row_name in active_planning_names)
+        if not is_in_planning:
+            return 'A equipe deste RDO deve ser selecionada exclusivamente entre os colaboradores ativos do planejamento atual.'
+
     return None
 
 
@@ -9650,26 +9648,29 @@ def _apply_post_to_rdo(request, rdo_obj):
         requested_team_source = _normalize_rdo_team_source(request.POST.get('equipe_source'))
         current_team_source = _normalize_rdo_team_source(getattr(rdo_obj, 'equipe_origem', None))
         has_existing_team = _rdo_has_saved_team(rdo_obj)
-        effective_team_source = RDO.EQUIPE_ORIGEM_MANUAL
-        planning_obj = None
+        existing_planning_obj = getattr(rdo_obj, 'planejamento_equipe_origem', None)
+        planning_candidate = planning_context.get('_planejamento_obj') or existing_planning_obj
+        effective_team_source = current_team_source or RDO.EQUIPE_ORIGEM_MANUAL
+        planning_obj = existing_planning_obj if effective_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO else None
         team_rows = list(manual_team_rows or [])
 
         if team_rows:
-            if (
-                requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
-                and planning_context.get('_planejamento_obj') is not None
-            ):
+            if requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO:
                 effective_team_source = RDO.EQUIPE_ORIGEM_PLANEJAMENTO
-                planning_obj = planning_context.get('_planejamento_obj')
+                planning_obj = planning_candidate
+            elif not request.POST.get('equipe_source') and current_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO:
+                effective_team_source = RDO.EQUIPE_ORIGEM_PLANEJAMENTO
+                planning_obj = planning_candidate
             else:
                 effective_team_source = RDO.EQUIPE_ORIGEM_MANUAL
+                planning_obj = None
         elif planning_context.get('tem_membros_ativos') and (
             requested_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
             or current_team_source == RDO.EQUIPE_ORIGEM_PLANEJAMENTO
             or not has_existing_team
         ):
             effective_team_source = RDO.EQUIPE_ORIGEM_PLANEJAMENTO
-            planning_obj = planning_context.get('_planejamento_obj')
+            planning_obj = planning_candidate
             excluded_planning_members = request.POST.getlist('equipe_planejamento_excluidos[]') if hasattr(request.POST, 'getlist') else []
             planning_participants = request.POST.getlist('planejamento_membros_rdo[]') if hasattr(request.POST, 'getlist') else []
             planning_participants_defined = str(request.POST.get('planejamento_membros_rdo_definidos') or '').strip() == '1'
@@ -9679,6 +9680,8 @@ def _apply_post_to_rdo(request, rdo_obj):
                 participant_ids=planning_participants,
                 participants_defined=planning_participants_defined,
             )
+        elif not team_rows and has_existing_team:
+            team_rows = _build_rdo_equipe_list(rdo_obj)
 
         team_evaluations = _parse_rdo_team_evaluations(request)
 
@@ -10962,8 +10965,8 @@ def create_rdo_ajax(request):
                         logger.exception('Falha ao remover RDO reservado após falha em _apply_post_to_rdo')
                     
                     err_msg = 'Falha ao criar RDO.'
-                    if isinstance(payload, dict) and payload.get('exception'):
-                        err_msg = payload.get('exception')
+                    if isinstance(payload, dict):
+                        err_msg = payload.get('error') or payload.get('exception') or err_msg
                     return JsonResponse({'success': False, 'error': err_msg}, status=400)
 
                 try:
@@ -11259,7 +11262,7 @@ def _apply_supervisor_limited_update_to_rdo(request, rdo_obj):
             if disallowed_fields:
                 return False, {
                     'error': (
-                        'Este RDO só pode receber alterações; apenas data e membros podem ser alterados. '
+                        'Este RDO só pode receber alterações; apenas data e membros/equipe podem ser alterados. '
                         f'Campos bloqueados enviados: {", ".join(disallowed_fields)}.'
                     ),
                     'blocked_fields': disallowed_fields,

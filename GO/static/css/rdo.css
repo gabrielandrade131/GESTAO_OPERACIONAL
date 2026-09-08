@@ -155,9 +155,25 @@
     color:#334155;
 }
 .rdo-planning-team-controls select{ min-width:260px; flex:1; }
-.planning-picker-label{font-size:.78rem;font-weight:700;color:#334155;margin-left:4px}
-.planning-picker-select{min-width:260px;max-width:360px}
-.rdo-planning-team-member__remove{border:0;background:transparent;color:#b91c1c;font-size:.72rem;font-weight:700;cursor:pointer;padding:3px 0}
+.rdo-planning-team-member__remove{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #fecaca;
+    background: #fff5f5;
+    color: #dc2626;
+    font-size: .75rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all .15s ease;
+}
+.rdo-planning-team-member__remove:hover{
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+}
 
 /* Equipe: mesma estrutura nos modais normal e de supervisor. */
 .team-wrapper .team-row{

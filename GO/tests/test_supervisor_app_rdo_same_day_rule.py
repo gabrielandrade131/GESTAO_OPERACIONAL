@@ -416,6 +416,7 @@ class SupervisorAppRdoSameDayRuleTests(TestCase):
             'equipe_funcao[]': ['Ajudante'],
             'equipe_pessoa_id[]': [str(self.pessoa_2.id)],
             'equipe_em_servico[]': ['true'],
+            'equipe_avaliacoes_json': json.dumps([{'index': 0, 'pessoa_id': self.pessoa_2.id, 'nota': 'BOM'}]),
         }
         with self._freeze_now(self._aware(2026, 6, 12, 0, 1)):
             response = self.token_client.post(

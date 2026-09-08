@@ -697,13 +697,17 @@
       var safeIndex = _escapePlanningHtml((item && item.ordem != null) ? item.ordem : index);
       return [
         '<article class="rdo-planning-team-member" data-team-member-id="', memberId, '" data-team-member-pessoa-id="', pessoaId, '" data-team-member-index="', safeIndex, '" data-team-member-name="', nome, '" data-team-member-role="', funcao, '">',
+          '<input type="hidden" name="equipe_nome[]" value="', nome, '" />',
+          '<input type="hidden" name="equipe_funcao[]" value="', funcao, '" />',
+          '<input type="hidden" name="equipe_pessoa_id[]" value="', pessoaId, '" />',
+          '<input type="hidden" name="equipe_em_servico[]" value="1" />',
           '<span class="rdo-planning-team-member__icon material-icons" aria-hidden="true">person</span>',
           '<div class="rdo-planning-team-member__content">',
             '<strong>', nome, '</strong>',
             '<span>', funcao, '</span>',
           '</div>',
           '<div class="rdo-planning-team-member__actions">',
-            '<button type="button" class="rdo-planning-team-member__remove" data-remove-planning-member="' + (pessoaId || memberId) + '" data-remove-planning-index="' + safeIndex + '" aria-label="Remover deste RDO">Remover deste RDO</button>',
+            '<button type="button" class="rdo-planning-team-member__remove" data-remove-planning-member="' + (pessoaId || memberId) + '" data-remove-planning-index="' + safeIndex + '" aria-label="Remover deste RDO" title="Remover este colaborador deste RDO"><span class="material-icons" aria-hidden="true" style="font-size:14px;vertical-align:middle;">close</span> Remover</button>',
             '<div class="rdo-planning-team-member__meta">',
               (ratingLabel ? '<span class="rdo-team-rating-badge" data-rating="' + ratingCode + '">' + ratingLabel + '</span>' : ''),
             '</div>',
@@ -1309,38 +1313,22 @@
       if (!form) return;
       var roster = Array.isArray(plannedMembers) ? plannedMembers : [];
       window.__rdo_planning_members = roster;
-      var allowedIds = {};
-      var allowedNames = {};
       var roleById = {};
       roster.forEach(function(member){
         var pid = String(member && (member.pessoa_id || member.pessoaId) || '').trim();
-        var name = String(member && (member.nome || member.name) || '').trim();
-        if (pid) { allowedIds[pid] = true; roleById[pid] = String(member.funcao || member.role || '').trim(); }
-        if (name) allowedNames[name.toLowerCase()] = true;
+        if (pid) { roleById[pid] = String(member.funcao || member.role || '').trim(); }
       });
       Array.prototype.forEach.call(form.querySelectorAll('select[name="equipe_nome[]"]'), function(select){
         Array.prototype.forEach.call(select.options, function(option){
-          if (!option.value) return;
-          var id = String(option.getAttribute('data-id') || '').trim();
-          var name = String(option.value || '').trim().toLowerCase();
-          option.hidden = !(allowedIds[id] || allowedNames[name]);
-          option.disabled = option.hidden;
+          option.hidden = false;
+          option.disabled = false;
         });
-        var id = String(select.options[select.selectedIndex] && select.options[select.selectedIndex].getAttribute('data-id') || '').trim();
-        var role = roleById[id];
-        if (role) {
-          var roleSelect = select.closest('.team-row') && select.closest('.team-row').querySelector('select[name="equipe_funcao[]"]');
-          if (roleSelect) {
-            var found = false;
-            Array.prototype.forEach.call(roleSelect.options, function(option){
-              var match = String(option.value || '').trim().toLowerCase() === role.toLowerCase();
-              option.hidden = !(!option.value || match);
-              option.disabled = option.hidden;
-              if (match) { roleSelect.value = option.value; found = true; }
-            });
-            if (!found) roleSelect.value = role;
-          }
-        }
+      });
+      Array.prototype.forEach.call(form.querySelectorAll('select[name="equipe_funcao[]"]'), function(select){
+        Array.prototype.forEach.call(select.options, function(option){
+          option.hidden = false;
+          option.disabled = false;
+        });
       });
       var picker = document.getElementById('edit-planning-member-select');
       if (picker) {
@@ -1368,10 +1356,6 @@
           picker.appendChild(option);
         });
         picker.disabled = picker.options.length <= 1;
-      }
-      if (pessoaId && String(item.pessoa_id || '').trim() === pessoaId) {
-        if (!replaced) { replaced = true; return false; }
-        return false;
       }
     } catch(_){ }
   }
@@ -1416,7 +1400,7 @@
       if (rs) rs.value = opt.getAttribute('data-role') || '';
       wrap.insertBefore(clone, wrap.querySelector('.team-footer'));
       _configurePlanningEditorRoster(window.__rdo_planning_members || []); _syncPlanningEditorPreviewFromRows(form); syncPobAllForms();
-      picker.value = ''; showToast('Colaborador adicionado. Avalie-o antes de salvar.', 'success');
+      picker.value = ''; showToast('Colaborador adicionado.', 'success');
     } catch(_){ }
   }
 
@@ -1438,35 +1422,6 @@
   }
 
   function _validatePlanningEditorNewMembers(form){
-    try {
-      if (!form || String((form.querySelector('input[name="equipe_source"]') || {}).value || '').trim() !== 'planejamento') return true;
-      var roster = Array.isArray(window.__rdo_planning_members) ? window.__rdo_planning_members : [];
-      var existing = window.__rdo_planning_existing_keys || {};
-      var evaluations = _readRdoTeamEvaluations(form);
-      var evalByIndex = {};
-      var evalByPessoaId = {};
-      evaluations.forEach(function(item){
-        if (!item || !item.nota) return;
-        if (item.index != null) evalByIndex[String(item.index)] = item.nota;
-        if (item.pessoa_id != null && String(item.pessoa_id).trim()) evalByPessoaId[String(item.pessoa_id)] = item.nota;
-      });
-      var rows = form.querySelectorAll('.team-row');
-      for (var i = 0; i < rows.length; i++) {
-        var nameSelect = rows[i].querySelector('select[name="equipe_nome[]"]');
-        var roleSelect = rows[i].querySelector('select[name="equipe_funcao[]"]');
-        var name = String(nameSelect && nameSelect.value || '').trim();
-        var pid = String(nameSelect && nameSelect.options[nameSelect.selectedIndex] && nameSelect.options[nameSelect.selectedIndex].getAttribute('data-id') || '').trim();
-        var role = String(roleSelect && roleSelect.value || '').trim();
-        if (!name && !pid && !role) continue;
-        var key = (pid ? 'id:' + pid : 'name:' + name.toLowerCase()) + '|role:' + role.toLowerCase();
-        if (!existing[key] && role.toLowerCase().indexOf('supervisor') === -1 && !evalByPessoaId[pid] && !evalByIndex[String(i)]) {
-          var rateButton = form.querySelector('.rdo-team-rate-batch-button');
-          if (rateButton) rateButton.click();
-          showToast('Avalie o novo colaborador antes de salvar o RDO.', 'error');
-          return false;
-        }
-      }
-    } catch(_){ }
     return true;
   }
 
@@ -1490,17 +1445,25 @@
     }, true);
     document.addEventListener('click', function(ev){
       var btn = ev && ev.target && ev.target.closest ? ev.target.closest('[data-remove-planning-member]') : null;
-      if (!btn || !document.getElementById('form-supervisor')) return;
+      if (!btn) return;
+      var form = btn.closest('form') || document.getElementById('form-supervisor') || document.getElementById('form-editor');
+      if (!form) return;
       ev.preventDefault();
-      var form = document.getElementById('form-supervisor');
       var id = String(btn.getAttribute('data-remove-planning-member') || '').trim();
       var idx = String(btn.getAttribute('data-remove-planning-index') || '').trim();
       var removed = window.__rdo_planning_excluded || (window.__rdo_planning_excluded = {});
       removed[(id ? 'id:' + id : 'index:' + idx)] = true;
-      var card = btn.closest('.rdo-planning-team-member'); if (card) card.remove();
+      var card = btn.closest('.rdo-planning-team-member');
+      if (card) card.remove();
       var hidden = document.createElement('input');
-      hidden.type = 'hidden'; hidden.name = 'equipe_planejamento_excluidos[]'; hidden.value = id || ('index:' + idx); form.appendChild(hidden);
-      var pob = form.querySelector('[name="pob"]'); if (pob) pob.value = String(form.querySelectorAll('.rdo-planning-team-member').length);
+      hidden.type = 'hidden';
+      hidden.name = 'equipe_planejamento_excluidos[]';
+      hidden.value = id || ('index:' + idx);
+      form.appendChild(hidden);
+      var remainingCards = form.querySelectorAll('.rdo-planning-team-member');
+      var pob = form.querySelector('[name="pob"]');
+      if (pob) pob.value = String(remainingCards.length);
+      try { syncPobAllForms(); } catch(_){ }
     }, true);
     document.addEventListener('change', function(ev){
       var target = ev && ev.target;
@@ -3934,9 +3897,15 @@
   function syncPobWithEquipe(form){
     try {
       if (!form) return 0;
-      var wrap = null;
-      try { wrap = form.querySelector('#edit-equipe-wrapper, #equipe-wrapper'); } catch(_){ wrap = null; }
-      var total = countTeamMembers(wrap);
+      var total = 0;
+      var planningCards = form.querySelectorAll('.rdo-planning-team-list .rdo-planning-team-member');
+      if (planningCards && planningCards.length > 0) {
+        total = planningCards.length;
+      } else {
+        var wrap = null;
+        try { wrap = form.querySelector('#edit-equipe-wrapper, #equipe-wrapper'); } catch(_){ wrap = null; }
+        total = countTeamMembers(wrap);
+      }
       var pobField = _ensurePobField(form, true);
       if (pobField) {
         try { pobField.value = String(total); } catch(_){ }
@@ -4142,10 +4111,31 @@
           });
         });
 
-        var equipeWrappers = [];
-        try { var ew1 = form.querySelector('#equipe-wrapper'); if (ew1) equipeWrappers.push(ew1); } catch(_){ }
-        try { var ew2 = form.querySelector('#edit-equipe-wrapper'); if (ew2) equipeWrappers.push(ew2); } catch(_){ }
         var seenEq = new Set();
+        try {
+          var planningCards = form.querySelectorAll('.rdo-planning-team-list .rdo-planning-team-member');
+          Array.prototype.forEach.call(planningCards, function(card){
+            try {
+              var nome = String(card.getAttribute('data-team-member-name') || '').trim();
+              var func = String(card.getAttribute('data-team-member-role') || '').trim();
+              var pid = String(card.getAttribute('data-team-member-pessoa-id') || '').trim();
+              var ems = '1';
+              if ((nome !== '') || (func !== '') || (pid !== '')) {
+                var k2 = [pid, nome, func, ems].join('|');
+                if (seenEq.has(k2)) return;
+                seenEq.add(k2);
+                fd.append('equipe_nome[]', nome);
+                fd.append('equipe_funcao[]', func);
+                fd.append('equipe_em_servico[]', ems);
+                fd.append('equipe_pessoa_id[]', pid);
+              }
+            } catch(_){ }
+          });
+        } catch(_){ }
+
+        var equipeWrappers = [];
+        try { var ew1 = form.querySelector('#equipe-wrapper'); if (ew1 && !ew1.hidden) equipeWrappers.push(ew1); } catch(_){ }
+        try { var ew2 = form.querySelector('#edit-equipe-wrapper'); if (ew2 && !ew2.hidden) equipeWrappers.push(ew2); } catch(_){ }
         equipeWrappers.forEach(function(equipeWrapper){
           var memRows = equipeWrapper.querySelectorAll('.team-row');
           Array.prototype.forEach.call(memRows, function(row){

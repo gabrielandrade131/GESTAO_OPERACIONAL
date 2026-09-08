@@ -174,7 +174,7 @@ class RdoSupervisorLimitedUpdateTests(TestCase):
         self.assertEqual(rdo.turno, 'Noturno')
         self.assertEqual(rdo.contrato_po, 'PO-ALTERADO')
         self.assertEqual(rdo.observacoes_rdo_pt, 'observacao alterada')
-        agendar_analise_mock.assert_called_once_with(rdo)
+        agendar_analise_mock.assert_called_once_with(rdo, corrigido_por=None)
 
     def test_supervisor_old_rdo_rejects_blocked_field_changes(self):
         os_obj = self._create_os()
