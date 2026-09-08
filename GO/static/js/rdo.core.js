@@ -5856,37 +5856,29 @@
         };
 
         try {
-          var irHandoverChk = document.getElementById('sup-ir-handover');
-          var isRetornoSim = false;
-          try {
-            var radioSim = document.querySelector('input[name="sup-retorno-inline-choice"][value="sim"]');
-            if (radioSim && radioSim.checked) isRetornoSim = true;
-          } catch(_){}
-          if ((irHandoverChk && irHandoverChk.checked) || isRetornoSim) {
-            _showHandoverConfirm(
-              "Preencher Handover",
-              "Gostaria de preencher o handover?",
-              function() {
-                var osIdToRedirect = '';
+          _showHandoverConfirm(
+            "Preencher Handover",
+            "Gostaria de preencher o handover?",
+            function() {
+              var osIdToRedirect = '';
+              try {
+                osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
+              } catch(e){}
+              if (!osIdToRedirect) {
                 try {
-                  osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
+                  var osInput = form.querySelector('[name="ordem_servico_id"]');
+                  if (osInput) osIdToRedirect = osInput.value;
                 } catch(e){}
-                if (!osIdToRedirect) {
-                  try {
-                    var osInput = form.querySelector('[name="ordem_servico_id"]');
-                    if (osInput) osIdToRedirect = osInput.value;
-                  } catch(e){}
-                }
-                setTimeout(function(){
-                  window.location.href = '/handover/novo/' + (osIdToRedirect ? '?os_id=' + encodeURIComponent(osIdToRedirect) : '');
-                }, 500);
-              },
-              function() {
-                finalizeAndReload();
               }
-            );
-            return;
-          }
+              setTimeout(function(){
+                window.location.href = '/handover/novo/' + (osIdToRedirect ? '?os_id=' + encodeURIComponent(osIdToRedirect) : '');
+              }, 500);
+            },
+            function() {
+              finalizeAndReload();
+            }
+          );
+          return;
         } catch(e){
           console.error('Redirect to handover failed', e);
         }
