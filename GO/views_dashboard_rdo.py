@@ -3810,21 +3810,21 @@ def report_diario_data(request):
             efetivo_min = rdo.total_atividades_efetivas_min
             nao_efetivo_min = rdo.total_atividades_nao_efetivas_fora_min
             pt_min = rdo.total_abertura_pt_min
-            crew_count = 0
+            operadores_confinados = 0
             try:
                 tanks = list(tank_qs.filter(rdo=rdo))
                 tank_operadores = _sum_numeric_from_rows(tanks, ('operadores_simultaneos',))
                 if tank_operadores is not None:
-                    crew_count = int(round(tank_operadores))
+                    operadores_confinados = max(0, int(round(tank_operadores)))
                 else:
-                    crew_count = int(round(float(getattr(rdo, 'operadores_simultaneos', 0) or 0)))
+                    operadores_confinados = max(0, int(round(float(getattr(rdo, 'operadores_simultaneos', 0) or 0))))
             except Exception:
                 try:
-                    crew_count = int(round(float(getattr(rdo, 'operadores_simultaneos', 0) or 0)))
+                    operadores_confinados = max(0, int(round(float(getattr(rdo, 'operadores_simultaneos', 0) or 0))))
                 except Exception:
-                    crew_count = 0
-            if crew_count <= 0:
-                crew_count = 1
+                    operadores_confinados = 0
+
+            crew_count = operadores_confinados if operadores_confinados > 0 else 1
 
             # EC efetivo = tempo confinado (excluindo não efetivo confinado)
             n_eff_conf = 0
@@ -3870,8 +3870,11 @@ def report_diario_data(request):
 
             # Equipe
             membros = rdo.membros_equipe.all()
-            equipe_operacional.append(max(0, membros.count() - crew_count))
-            equipe_confinado.append(crew_count)
+            total_membros = membros.count()
+            if total_membros == 0:
+                total_membros = int(getattr(rdo, 'pob', 0) or getattr(getattr(rdo, 'ordem_servico', None), 'pob', 0) or 0)
+            equipe_operacional.append(max(0, total_membros - operadores_confinados))
+            equipe_confinado.append(operadores_confinados)
 
         hh_breakdown = {
             'labels': hh_dia_labels,
@@ -4629,6 +4632,16 @@ def report_diario_data(request):
             total_mecanizada_pct = total_mecanizada
             total_fina_pct = total_fina
             total_avanco_pct = round(total_avanco / float(total_compartimentos), 2) if total_compartimentos else 0
+
+            # Os cards de produção do tanque selecionado precisam usar a mesma
+            # fonte acumulada do quadro por compartimentos. Os campos
+            # ``*_cumulativa`` são mantidos para compatibilidade e para a Curva
+            # S, mas podem conter um histórico legado/inconsistente que não
+            # corresponde aos lançamentos por compartimento.
+            if effective_tank_filter and snapshot and snapshot.get('rows'):
+                producao['raspagem'] = round(total_mecanizada_pct, 1)
+                producao['limpeza_fina'] = round(total_fina_pct, 1)
+
             tanque_3d = {
                 'available': total_compartimentos > 0 and not (not bool(effective_tank_filter) and len(tanques_disponiveis) > 1),
                 'requires_specific_tank': not bool(effective_tank_filter) and len(tanques_disponiveis) > 1,

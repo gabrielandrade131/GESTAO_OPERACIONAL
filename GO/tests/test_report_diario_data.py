@@ -196,6 +196,60 @@ class ReportDiarioDataTests(TestCase):
         self.assertEqual(payload['tanque_3d']['sentido_inicio'], 'Vante')
         self.assertEqual(payload['tanque_3d']['sentido_fim'], 'Ré')
 
+    def test_report_diario_data_cards_use_cumulative_compartments_not_stale_summary_fields(self):
+        rdo_prev = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo='RDO-CARDS-COMP-1',
+            data=date(2026, 3, 12),
+        )
+        rdo_curr = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo='RDO-CARDS-COMP-2',
+            data=date(2026, 3, 13),
+        )
+        RdoTanque.objects.create(
+            rdo=rdo_prev,
+            tanque_codigo='TQ-CARDS-COMP',
+            numero_compartimentos=2,
+            compartimentos_avanco_json=json.dumps({
+                '1': {'mecanizada': 20, 'fina': 10},
+                '2': {'mecanizada': 80, 'fina': 0},
+            }, ensure_ascii=False),
+        )
+        tank_curr = RdoTanque.objects.create(
+            rdo=rdo_curr,
+            tanque_codigo='TQ-CARDS-COMP',
+            numero_compartimentos=2,
+            compartimentos_avanco_json=json.dumps({
+                '1': {'mecanizada': 30, 'fina': 10},
+                '2': {'mecanizada': 10, 'fina': 50},
+            }, ensure_ascii=False),
+        )
+        # Simula um acumulado legado incorreto: não pode prevalecer sobre os
+        # compartimentos (50/90 de mecanizada e 20/50 de fina).
+        RdoTanque.objects.filter(pk=tank_curr.pk).update(
+            limpeza_mecanizada_cumulativa=Decimal('100.00'),
+            percentual_limpeza_cumulativo=Decimal('100.00'),
+            limpeza_fina_cumulativa=Decimal('100.00'),
+            percentual_limpeza_fina_cumulativo=Decimal('100.00'),
+        )
+
+        response = report_diario_data(self.factory.get('/api/report-diario/data/', {
+            'os_id': self.os_obj.id,
+            'tanque': 'TQ-CARDS-COMP',
+        }))
+
+        self.assertEqual(response.status_code, 200)
+        payload = self._parse_response(response)
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['compartimentos_avanco_cumulado']['1']['mecanizada'], 50.0)
+        self.assertEqual(payload['compartimentos_avanco_cumulado']['2']['mecanizada'], 90.0)
+        self.assertEqual(payload['compartimentos_avanco_cumulado']['1']['fina'], 20.0)
+        self.assertEqual(payload['compartimentos_avanco_cumulado']['2']['fina'], 50.0)
+        self.assertEqual(payload['producao']['raspagem'], 70.0)
+        self.assertEqual(payload['producao']['limpeza_fina'], 35.0)
+        self.assertEqual(payload['tanque_3d']['total_percent'], 64.75)
+
     def test_report_diario_data_requires_specific_tank_for_3d_chart(self):
         rdo_curr = RDO.objects.create(
             ordem_servico=self.os_obj,
@@ -1286,7 +1340,8 @@ class ReportDiarioDataTests(TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(payload['tanques_disponiveis'], ['TQ-FALLBACK'])
         self.assertEqual(payload['info_os']['tanque'], 'TQ-FALLBACK')
-        self.assertEqual(payload['producao']['raspagem'], 42.0)
+        # O card é a média dos seis compartimentos: apenas o primeiro tem 42%.
+        self.assertEqual(payload['producao']['raspagem'], 7.0)
         self.assertEqual(payload['curva_s']['raspagem_acumulada'], [42.0])
         self.assertEqual(payload['producao']['ensacamento'], 0.0)
         self.assertEqual(payload['curva_s']['ensacamento_acumulado'], [0.0])
@@ -1833,3 +1888,37 @@ class ReportDiarioDataTests(TestCase):
         self.assertEqual(payload['hh_breakdown']['labels'], ['21/03'])
         self.assertEqual(payload['hh_breakdown']['equipe_operacional'], [4])
         self.assertEqual(payload['hh_breakdown']['equipe_confinado'], [2])
+
+    def test_report_diario_data_equipe_confinado_zero_quando_sem_operadores_simultaneos(self):
+        rdo = RDO.objects.create(
+            ordem_servico=self.os_obj,
+            rdo='RDO-EQUIPE-ZERO-CONF',
+            data=date(2026, 3, 22),
+            operadores_simultaneos=None,
+            confinado=False,
+        )
+        RdoTanque.objects.create(
+            rdo=rdo,
+            tanque_codigo='TQ-ZERO-CONF',
+            numero_compartimentos=2,
+            operadores_simultaneos=None,
+            espaco_confinado='nao',
+        )
+        funcao = Funcao.objects.create(nome='Operador Extra')
+        for idx in range(5):
+            pessoa = Pessoa.objects.create(nome=f'Pessoa Zero {idx}', funcao=funcao)
+            RDOMembroEquipe.objects.create(rdo=rdo, nome=pessoa.nome, funcao=funcao.nome)
+
+        request = self.factory.get('/api/report-diario/data/', {
+            'os_id': self.os_obj.id,
+            'tanque': 'TQ-ZERO-CONF',
+        })
+        response = report_diario_data(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = self._parse_response(response)
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['hh_breakdown']['labels'], ['22/03'])
+        self.assertEqual(payload['hh_breakdown']['equipe_operacional'], [5])
+        self.assertEqual(payload['hh_breakdown']['equipe_confinado'], [0])
+
