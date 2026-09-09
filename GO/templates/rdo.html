@@ -2098,6 +2098,70 @@
                 </form>
             </div>
         </div>
+        <style>
+            .handover-rdo-modal { max-width: 760px; max-height: calc(100dvh - 32px); }
+            .handover-rdo-modal #handover-rdo-form { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+            .handover-rdo-modal__subtitle { margin: 4px 0 0; color: #667085; font-size: .9rem; }
+            .handover-rdo-modal__body { display: grid; flex: 1 1 auto; gap: 16px; min-height: 0; overflow-y: auto; padding-bottom: 28px; }
+            .handover-rdo-modal .supv-modal__footer { flex: 0 0 auto; position: relative; }
+            .handover-rdo-modal__items { border-top: 1px solid #e5e7eb; padding-top: 16px; }
+            .handover-rdo-modal__items h3 { margin: 0 0 12px; font-size: 1rem; }
+            .handover-rdo-modal__items-grid { display: grid; gap: 8px; }
+            .handover-rdo-modal__item { display: grid; grid-template-columns: minmax(150px, 1fr) 88px minmax(170px, 1.2fr); gap: 8px; align-items: center; }
+            .handover-rdo-modal__item > span { font-size: .9rem; color: #344054; }
+            .handover-rdo-modal__error { margin: 0; color: #b42318; font-size: .9rem; }
+            @media (max-width: 640px) { .handover-rdo-modal__item { grid-template-columns: 1fr 80px; } .handover-rdo-modal__item > input:last-child { grid-column: 1 / -1; } }
+        </style>
+        <div class="modal-overlay" id="handover-rdo-modal" aria-hidden="true" hidden>
+            <div class="modal supv-modal handover-rdo-modal" role="dialog" aria-modal="true" aria-labelledby="handover-rdo-title">
+                <div class="supv-modal__header">
+                    <div>
+                        <h2 id="handover-rdo-title">Preencher Handover</h2>
+                        <p id="handover-rdo-os-label" class="handover-rdo-modal__subtitle">Passagem de serviço</p>
+                    </div>
+                    <button type="button" class="supv-modal__close" data-handover-close aria-label="Fechar"><span class="material-icons" aria-hidden="true">close</span></button>
+                </div>
+                <form id="handover-rdo-form" method="post" novalidate>
+                    {% csrf_token %}
+                    <input type="hidden" name="ordem_servico_id" id="handover-rdo-os-id">
+                    <div class="supv-modal__body handover-rdo-modal__body">
+                        <div class="form-field">
+                            <label for="handover-rdo-periodo">Período / Data *</label>
+                            <input id="handover-rdo-periodo" name="periodo_data" class="form-control" required placeholder="Ex.: 09/09/2026">
+                        </div>
+                        <div class="form-field">
+                            <label for="handover-rdo-concluido">Serviço concluído no período</label>
+                            <textarea id="handover-rdo-concluido" name="servico_concluido" class="form-control" rows="3" placeholder="Descreva os serviços concluídos..."></textarea>
+                        </div>
+                        <div class="form-field">
+                            <label for="handover-rdo-andamento">Serviço em andamento</label>
+                            <textarea id="handover-rdo-andamento" name="servico_em_andamento" class="form-control" rows="3" placeholder="Descreva pendências e próximos passos..."></textarea>
+                        </div>
+                        <div class="form-field">
+                            <label for="handover-rdo-orientacoes">Orientações ao próximo supervisor</label>
+                            <textarea id="handover-rdo-orientacoes" name="orientacoes_observacoes" class="form-control" rows="3" placeholder="Recomendações, avisos e pontos de atenção..."></textarea>
+                        </div>
+                        <section class="handover-rdo-modal__items" aria-labelledby="handover-rdo-items-title">
+                            <h3 id="handover-rdo-items-title">Itens / equipamentos a bordo</h3>
+                            <div class="handover-rdo-modal__items-grid">
+                                {% for item in handover_items %}
+                                <div class="handover-rdo-modal__item">
+                                    <span>{{ item.descricao }}</span>
+                                    <input name="qty_{{ item.item }}" class="form-control" inputmode="numeric" placeholder="Qtd">
+                                    <input name="comment_{{ item.item }}" class="form-control" placeholder="Comentário">
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </section>
+                        <p id="handover-rdo-error" class="handover-rdo-modal__error" hidden></p>
+                    </div>
+                    <div class="supv-modal__footer">
+                        <button type="button" class="btn-rdo outline" data-handover-close>Cancelar</button>
+                        <button type="submit" class="btn-rdo primary">Salvar passagem de serviço</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </main>
 
     <script src="{% static 'js/notifications.js' %}?v=20260727a"></script>
@@ -2125,7 +2189,7 @@
     </script>
     <script src="/static/vendor/rdo-pdf/html2canvas.min.js?v=1.4.1"></script>
     <script src="/static/vendor/rdo-pdf/jspdf.umd.min.js?v=2.5.1"></script>
-    <script src="{% static 'js/rdo.core.js' %}?v=20260831d"></script>
+    <script src="{% static 'js/rdo.core.js' %}?v=20260909e"></script>
     <script src="{% static 'js/rdo_approval.js' %}?v=20260805a"></script>
     {% if not is_supervisor %}
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>

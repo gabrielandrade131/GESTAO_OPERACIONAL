@@ -8086,22 +8086,25 @@ def _apply_post_to_rdo(request, rdo_obj):
                 embarked_qs = _resolve_ordem_servico_embarcado_equipamentos(ordem_atual)
                 embarked_ids = set(embarked_qs.values_list('id', flat=True))
                 if not embarked_ids:
-                    raise ValueError(
-                        'Não há equipamentos embarcados disponíveis para previsão de retorno nesta OS. Marque "Não" para finalizar o RDO.',
-                    )
-                if not retorno_equipamentos_ids:
+                    # A interface oculta a pergunta quando não existem equipamentos
+                    # embarcados. Se uma página em cache enviar um "Sim" residual,
+                    # normalize para "Não" em vez de bloquear o RDO.
+                    retorno_equipamentos_value = False
+                    retorno_equipamentos_ids = []
+                elif not retorno_equipamentos_ids:
                     raise ValueError(
                         'Selecione pelo menos 1 equipamento embarcado para confirmar a previsão de retorno.',
                     )
-                invalid_ids = [
-                    equipamento_id
-                    for equipamento_id in retorno_equipamentos_ids
-                    if equipamento_id not in embarked_ids
-                ]
-                if invalid_ids:
-                    raise ValueError(
-                        'Um ou mais equipamentos informados não pertencem à OS atual ou não estão com situação "Embarcado".',
-                    )
+                if retorno_equipamentos_value is True:
+                    invalid_ids = [
+                        equipamento_id
+                        for equipamento_id in retorno_equipamentos_ids
+                        if equipamento_id not in embarked_ids
+                    ]
+                    if invalid_ids:
+                        raise ValueError(
+                            'Um ou mais equipamentos informados não pertencem à OS atual ou não estão com situação "Embarcado".',
+                        )
             elif retorno_equipamentos_value is False:
                 retorno_equipamentos_ids = []
 
@@ -14800,6 +14803,14 @@ def rdo(request):
         'get_funcoes': get_funcoes,
         'pessoas_map_json': pessoas_map_json,
         'show_mobile_app_notice': show_mobile_app_notice,
+        'handover_items': [
+            {'item': index, 'descricao': descricao}
+            for index, descricao in enumerate([
+                'Container', 'Caixa', 'Skid', 'Detector de gás', 'Rádios',
+                'Luminárias (kit com 3)', 'EPRD', 'Ventilador', 'Kit de resgate',
+                'Máquina de hidrojato', 'Desincrustador de convés',
+            ], 1)
+        ],
     }
     context.update(mobile_release_context)
     return render(request, 'rdo.html', context)
