@@ -105,6 +105,8 @@ urlpatterns = [
     path('handover/novo/', views_handover.handover_criar, name='handover_criar'),
     path('handover/<int:pk>/editar/', views_handover.handover_editar, name='handover_editar'),
     path('handover/<int:pk>/pdf/', views_handover.handover_pdf, name='handover_pdf'),
+    path('api/handover/ultimo/', views_handover.handover_ultimo_api, name='api_handover_ultimo'),
+    path('api/handover/criar/', views_handover.handover_criar_api, name='api_handover_criar'),
 
     path('relatorio_diario_operacao/', views_rdo.rdo, name='relatorio_diario_operacao'),
     path('rdo/', views_rdo.rdo, name='rdo'),

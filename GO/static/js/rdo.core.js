@@ -153,6 +153,93 @@
     });
   }
 
+  function openRdoHandoverModal(osId, osNumero){
+    var overlay = document.getElementById('handover-rdo-modal');
+    var form = document.getElementById('handover-rdo-form');
+    if (!overlay || !form) {
+      showToast('Não foi possível abrir o formulário de handover.', 'error');
+      return;
+    }
+    try { form.reset(); } catch(_){ }
+    try { document.getElementById('handover-rdo-os-id').value = String(osId || ''); } catch(_){ }
+    try {
+      var osLabel = osNumero || osId;
+      document.getElementById('handover-rdo-os-label').textContent = osLabel ? 'Passagem de serviço da OS ' + String(osLabel) : 'Passagem de serviço';
+    } catch(_){ }
+    try { document.getElementById('handover-rdo-periodo').value = new Date().toLocaleDateString('pt-BR'); } catch(_){ }
+    try { var error = document.getElementById('handover-rdo-error'); error.hidden = true; error.textContent = ''; } catch(_){ }
+    overlay.hidden = false;
+    overlay.setAttribute('aria-hidden', 'false');
+    try { document.body.classList.add('modal-open'); } catch(_){ }
+    setTimeout(function(){ try { document.getElementById('handover-rdo-periodo').focus(); } catch(_){ } }, 0);
+    _prefillRdoHandoverFromLatest(form);
+  }
+
+  async function _prefillRdoHandoverFromLatest(form){
+    try {
+      var response = await fetch('/api/handover/ultimo/', { credentials: 'same-origin' });
+      var data = await response.json();
+      var handover = data && data.success === true ? data.handover : null;
+      if (!handover || !form || !document.getElementById('handover-rdo-modal')) return;
+
+      var fields = {
+        periodo_data: 'handover-rdo-periodo',
+        servico_concluido: 'handover-rdo-concluido',
+        servico_em_andamento: 'handover-rdo-andamento',
+        orientacoes_observacoes: 'handover-rdo-orientacoes'
+      };
+      Object.keys(fields).forEach(function(name){
+        var input = document.getElementById(fields[name]);
+        if (input) input.value = handover[name] || '';
+      });
+      (Array.isArray(handover.itens_equipamentos) ? handover.itens_equipamentos : []).forEach(function(item){
+        var index = Number(item && item.item);
+        if (!index) return;
+        var quantity = form.querySelector('[name="qty_' + index + '"]');
+        var comment = form.querySelector('[name="comment_' + index + '"]');
+        if (quantity) quantity.value = (item && item.quantidade) || '';
+        if (comment) comment.value = (item && item.comentario) || '';
+      });
+    } catch(_){
+      // O preenchimento é opcional; mantenha o novo handover disponível mesmo sem histórico.
+    }
+  }
+
+  function closeRdoHandoverModal(){
+    var overlay = document.getElementById('handover-rdo-modal');
+    if (!overlay) return;
+    overlay.hidden = true;
+    overlay.setAttribute('aria-hidden', 'true');
+    try { document.body.classList.remove('modal-open'); } catch(_){ }
+  }
+
+  onReady(function(){
+    var overlay = document.getElementById('handover-rdo-modal');
+    var form = document.getElementById('handover-rdo-form');
+    if (!overlay || !form) return;
+    qsa('[data-handover-close]', overlay).forEach(function(button){ button.addEventListener('click', closeRdoHandoverModal); });
+    overlay.addEventListener('click', function(ev){ if (ev.target === overlay) closeRdoHandoverModal(); });
+    form.addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      var error = document.getElementById('handover-rdo-error');
+      var submit = form.querySelector('button[type="submit"]');
+      if (!form.reportValidity()) return;
+      try {
+        if (submit) submit.disabled = true;
+        var response = await fetch('/api/handover/criar/', {
+          method: 'POST', body: new FormData(form), credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getCSRF(form) || _getCookie('csrftoken') || '' }
+        });
+        var data = null; try { data = await response.json(); } catch(_){ }
+        if (!response.ok || !data || data.success !== true) throw new Error((data && data.error) || 'Não foi possível salvar a passagem de serviço.');
+        closeRdoHandoverModal();
+        showToast(data.message || 'Passagem de serviço criada com sucesso.', 'success');
+      } catch(err) {
+        if (error) { error.textContent = (err && err.message) || 'Não foi possível salvar a passagem de serviço.'; error.hidden = false; }
+      } finally { if (submit) submit.disabled = false; }
+    });
+  });
+
   var RDO_EDIT_ACCESS_MESSAGE = 'Seu usuario nao possui permissao para abrir ou editar RDO.';
   var RDO_READ_ONLY_MESSAGE = 'Modo somente leitura: voce pode consultar todos os dados, mas nao pode altera-los.';
 
@@ -3190,6 +3277,7 @@
     var data = await _fetchSupervisorRetornoEquipamentos(osId);
     var items = Array.isArray(data && data.items) ? data.items : [];
     try { form.__retornoEquipamentosItems = items.slice(); } catch(_){ }
+    try { form.__retornoEquipamentosLoaded = true; } catch(_){ }
     if (!items.length) {
       _resetSupervisorRetornoEquipamentosState(form);
       _clearSupervisorRetornoInlineState();
@@ -3247,6 +3335,31 @@
     return true;
   }
 
+<<<<<<< HEAD
+=======
+  // Quando a OS não possui equipamentos embarcados, a pergunta de retorno fica
+  // oculta. Nesse cenário, nunca permita que um "Sim" residual de outra
+  // abertura do modal seja enviado pelo campo oculto do formulário.
+  function _normalizeSupervisorRetornoEquipamentosPayload(payload, form){
+    try {
+      if (!payload || typeof payload.delete !== 'function' || typeof payload.append !== 'function') return;
+      var items = Array.isArray(form && form.__retornoEquipamentosItems)
+        ? form.__retornoEquipamentosItems
+        : [];
+      if (!form || form.__retornoEquipamentosLoaded !== true) return;
+      if (items.length) return;
+      payload.delete('retorno_equipamentos');
+      payload.delete('desembarque_equipamentos');
+      payload.delete('retorno_equipamentos_ids[]');
+      payload.delete('retorno_equipamentos_ids');
+      payload.delete('equipamentos_retorno_ids[]');
+      payload.delete('equipamentos_retorno_ids');
+      payload.append('retorno_equipamentos', 'false');
+    } catch(_){ }
+  }
+
+
+>>>>>>> 11028d438043a8da90a5c057ca3986d3e2cb6437
   function _bindSupervisorRetornoInline(){
     var form = document.getElementById('form-supervisor');
     var refs = _getSupervisorRetornoInlineRefs();
@@ -5876,6 +5989,7 @@
     }
   } catch(e) { console.warn('RDO: normalization failed', e); }
     _appendPlanningParticipantsToPayload(payload, form);
+    _normalizeSupervisorRetornoEquipamentosPayload(payload, form);
     if (isEdit) payload.append('rdo_id', hid.value);
     var tankFieldNames = SUPERVISOR_TANK_FIELD_NAMES;
     function _collectTankValues(scope, payloadLike){
@@ -6203,8 +6317,10 @@
             "Gostaria de preencher o handover?",
             function() {
               var osIdToRedirect = '';
+              var osNumeroToDisplay = '';
               try {
                 osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
+                osNumeroToDisplay = dataCr.rdo ? (dataCr.rdo.numero_os || dataCr.rdo.os_numero) : '';
               } catch(e){}
               if (!osIdToRedirect) {
                 try {
@@ -6212,9 +6328,7 @@
                   if (osInput) osIdToRedirect = osInput.value;
                 } catch(e){}
               }
-              setTimeout(function(){
-                window.location.href = '/handover/novo/' + (osIdToRedirect ? '?os_id=' + encodeURIComponent(osIdToRedirect) : '');
-              }, 500);
+              setTimeout(function(){ openRdoHandoverModal(osIdToRedirect, osNumeroToDisplay); }, 250);
             },
             function() {
               finalizeAndReload();
@@ -7822,7 +7936,10 @@
       _resetSupervisorRetornoEquipamentosState(retornoForm);
       _clearSupervisorRetornoInlineState();
       _bindSupervisorRetornoInline();
-      if (retornoForm) retornoForm.__retornoEquipamentosItems = [];
+      if (retornoForm) {
+        retornoForm.__retornoEquipamentosItems = [];
+        retornoForm.__retornoEquipamentosLoaded = false;
+      }
     } catch(_){ }
     if (!isEditContext) {
       context = _stripSupervisorTankContext(context);

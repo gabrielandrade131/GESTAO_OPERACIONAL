@@ -33,3 +33,29 @@ class HandoverViewsTest(TestCase):
         )
         self.assertRedirects(response, '/handover/')
         self.assertEqual(SupervisorHandover.objects.count(), 2)
+
+    def test_latest_api_returns_only_the_authenticated_supervisors_handover(self):
+        other_user = get_user_model().objects.create_user(
+            username='outro-supervisor',
+            password='test-password',
+        )
+        SupervisorHandover.objects.create(
+            periodo_data='23/08/2026',
+            supervisor_atual=other_user,
+            servico_concluido='Não deve aparecer',
+        )
+        SupervisorHandover.objects.create(
+            periodo_data='24/08/2026',
+            supervisor_atual=self.user,
+            servico_concluido='Último handover do supervisor atual',
+            itens_equipamentos=[
+                {'item': 1, 'descricao': 'Container', 'quantidade': '2', 'comentario': 'Convés'},
+            ],
+        )
+
+        response = self.client.get('/api/handover/ultimo/')
+
+        self.assertEqual(response.status_code, 200)
+        handover = response.json().get('handover')
+        self.assertEqual(handover.get('servico_concluido'), 'Último handover do supervisor atual')
+        self.assertEqual(handover.get('itens_equipamentos')[0]['quantidade'], '2')
