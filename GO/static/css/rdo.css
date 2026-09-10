@@ -2552,6 +2552,7 @@ body {
 }
 
 .rdo-filters[aria-hidden="true"] {
+    display: none !important;
     opacity: 0;
     transform: translateY(-8px) scale(.99);
     pointer-events: none;
@@ -3994,7 +3995,7 @@ body:has(.modal-overlay[aria-hidden="false"]) {
 }
 
 .rdo-filters[aria-hidden="false"] {
-    display: grid !important;
+    display: block !important;
     opacity: 1;
     pointer-events: auto;
 }

@@ -3335,8 +3335,6 @@
     return true;
   }
 
-<<<<<<< HEAD
-=======
   // Quando a OS não possui equipamentos embarcados, a pergunta de retorno fica
   // oculta. Nesse cenário, nunca permita que um "Sim" residual de outra
   // abertura do modal seja enviado pelo campo oculto do formulário.
@@ -3357,9 +3355,6 @@
       payload.append('retorno_equipamentos', 'false');
     } catch(_){ }
   }
-
-
->>>>>>> 11028d438043a8da90a5c057ca3986d3e2cb6437
   function _bindSupervisorRetornoInline(){
     var form = document.getElementById('form-supervisor');
     var refs = _getSupervisorRetornoInlineRefs();
@@ -11344,7 +11339,8 @@
         }
       }
 
-      if (filtersBtn && filtersPanel) {
+      if (filtersBtn && filtersPanel && !filtersBtn.dataset.filterToggleBound) {
+        filtersBtn.dataset.filterToggleBound = '1';
         filtersBtn.addEventListener('click', function(ev){ ev.preventDefault(); toggleFilters(); });
       }
       var clearBtn = document.getElementById('btn_clear_filters');
