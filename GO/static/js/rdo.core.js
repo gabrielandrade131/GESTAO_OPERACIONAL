@@ -31,67 +31,125 @@
 
     var backdrop = document.createElement('div');
     backdrop.id = 'handover-confirm-modal';
-    backdrop.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(16, 24, 40, 0.45); z-index: 200000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);';
+    backdrop.className = 'handover-modal-backdrop';
 
     var container = document.createElement('div');
-    container.style.cssText = 'background: #ffffff; border-radius: 16px; box-shadow: 0 24px 48px rgba(20, 31, 50, 0.18); border: 1px solid #e7eaf0; width: 92%; max-width: 420px; padding: 24px; display: flex; flex-direction: column; gap: 16px; transform: scale(0.92); opacity: 0; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;';
+    container.className = 'handover-modal-card';
+    container.setAttribute('role', 'dialog');
+    container.setAttribute('aria-modal', 'true');
+    container.setAttribute('aria-labelledby', 'handover-modal-title');
+
+    var ambientGlow = document.createElement('div');
+    ambientGlow.className = 'handover-modal-ambient-glow';
+    container.appendChild(ambientGlow);
+
+    var btnClose = document.createElement('button');
+    btnClose.type = 'button';
+    btnClose.className = 'handover-modal-close';
+    btnClose.setAttribute('aria-label', 'Fechar');
+    btnClose.innerHTML = '<span class="material-icons">close</span>';
+    container.appendChild(btnClose);
+
+    var iconWrap = document.createElement('div');
+    iconWrap.className = 'handover-modal-icon-wrap';
+    var iconRing = document.createElement('div');
+    iconRing.className = 'handover-modal-icon-ring';
+    var iconBox = document.createElement('div');
+    iconBox.className = 'handover-modal-icon-box';
+    iconBox.innerHTML = '<span class="material-icons">swap_horiz</span>';
+    iconWrap.appendChild(iconRing);
+    iconWrap.appendChild(iconBox);
+    container.appendChild(iconWrap);
+
+    var contentWrap = document.createElement('div');
+    contentWrap.className = 'handover-modal-content';
 
     var header = document.createElement('h3');
-    header.style.cssText = 'margin: 0; font-family: inherit; font-size: 18px; font-weight: 750; color: #172033;';
-    header.textContent = title;
+    header.id = 'handover-modal-title';
+    header.className = 'handover-modal-title';
+    header.textContent = title || 'Passagem de Serviço (Handover)';
 
     var body = document.createElement('p');
-    body.style.cssText = 'margin: 0; font-family: inherit; font-size: 14px; color: #667085; line-height: 1.5;';
-    body.textContent = message;
+    body.className = 'handover-modal-desc';
+    body.textContent = message || 'RDO registrado com sucesso! Deseja preencher a passagem de serviço para o próximo turno agora?';
+
+    contentWrap.appendChild(header);
+    contentWrap.appendChild(body);
+    container.appendChild(contentWrap);
+
+    var featureWrap = document.createElement('div');
+    featureWrap.className = 'handover-modal-features';
+    featureWrap.innerHTML = '<div class="handover-feature-item"><span class="material-icons">sync</span><span>Vinculado automaticamente aos dados da OS</span></div><div class="handover-feature-item"><span class="material-icons">schedule</span><span>Agiliza a passagem de turno e pendências</span></div>';
+    container.appendChild(featureWrap);
 
     var footer = document.createElement('div');
-    footer.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end; margin-top: 8px;';
+    footer.className = 'handover-modal-footer';
 
     var btnCancel = document.createElement('button');
     btnCancel.type = 'button';
-    btnCancel.className = 'btn-rdo outline';
-    btnCancel.style.cssText = 'min-width: 90px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; cursor: pointer; transition: all 0.15s ease;';
-    btnCancel.textContent = 'Não';
+    btnCancel.className = 'handover-btn handover-btn--cancel';
+    btnCancel.textContent = 'Agora não';
 
     var btnConfirm = document.createElement('button');
     btnConfirm.type = 'button';
-    btnConfirm.className = 'btn-rdo primary';
-    btnConfirm.style.cssText = 'min-width: 90px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; cursor: pointer; transition: all 0.15s ease;';
-    btnConfirm.textContent = 'Sim';
+    btnConfirm.className = 'handover-btn handover-btn--confirm';
+    btnConfirm.innerHTML = '<span>Preencher Handover</span><span class="material-icons">arrow_forward</span>';
 
     footer.appendChild(btnCancel);
     footer.appendChild(btnConfirm);
-    container.appendChild(header);
-    container.appendChild(body);
     container.appendChild(footer);
+
     backdrop.appendChild(container);
     document.body.appendChild(backdrop);
 
     requestAnimationFrame(function() {
-      backdrop.style.opacity = '1';
-      container.style.opacity = '1';
-      container.style.transform = 'scale(1)';
+      backdrop.classList.add('is-active');
+      container.classList.add('is-active');
+      try { btnConfirm.focus(); } catch(_){ }
     });
 
-    function closeConfirmModal() {
-      backdrop.style.opacity = '0';
-      container.style.opacity = '0';
-      container.style.transform = 'scale(0.92)';
+    var isClosing = false;
+    function closeConfirmModal(callback) {
+      if (isClosing) return;
+      isClosing = true;
+      backdrop.classList.remove('is-active');
+      container.classList.remove('is-active');
+      document.removeEventListener('keydown', handleKeyDown);
       setTimeout(function() {
         if (backdrop.parentNode) {
           backdrop.parentNode.removeChild(backdrop);
         }
-      }, 250);
+        if (typeof callback === 'function') callback();
+      }, 240);
     }
 
+    function handleKeyDown(ev) {
+      if (ev.key === 'Escape' || ev.keyCode === 27) {
+        ev.preventDefault();
+        closeConfirmModal(onCancel);
+      } else if (ev.key === 'Enter' && (ev.target === btnConfirm || ev.target === container || ev.target === backdrop)) {
+        ev.preventDefault();
+        closeConfirmModal(onConfirm);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+
+    backdrop.addEventListener('click', function(e) {
+      if (e.target === backdrop) {
+        closeConfirmModal(onCancel);
+      }
+    });
+
+    btnClose.addEventListener('click', function() {
+      closeConfirmModal(onCancel);
+    });
+
     btnCancel.addEventListener('click', function() {
-      closeConfirmModal();
-      if (typeof onCancel === 'function') onCancel();
+      closeConfirmModal(onCancel);
     });
 
     btnConfirm.addEventListener('click', function() {
-      closeConfirmModal();
-      if (typeof onConfirm === 'function') onConfirm();
+      closeConfirmModal(onConfirm);
     });
   }
 
@@ -2910,7 +2968,8 @@
     var refs = _getSupervisorRetornoInlineRefs();
     if (!refs.error) return;
     try {
-      refs.error.textContent = message ? String(message) : '';
+      var textEl = refs.error.querySelector('.sup-retorno-inline__error-text') || refs.error;
+      textEl.textContent = message ? String(message) : '';
       refs.error.hidden = !message;
     } catch(_){ }
   }
@@ -2929,7 +2988,11 @@
     try { if (refs.summary) refs.summary.textContent = 'Nenhum equipamento selecionado.'; } catch(_){ }
     try { if (refs.list) refs.list.innerHTML = ''; } catch(_){ }
     Array.prototype.forEach.call(refs.radios || [], function(radio){
-      try { radio.checked = false; } catch(_){ }
+      try {
+        radio.checked = false;
+        var choiceCard = radio.closest('.sup-retorno-choice');
+        if (choiceCard) choiceCard.classList.remove('is-selected');
+      } catch(_){ }
     });
     _setSupervisorRetornoInlineError('');
   }
@@ -2937,11 +3000,17 @@
   function _updateSupervisorRetornoInlineSummary(form){
     var refs = _getSupervisorRetornoInlineRefs();
     var state = _getSupervisorRetornoEquipamentosState(form);
+    var total = (form && form.__retornoEquipamentosItems && form.__retornoEquipamentosItems.length) || 0;
     try {
       if (refs.summary) {
-        refs.summary.textContent = state.answer === true
-          ? ((state.selectedIds || []).length ? String(state.selectedIds.length) + ' equipamento(s) selecionado(s).' : 'Nenhum equipamento selecionado.')
-          : 'Nenhum equipamento selecionado.';
+        var count = (state.selectedIds || []).length;
+        if (state.answer === true) {
+          refs.summary.textContent = count > 0
+            ? count + (total ? ' de ' + total : '') + ' equipamento(s) selecionado(s)'
+            : 'Nenhum equipamento selecionado';
+        } else {
+          refs.summary.textContent = 'Nenhum equipamento selecionado';
+        }
       }
     } catch(_){ }
   }
@@ -2957,42 +3026,75 @@
       if (isFinite(parsed) && parsed > 0) selectedMap[parsed] = true;
     });
     try { refs.list.innerHTML = ''; } catch(_){ }
+
+    var searchWrap = document.getElementById('sup-retorno-search-wrap');
+    if (searchWrap) {
+      searchWrap.style.display = list.length >= 4 ? 'flex' : 'none';
+      var searchInput = document.getElementById('sup-retorno-search-input');
+      if (searchInput) searchInput.value = '';
+    }
+
     list.forEach(function(item){
       var id = parseInt(String((item && item.id) || '').trim(), 10);
       if (!isFinite(id) || id <= 0) return;
       var row = document.createElement('label');
-      row.className = 'sup-retorno-equip-item';
-      if (selectedMap[id]) row.classList.add('is-selected');
+      row.className = 'sup-retorno-equip-item' + (selectedMap[id] ? ' is-selected' : '');
       row.setAttribute('data-retorno-inline-item', String(id));
+      row.setAttribute('data-retorno-search-text', [
+        item.tipo_equipamento || '',
+        item.modelo || '',
+        item.numero_serie || '',
+        item.tag || ''
+      ].join(' ').toLowerCase());
+
       var head = document.createElement('div');
       head.className = 'sup-retorno-equip-item__head';
+
       var checkbox = document.createElement('input');
       checkbox.className = 'sup-retorno-equip-item__check';
       checkbox.type = 'checkbox';
       checkbox.value = String(id);
       checkbox.checked = !!selectedMap[id];
       checkbox.setAttribute('data-retorno-inline-id', String(id));
+
+      var customCheck = document.createElement('div');
+      customCheck.className = 'sup-retorno-equip-item__check-box';
+      var checkIcon = document.createElement('span');
+      checkIcon.className = 'material-icons sup-retorno-equip-item__check-icon';
+      checkIcon.textContent = 'check';
+      customCheck.appendChild(checkIcon);
+
       var body = document.createElement('div');
+      body.className = 'sup-retorno-equip-item__body';
+
       var title = document.createElement('p');
       title.className = 'sup-retorno-equip-item__title';
-      title.textContent = String(item.tipo_equipamento || '-');
+      title.textContent = String(item.tipo_equipamento || 'Equipamento');
+
       var meta = document.createElement('div');
       meta.className = 'sup-retorno-equip-item__meta';
-      [
-        ['Modelo', item.modelo || '-'],
-        ['Número de Série', item.numero_serie || '-'],
-        ['TAG', item.tag || '-']
-      ].forEach(function(pair){
-        var line = document.createElement('span');
-        var strong = document.createElement('strong');
-        strong.textContent = pair[0] + ': ';
-        line.appendChild(strong);
-        line.appendChild(document.createTextNode(String(pair[1])));
-        meta.appendChild(line);
+      
+      var pairs = [
+        ['TAG', item.tag],
+        ['Série', item.numero_serie],
+        ['Modelo', item.modelo]
+      ];
+      pairs.forEach(function(pair){
+        if (pair[1] && String(pair[1]).trim() && String(pair[1]).trim() !== '-') {
+          var chip = document.createElement('span');
+          chip.className = 'sup-retorno-equip-chip';
+          var strong = document.createElement('strong');
+          strong.textContent = pair[0] + ': ';
+          chip.appendChild(strong);
+          chip.appendChild(document.createTextNode(String(pair[1])));
+          meta.appendChild(chip);
+        }
       });
+
       body.appendChild(title);
       body.appendChild(meta);
       head.appendChild(checkbox);
+      head.appendChild(customCheck);
       head.appendChild(body);
       row.appendChild(head);
       refs.list.appendChild(row);
@@ -3029,8 +3131,13 @@
     } catch(_){ }
     Array.prototype.forEach.call(refs.radios || [], function(radio){
       try {
-        radio.checked = (state.answer === true && radio.value === 'sim')
+        var isChecked = (state.answer === true && radio.value === 'sim')
           || (state.answer === false && radio.value === 'nao');
+        radio.checked = isChecked;
+        var choiceCard = radio.closest('.sup-retorno-choice');
+        if (choiceCard) {
+          choiceCard.classList.toggle('is-selected', isChecked);
+        }
       } catch(_){ }
     });
     try { if (refs.actions) refs.actions.hidden = state.answer !== true; } catch(_){ }
@@ -3040,71 +3147,6 @@
     }
     _updateSupervisorRetornoInlineSummary(form);
     _setSupervisorRetornoInlineError('');
-  }
-
-  function _updateSupervisorRetornoInlineSummary(form){
-    var refs = _getSupervisorRetornoInlineRefs();
-    var state = _getSupervisorRetornoEquipamentosState(form);
-    try {
-      if (refs.summary) {
-        refs.summary.textContent = state.answer === true
-          ? ((state.selectedIds || []).length ? String(state.selectedIds.length) + ' equipamento(s) selecionado(s).' : 'Nenhum equipamento selecionado.')
-          : 'Nenhum equipamento selecionado.';
-      }
-    } catch(_){ }
-  }
-
-  function _renderSupervisorRetornoInlineEquipamentos(form, items){
-    var refs = _getSupervisorRetornoInlineRefs();
-    if (!refs.list) return;
-    var list = Array.isArray(items) ? items : [];
-    var state = _getSupervisorRetornoEquipamentosState(form);
-    var selectedMap = Object.create(null);
-    (state.selectedIds || []).forEach(function(id){
-      var parsed = parseInt(String(id || '').trim(), 10);
-      if (isFinite(parsed) && parsed > 0) selectedMap[parsed] = true;
-    });
-    try { refs.list.innerHTML = ''; } catch(_){ }
-    list.forEach(function(item){
-      var id = parseInt(String((item && item.id) || '').trim(), 10);
-      if (!isFinite(id) || id <= 0) return;
-      var row = document.createElement('label');
-      row.className = 'sup-retorno-equip-item';
-      if (selectedMap[id]) row.classList.add('is-selected');
-      row.setAttribute('data-retorno-inline-item', String(id));
-      var head = document.createElement('div');
-      head.className = 'sup-retorno-equip-item__head';
-      var checkbox = document.createElement('input');
-      checkbox.className = 'sup-retorno-equip-item__check';
-      checkbox.type = 'checkbox';
-      checkbox.value = String(id);
-      checkbox.checked = !!selectedMap[id];
-      checkbox.setAttribute('data-retorno-inline-id', String(id));
-      var body = document.createElement('div');
-      var title = document.createElement('p');
-      title.className = 'sup-retorno-equip-item__title';
-      title.textContent = String(item.tipo_equipamento || '-');
-      var meta = document.createElement('div');
-      meta.className = 'sup-retorno-equip-item__meta';
-      [
-        ['Modelo', item.modelo || '-'],
-        ['Número de Série', item.numero_serie || '-'],
-        ['TAG', item.tag || '-']
-      ].forEach(function(pair){
-        var line = document.createElement('span');
-        var strong = document.createElement('strong');
-        strong.textContent = pair[0] + ': ';
-        line.appendChild(strong);
-        line.appendChild(document.createTextNode(String(pair[1])));
-        meta.appendChild(line);
-      });
-      body.appendChild(title);
-      body.appendChild(meta);
-      head.appendChild(checkbox);
-      head.appendChild(body);
-      row.appendChild(head);
-      refs.list.appendChild(row);
-    });
   }
 
   function _hydrateSupervisorRetornoEquipamentosState(snapshot){
@@ -3172,9 +3214,6 @@
       refs.root.dataset.required === 'true' &&
       items.length > 0
     );
-    // A pergunta so existe quando a OS possui equipamentos vinculados. Antes,
-    // o estado vazio de uma secao oculta bloqueava o envio e focava um radio
-    // invisivel, fazendo o botao parecer completamente inerte.
     if (!isRequired) {
       _setSupervisorRetornoInlineError('');
       return true;
@@ -3202,13 +3241,11 @@
     }
     if (!currentState.selectedIds || !currentState.selectedIds.length) {
       _setSupervisorRetornoInlineError('Selecione pelo menos 1 equipamento com previsão de retorno.');
-      try { if (refs.selectBtn) refs.selectBtn.focus(); } catch(_){ }
       return false;
     }
     _setSupervisorRetornoInlineError('');
     return true;
   }
-
 
   function _bindSupervisorRetornoInline(){
     var form = document.getElementById('form-supervisor');
@@ -3252,6 +3289,42 @@
         });
       }
     } catch(_){ }
+
+    var selectAllBtn = document.getElementById('sup-retorno-select-all');
+    if (selectAllBtn && !selectAllBtn.dataset.bound) {
+      selectAllBtn.dataset.bound = 'true';
+      selectAllBtn.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var items = form.__retornoEquipamentosItems || [];
+        var allIds = items.map(function(it){ return it.id; }).filter(Boolean);
+        _setSupervisorRetornoEquipamentosState(form, true, allIds);
+        _renderSupervisorRetornoInlineState(form, items);
+      });
+    }
+
+    var deselectAllBtn = document.getElementById('sup-retorno-deselect-all');
+    if (deselectAllBtn && !deselectAllBtn.dataset.bound) {
+      deselectAllBtn.dataset.bound = 'true';
+      deselectAllBtn.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var items = form.__retornoEquipamentosItems || [];
+        _setSupervisorRetornoEquipamentosState(form, true, []);
+        _renderSupervisorRetornoInlineState(form, items);
+      });
+    }
+
+    var searchInput = document.getElementById('sup-retorno-search-input');
+    if (searchInput && !searchInput.dataset.bound) {
+      searchInput.dataset.bound = 'true';
+      searchInput.addEventListener('input', function(){
+        var term = String(searchInput.value || '').trim().toLowerCase();
+        var itemEls = refs.list ? refs.list.querySelectorAll('[data-retorno-search-text]') : [];
+        Array.prototype.forEach.call(itemEls, function(el){
+          var text = el.getAttribute('data-retorno-search-text') || '';
+          el.style.display = (!term || text.indexOf(term) !== -1) ? '' : 'none';
+        });
+      });
+    }
 
     try { refs.root.dataset.bound = 'true'; } catch(_){ }
   }

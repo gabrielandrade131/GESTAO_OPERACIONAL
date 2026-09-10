@@ -1554,27 +1554,67 @@
                                 </div>
                                 <section class="sup-retorno-inline" id="sup-retorno-inline" hidden aria-live="polite">
                                     <div class="sup-retorno-inline__head">
-                                        <div>
-                                            <h3 class="sup-retorno-inline__title">Retorno de equipamentos</h3>
-                                            <p class="sup-retorno-inline__hint" id="sup-retorno-inline-hint"></p>
+                                        <div class="sup-retorno-inline__header-content">
+                                            <div class="sup-retorno-inline__icon-wrap">
+                                                <span class="material-icons">assignment_return</span>
+                                            </div>
+                                            <div>
+                                                <h3 class="sup-retorno-inline__title">Retorno de equipamentos</h3>
+                                                <p class="sup-retorno-inline__hint" id="sup-retorno-inline-hint"></p>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="sup-retorno-inline__choices" role="radiogroup" aria-labelledby="sup-retorno-inline-label">
                                         <p class="sup-retorno-inline__label" id="sup-retorno-inline-label">Há equipamentos retornando para a base?</p>
-                                        <label class="sup-retorno-choice">
-                                            <input type="radio" name="sup-retorno-inline-choice" value="nao" />
-                                            <span>Não</span>
-                                        </label>
-                                        <label class="sup-retorno-choice">
-                                            <input type="radio" name="sup-retorno-inline-choice" value="sim" />
-                                            <span>Sim</span>
-                                        </label>
+                                        <div class="sup-retorno-choice-cards">
+                                            <label class="sup-retorno-choice" for="sup-retorno-choice-nao">
+                                                <input type="radio" id="sup-retorno-choice-nao" name="sup-retorno-inline-choice" value="nao" />
+                                                <div class="sup-retorno-choice__content">
+                                                    <div class="sup-retorno-choice__indicator">
+                                                        <span class="material-icons">close</span>
+                                                    </div>
+                                                    <div class="sup-retorno-choice__text">
+                                                        <span class="sup-retorno-choice__title">Não</span>
+                                                        <span class="sup-retorno-choice__desc">Permanecem na unidade</span>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                            <label class="sup-retorno-choice" for="sup-retorno-choice-sim">
+                                                <input type="radio" id="sup-retorno-choice-sim" name="sup-retorno-inline-choice" value="sim" />
+                                                <div class="sup-retorno-choice__content">
+                                                    <div class="sup-retorno-choice__indicator">
+                                                        <span class="material-icons">check</span>
+                                                    </div>
+                                                    <div class="sup-retorno-choice__text">
+                                                        <span class="sup-retorno-choice__title">Sim</span>
+                                                        <span class="sup-retorno-choice__desc">Selecionar itens em retorno</span>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        </div>
                                     </div>
                                     <div class="sup-retorno-inline__actions" id="sup-retorno-inline-actions" hidden>
-                                        <p class="sup-retorno-inline__summary" id="sup-retorno-inline-summary">Nenhum equipamento selecionado.</p>
+                                        <div class="sup-retorno-inline__toolbar">
+                                            <div class="sup-retorno-inline__summary-wrap">
+                                                <span class="material-icons">inventory_2</span>
+                                                <p class="sup-retorno-inline__summary" id="sup-retorno-inline-summary">Nenhum equipamento selecionado.</p>
+                                            </div>
+                                            <div class="sup-retorno-inline__quick-btns">
+                                                <button type="button" class="sup-retorno-btn-text" id="sup-retorno-select-all">Selecionar todos</button>
+                                                <span class="sup-retorno-btn-sep">•</span>
+                                                <button type="button" class="sup-retorno-btn-text" id="sup-retorno-deselect-all">Limpar</button>
+                                            </div>
+                                        </div>
+                                        <div class="sup-retorno-inline__search-wrap" id="sup-retorno-search-wrap" style="display:none;">
+                                            <span class="material-icons">search</span>
+                                            <input type="text" id="sup-retorno-search-input" class="sup-retorno-search-input" placeholder="Filtrar por TAG, Série ou Tipo..." />
+                                        </div>
                                         <div class="sup-retorno-inline__list" id="sup-retorno-inline-list"></div>
                                     </div>
-                                    <p class="sup-retorno-inline__error" id="sup-retorno-inline-error" hidden></p>
+                                    <div class="sup-retorno-inline__error-banner" id="sup-retorno-inline-error" hidden>
+                                        <span class="material-icons">error_outline</span>
+                                        <span class="sup-retorno-inline__error-text"></span>
+                                    </div>
                                 </section>
                             </section>
                         </div>
