@@ -6245,6 +6245,16 @@
           showToast(dataUp.message || 'RDO atualizado', 'success');
           try { document.dispatchEvent(new CustomEvent('rdo:saved', { detail: { mode: 'update', response: dataUp } })); } catch(_){ }
           try { closeModal(); } catch(_){ }
+          var wpTextUp = dataUp.whatsapp_text || (dataUp.rdo && dataUp.rdo.whatsapp_text) || '';
+          if (wpTextUp && typeof openRdoWhatsAppModal === 'function') {
+            openRdoWhatsAppModal(wpTextUp, function(){
+              try {
+                setTimeout(function(){
+                  try { window.location.reload(); } catch(_){}
+                }, 300);
+              } catch(_){}
+            }, dataUp.id || (dataUp.rdo && dataUp.rdo.id));
+          }
         } else {
           var msgUp = (dataUp && (dataUp.error || dataUp.message)) || 'Falha ao salvar RDO';
           throw new Error(msgUp);
@@ -6297,34 +6307,43 @@
           } catch(_){ try { window.location.reload(); } catch(_){} }
         };
 
-        try {
-          _showHandoverConfirm(
-            "Preencher Handover",
-            "Gostaria de preencher o handover?",
-            function() {
-              var osIdToRedirect = '';
-              var osNumeroToDisplay = '';
-              try {
-                osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
-                osNumeroToDisplay = dataCr.rdo ? (dataCr.rdo.numero_os || dataCr.rdo.os_numero) : '';
-              } catch(e){}
-              if (!osIdToRedirect) {
+        var triggerHandoverFlow = function() {
+          try {
+            _showHandoverConfirm(
+              "Preencher Handover",
+              "Gostaria de preencher o handover?",
+              function() {
+                var osIdToRedirect = '';
+                var osNumeroToDisplay = '';
                 try {
-                  var osInput = form.querySelector('[name="ordem_servico_id"]');
-                  if (osInput) osIdToRedirect = osInput.value;
+                  osIdToRedirect = dataCr.rdo ? (dataCr.rdo.ordem_servico_id || dataCr.rdo.os_id) : '';
+                  osNumeroToDisplay = dataCr.rdo ? (dataCr.rdo.numero_os || dataCr.rdo.os_numero) : '';
                 } catch(e){}
+                if (!osIdToRedirect) {
+                  try {
+                    var osInput = form.querySelector('[name="ordem_servico_id"]');
+                    if (osInput) osIdToRedirect = osInput.value;
+                  } catch(e){}
+                }
+                setTimeout(function(){ openRdoHandoverModal(osIdToRedirect, osNumeroToDisplay); }, 250);
+              },
+              function() {
+                finalizeAndReload();
               }
-              setTimeout(function(){ openRdoHandoverModal(osIdToRedirect, osNumeroToDisplay); }, 250);
-            },
-            function() {
-              finalizeAndReload();
-            }
-          );
-          return;
-        } catch(e){
-          console.error('Redirect to handover failed', e);
+            );
+            return;
+          } catch(e){
+            console.error('Redirect to handover failed', e);
+          }
+          finalizeAndReload();
+        };
+
+        var wpTextCr = dataCr.whatsapp_text || (dataCr.rdo && dataCr.rdo.whatsapp_text) || '';
+        if (wpTextCr && typeof openRdoWhatsAppModal === 'function') {
+          openRdoWhatsAppModal(wpTextCr, triggerHandoverFlow, newId);
+        } else {
+          triggerHandoverFlow();
         }
-        finalizeAndReload();
       }
     } catch(err){
       showToast(err && err.name === 'AbortError' ? 'Tempo de requisição expirou' : (err && err.message ? err.message : 'Erro ao salvar'), 'error');
@@ -6952,15 +6971,24 @@
         if (respObj && respObj.ok && data && data.success) {
           showToast(data.message || (isEdit ? 'RDO atualizado' : 'RDO criado'), 'success');
           try { document.dispatchEvent(new CustomEvent('rdo:saved', { detail: { mode: isEdit ? 'update' : 'create', response: data } })); } catch(_){ }
-          try {
-            if (isEdit) {
-              try { closeModal(); } catch(_){}
-            } else {
-              var q = new URLSearchParams(window.location.search || '');
-              q.set('page', '1');
-              window.location.href = window.location.pathname + (q.toString() ? '?' + q.toString() : '');
-            }
-          } catch(_){ try { window.location.reload(); } catch(_){} }
+          var wpTextEditor = data.whatsapp_text || (data.rdo && data.rdo.whatsapp_text) || '';
+          var proceedAfterSave = function() {
+            try {
+              if (isEdit) {
+                try { closeModal(); } catch(_){}
+              } else {
+                var q = new URLSearchParams(window.location.search || '');
+                q.set('page', '1');
+                window.location.href = window.location.pathname + (q.toString() ? '?' + q.toString() : '');
+              }
+            } catch(_){ try { window.location.reload(); } catch(_){} }
+          };
+          if (wpTextEditor && typeof openRdoWhatsAppModal === 'function') {
+            try { closeModal(); } catch(_){}
+            openRdoWhatsAppModal(wpTextEditor, proceedAfterSave, data.id || (data.rdo && data.rdo.id));
+          } else {
+            proceedAfterSave();
+          }
         } else {
           var msg = (data && (data.error || data.message)) || 'Falha ao salvar RDO';
           throw new Error(msg);
@@ -14142,3 +14170,139 @@
     }
   } catch(_){ }
 });
+
+/* ==========================================================================
+   WhatsApp Status Operacional Modal Logic & Bindings
+   ========================================================================== */
+function openRdoWhatsAppModal(whatsappText, onComplete, rdoId) {
+  var overlay = document.getElementById('rdo-whatsapp-modal-overlay');
+  if (!overlay) {
+    if (typeof onComplete === 'function') onComplete();
+    return;
+  }
+  var textarea = document.getElementById('rdo-whatsapp-textarea');
+  var copyBtn = document.getElementById('rdo-whatsapp-copy-btn');
+  var copyBtnText = document.getElementById('rdo-whatsapp-copy-btn-text');
+  var doneBtn = document.getElementById('rdo-whatsapp-done-btn');
+  var closeBtn = document.getElementById('rdo-whatsapp-close-btn');
+
+  var text = String(whatsappText || '').trim();
+  if (textarea) {
+    textarea.value = text;
+  }
+
+  if (copyBtnText) copyBtnText.textContent = 'Copiar Texto';
+  if (copyBtn) copyBtn.classList.remove('copied');
+
+  var hasClosed = false;
+  function closeModal() {
+    if (hasClosed) return;
+    hasClosed = true;
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.style.display = 'none';
+    if (typeof onComplete === 'function') {
+      var cb = onComplete;
+      onComplete = null;
+      cb();
+    }
+  }
+
+  if (closeBtn) closeBtn.onclick = closeModal;
+  if (doneBtn) doneBtn.onclick = closeModal;
+
+  overlay.onclick = function(e) {
+    if (e.target === overlay) closeModal();
+  };
+
+  function handleCopySuccess() {
+    if (copyBtnText) copyBtnText.textContent = '✓ Copiado!';
+    if (copyBtn) copyBtn.classList.add('copied');
+    if (typeof showToast === 'function') {
+      showToast('Texto copiado com sucesso! Agora é só colar no WhatsApp.', 'success');
+    }
+    setTimeout(function() {
+      if (copyBtnText) copyBtnText.textContent = 'Copiar Texto';
+      if (copyBtn) copyBtn.classList.remove('copied');
+    }, 2500);
+  }
+
+  function fallbackCopy(val) {
+    if (!textarea) return;
+    textarea.select();
+    textarea.setSelectionRange(0, 99999);
+    try {
+      document.execCommand('copy');
+      handleCopySuccess();
+    } catch(e) {
+      if (typeof showToast === 'function') showToast('Pressione Ctrl+C para copiar', 'info');
+    }
+  }
+
+  if (copyBtn) {
+    copyBtn.onclick = function() {
+      var textToCopy = textarea ? textarea.value : text;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textToCopy).then(function() {
+          handleCopySuccess();
+        }).catch(function() {
+          fallbackCopy(textToCopy);
+        });
+      } else {
+        fallbackCopy(textToCopy);
+      }
+    };
+  }
+
+  overlay.style.display = 'flex';
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden', 'false');
+  if (textarea) {
+    setTimeout(function(){ textarea.focus(); }, 100);
+  }
+}
+
+window.openRdoWhatsAppModal = openRdoWhatsAppModal;
+
+// Delegated click listener para botões de WhatsApp na tabela/cards
+document.addEventListener('click', async function(ev) {
+  var btn = ev.target && ev.target.closest ? ev.target.closest('.rdo-whatsapp-btn, [data-action="rdo-whatsapp"]') : null;
+  if (!btn) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+
+  var rdoId = btn.getAttribute('data-rdo-id');
+  if (!rdoId) {
+    var row = btn.closest('tr[data-rdo-id]');
+    if (row) rdoId = row.getAttribute('data-rdo-id');
+  }
+  if (!rdoId) {
+    if (typeof showToast === 'function') showToast('RDO não identificado', 'warning');
+    return;
+  }
+
+  try {
+    if (window.NotificationManager && typeof window.NotificationManager.showLoading === 'function') {
+      window.NotificationManager.showLoading('Gerando texto para WhatsApp...');
+    }
+    var resp = await fetch('/api/rdo/' + encodeURIComponent(rdoId) + '/whatsapp-text/', {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    var data = await resp.json();
+    if (window.NotificationManager && typeof window.NotificationManager.hideLoading === 'function') {
+      window.NotificationManager.hideLoading();
+    }
+    if (data && data.success && data.whatsapp_text) {
+      openRdoWhatsAppModal(data.whatsapp_text, null, rdoId);
+    } else {
+      var err = (data && data.error) || 'Falha ao obter texto para WhatsApp';
+      if (typeof showToast === 'function') showToast(err, 'error');
+    }
+  } catch(err) {
+    if (window.NotificationManager && typeof window.NotificationManager.hideLoading === 'function') {
+      window.NotificationManager.hideLoading();
+    }
+    if (typeof showToast === 'function') showToast('Erro de conexão ao gerar texto WhatsApp', 'error');
+  }
+});
+
