@@ -160,7 +160,7 @@ class RdoOsRdosEndpointTest(TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(payload['rdos'], [])
 
-    def test_rdo_os_rdos_includes_all_movimentacoes_when_all_page_filters_are_marked(self):
+    def test_rdo_os_rdos_filters_by_supervisor_status_and_rdo(self):
         sup1 = User.objects.create_user(username='sup_mov_1', password='x')
         sup2 = User.objects.create_user(username='sup_mov_2', password='x')
 
@@ -179,26 +179,32 @@ class RdoOsRdosEndpointTest(TestCase):
         rdo1 = RDO.objects.create(ordem_servico=mov1, rdo='1', data=date(2026, 5, 1), data_inicio=date(2026, 5, 1), turno='Dia')
         rdo2 = RDO.objects.create(ordem_servico=mov2, rdo='2', data=date(2026, 5, 2), data_inicio=date(2026, 5, 2), turno='Noite')
 
-        # Quando todos os filtros estão marcados na página (incluindo status, supervisor e rdo da movimentação 2):
-        response = self.client.get(
+        # Filtrando pelo supervisor sup_mov_2
+        response_sup = self.client.get(
             reverse('api_rdo_os_rdos', args=[mov2.id]),
-            {
-                'os': '7050',
-                'status_operacao': 'EM ANDAMENTO',
-                'status_geral': 'ABERTO',
-                'supervisor': 'sup_mov_2',
-                'rdo': '2',
-                'date_start': '2026-05-01',
-                'date_end': '2026-05-31',
-            },
+            {'supervisor': 'sup_mov_2'},
             HTTP_X_REQUESTED_WITH='XMLHttpRequest',
         )
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload['success'])
-        # Deve puxar todos os RDOs da OS 7050 dentro do período de datas, não apenas os da movimentação 2
-        rdo_ids = [item['id'] for item in payload['rdos']]
-        self.assertEqual(rdo_ids, [rdo1.id, rdo2.id])
+        self.assertEqual(response_sup.status_code, 200)
+        self.assertEqual([item['id'] for item in response_sup.json()['rdos']], [rdo2.id])
+
+        # Filtrando por status_operacao EM ANDAMENTO
+        response_status = self.client.get(
+            reverse('api_rdo_os_rdos', args=[mov1.id]),
+            {'status_operacao': 'EM ANDAMENTO'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response_status.status_code, 200)
+        self.assertEqual([item['id'] for item in response_status.json()['rdos']], [rdo2.id])
+
+        # Filtrando pelo número do RDO
+        response_rdo = self.client.get(
+            reverse('api_rdo_os_rdos', args=[mov1.id]),
+            {'rdo': '1'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response_rdo.status_code, 200)
+        self.assertEqual([item['id'] for item in response_rdo.json()['rdos']], [rdo1.id])
 
     def test_rdo_os_rdos_filters_by_shift_and_method(self):
         mov1 = self._create_os(7060)
