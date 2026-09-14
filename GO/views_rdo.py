@@ -7053,7 +7053,7 @@ def _parse_date_flexible(s):
     return None
 
 
-def _filter_rdo_queryset(base_qs, get_params, ignore_os=False):
+def _filter_rdo_queryset(base_qs, get_params, ignore_os=False, for_os_export=False):
     def _g(name):
         v = get_params.get(name) if hasattr(get_params, 'get') else None
         if v is None:
@@ -7082,7 +7082,7 @@ def _filter_rdo_queryset(base_qs, get_params, ignore_os=False):
     if contrato:
         active_filters += 1
         q_filters &= (Q(contrato_po__icontains=contrato) | Q(po__icontains=contrato))
-    if os_q and not ignore_os:
+    if os_q and not ignore_os and not for_os_export:
         active_filters += 1
         q_filters &= Q(ordem_servico__numero_os__icontains=os_q)
     if empresa:
@@ -7103,22 +7103,22 @@ def _filter_rdo_queryset(base_qs, get_params, ignore_os=False):
     if tanque:
         active_filters += 1
         q_filters &= (Q(nome_tanque__icontains=tanque) | Q(tanques__nome_tanque__icontains=tanque) | Q(tanque_codigo__icontains=tanque) | Q(tanques__tanque_codigo__icontains=tanque))
-    if supervisor:
+    if supervisor and not for_os_export:
         active_filters += 1
         try:
             q_filters &= _supervisor_search_q(supervisor)
         except Exception:
             q_filters &= (Q(ordem_servico__supervisor__username__icontains=supervisor) | Q(ordem_servico__supervisor__first_name__icontains=supervisor) | Q(ordem_servico__supervisor__last_name__icontains=supervisor))
-    if rdo_val:
+    if rdo_val and not for_os_export:
         try:
             active_filters += 1
             q_filters &= (Q(rdo__icontains=rdo_val) | Q(rdo__iexact=rdo_val))
         except Exception:
             pass
-    if status_geral:
+    if status_geral and not for_os_export:
         active_filters += 1
         q_filters &= Q(ordem_servico__status_geral__icontains=status_geral)
-    if status_operacao:
+    if status_operacao and not for_os_export:
         active_filters += 1
         q_filters &= Q(ordem_servico__status_operacao__icontains=status_operacao)
 
@@ -7219,7 +7219,7 @@ def rdo_os_rdos(request, os_id):
                 .prefetch_related('tanques')
                 .filter(ordem_servico=os_obj)
             )
-        filtered_qs, _ = _filter_rdo_queryset(rdo_qs, request.GET, ignore_os=True)
+        filtered_qs, _ = _filter_rdo_queryset(rdo_qs, request.GET, ignore_os=True, for_os_export=True)
         rdo_list = list(filtered_qs)
     except Exception:
         rdo_list = []
