@@ -158,3 +158,68 @@ class RdoOsRdosEndpointTest(TestCase):
         payload = response.json()
         self.assertTrue(payload['success'])
         self.assertEqual(payload['rdos'], [])
+
+    def test_rdo_os_rdos_includes_all_movimentacoes_when_all_page_filters_are_marked(self):
+        sup1 = User.objects.create_user(username='sup_mov_1', password='x')
+        sup2 = User.objects.create_user(username='sup_mov_2', password='x')
+
+        mov1 = self._create_os(7050)
+        mov1.supervisor = sup1
+        mov1.status_operacao = 'FINALIZADA'
+        mov1.status_geral = 'FECHADO'
+        mov1.save()
+
+        mov2 = self._create_os(7050)
+        mov2.supervisor = sup2
+        mov2.status_operacao = 'EM ANDAMENTO'
+        mov2.status_geral = 'ABERTO'
+        mov2.save()
+
+        rdo1 = RDO.objects.create(ordem_servico=mov1, rdo='1', data=date(2026, 5, 1), data_inicio=date(2026, 5, 1), turno='Dia')
+        rdo2 = RDO.objects.create(ordem_servico=mov2, rdo='2', data=date(2026, 5, 2), data_inicio=date(2026, 5, 2), turno='Noite')
+
+        # Quando todos os filtros estão marcados na página (incluindo status, supervisor e rdo da movimentação 2):
+        response = self.client.get(
+            reverse('api_rdo_os_rdos', args=[mov2.id]),
+            {
+                'os': '7050',
+                'status_operacao': 'EM ANDAMENTO',
+                'status_geral': 'ABERTO',
+                'supervisor': 'sup_mov_2',
+                'rdo': '2',
+                'date_start': '2026-05-01',
+                'date_end': '2026-05-31',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        # Deve puxar todos os RDOs da OS 7050 dentro do período de datas, não apenas os da movimentação 2
+        rdo_ids = [item['id'] for item in payload['rdos']]
+        self.assertEqual(rdo_ids, [rdo1.id, rdo2.id])
+
+    def test_rdo_os_rdos_filters_by_shift_and_method(self):
+        mov1 = self._create_os(7060)
+        mov1.metodo = ''
+        mov1.save(update_fields=['metodo'])
+        rdo1 = RDO.objects.create(ordem_servico=mov1, rdo='1', data=date(2026, 6, 1), turno='Dia', metodo_exec='Manual')
+        rdo2 = RDO.objects.create(ordem_servico=mov1, rdo='2', data=date(2026, 6, 2), turno='Noite', metodo_exec='Mecanizada')
+
+        # Filtro por turno
+        response_turno = self.client.get(
+            reverse('api_rdo_os_rdos', args=[mov1.id]),
+            {'turno': 'Noite'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response_turno.status_code, 200)
+        self.assertEqual([item['id'] for item in response_turno.json()['rdos']], [rdo2.id])
+
+        # Filtro por método
+        response_metodo = self.client.get(
+            reverse('api_rdo_os_rdos', args=[mov1.id]),
+            {'metodo': 'Manual'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response_metodo.status_code, 200)
+        self.assertEqual([item['id'] for item in response_metodo.json()['rdos']], [rdo1.id])
