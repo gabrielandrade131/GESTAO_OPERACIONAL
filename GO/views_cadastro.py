@@ -18,6 +18,7 @@ from .rdo_access import (
     RDO_PERMISSION_MANAGER_GROUP_NAME,
     RDO_VIEW_ONLY_GROUP_NAME,
     RESPONSAVEIS_COORDENADORES_MANAGER_GROUP_NAME,
+    SUPERVISOR_GROUP_NAME,
     SYSTEM_READ_ONLY_GROUP_NAME,
     build_read_only_forbidden_response,
     ensure_rdo_access_groups,
@@ -383,8 +384,8 @@ def gerenciar_permissoes_rdo(request):
         return HttpResponseForbidden('Sem permissão para acessar a administração do sistema.')
 
     requested_tab = request.GET.get('aba', '')
-    active_tab = requested_tab if requested_tab in {'usuarios', 'responsaveis'} else ('usuarios' if can_users else 'responsaveis')
-    if active_tab == 'usuarios' and not can_users:
+    active_tab = requested_tab if requested_tab in {'usuarios', 'supervisores', 'responsaveis'} else ('usuarios' if can_users else 'responsaveis')
+    if active_tab in {'usuarios', 'supervisores'} and not can_users:
         active_tab = 'responsaveis'
     if active_tab == 'responsaveis' and not can_people:
         active_tab = 'usuarios'
@@ -403,6 +404,7 @@ def administracao_listar_usuarios(request):
         return denied
     query = (request.GET.get('q') or '').strip()
     profile = request.GET.get('perfil') or 'todos'
+    group = request.GET.get('grupo') or 'todos'
     status = request.GET.get('status') or 'ativos'
     page = max(int(request.GET.get('page', 1) or 1), 1)
     page_size = min(max(int(request.GET.get('page_size', 12) or 12), 5), 50)
@@ -414,10 +416,14 @@ def administracao_listar_usuarios(request):
         users = users.filter(is_active=True)
     elif status == 'inativos':
         users = users.filter(is_active=False)
-    if profile == 'superusers':
+    if group == 'supervisores':
+        users = users.filter(groups__name=SUPERVISOR_GROUP_NAME)
+    elif group == 'demais':
+        users = users.exclude(groups__name=SUPERVISOR_GROUP_NAME)
+    elif profile == 'superusers':
         users = users.filter(is_superuser=True)
     elif profile == 'supervisores':
-        users = users.filter(groups__name='Supervisor')
+        users = users.filter(groups__name=SUPERVISOR_GROUP_NAME)
     total = users.count()
     records = [_serialize_user_permissions(item) for item in users[(page - 1) * page_size:page * page_size]]
     all_users = User.objects.all()
