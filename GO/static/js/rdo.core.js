@@ -12107,11 +12107,6 @@
     // O único filtro fixo é o da OS clicada: removemos o filtro global de OS e de paginação
     params.delete('os');
     params.delete('page');
-    // Para exportação de PDF da OS inteira, removemos também filtros específicos de movimentação/RDO individual
-    params.delete('rdo');
-    params.delete('supervisor');
-    params.delete('status_operacao');
-    params.delete('status_geral');
     return params;
   }
 
