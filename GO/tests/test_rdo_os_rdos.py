@@ -88,3 +88,73 @@ class RdoOsRdosEndpointTest(TestCase):
         self.assertIn('disabled aria-disabled="true"', old_row)
         self.assertIn('data-is-latest-for-os="1"', latest_row)
         self.assertNotIn('Somente o último RDO da OS pode originar', latest_row)
+
+    def test_rdo_os_rdos_filters_by_date_range(self):
+        os_record = self._create_os(7030)
+        rdo1 = RDO.objects.create(ordem_servico=os_record, rdo='1', data=date(2026, 1, 5), data_inicio=date(2026, 1, 5))
+        rdo2 = RDO.objects.create(ordem_servico=os_record, rdo='2', data=date(2026, 1, 15), data_inicio=date(2026, 1, 15))
+        rdo3 = RDO.objects.create(ordem_servico=os_record, rdo='3', data=date(2026, 1, 25), data_inicio=date(2026, 1, 25))
+
+        response = self.client.get(
+            reverse('api_rdo_os_rdos', args=[os_record.id]),
+            {'date_start': '2026-01-10', 'date_end': '2026-01-20'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        self.assertEqual([item['id'] for item in payload['rdos']], [rdo2.id])
+
+    def test_rdo_os_rdos_filters_by_service_and_tank(self):
+        from GO.models import RdoTanque
+        os_record = self._create_os(7031)
+        rdo1 = RDO.objects.create(ordem_servico=os_record, rdo='1', servico_exec='LIMPEZA MECANICA', data=date(2026, 2, 1))
+        rdo2 = RDO.objects.create(ordem_servico=os_record, rdo='2', servico_exec='HIDROJATO', data=date(2026, 2, 2))
+        RdoTanque.objects.create(rdo=rdo2, tanque_codigo='TK-101', nome_tanque='Tanque de Carga')
+
+        # Filtro por serviço
+        response_servico = self.client.get(
+            reverse('api_rdo_os_rdos', args=[os_record.id]),
+            {'servico': 'HIDROJATO'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response_servico.status_code, 200)
+        self.assertEqual([item['id'] for item in response_servico.json()['rdos']], [rdo2.id])
+
+        # Filtro por tanque
+        response_tanque = self.client.get(
+            reverse('api_rdo_os_rdos', args=[os_record.id]),
+            {'tanque': 'TK-101'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response_tanque.status_code, 200)
+        self.assertEqual([item['id'] for item in response_tanque.json()['rdos']], [rdo2.id])
+
+    def test_rdo_os_rdos_os_filter_is_fixed_and_ignores_query_os(self):
+        os_record = self._create_os(7032)
+        rdo1 = RDO.objects.create(ordem_servico=os_record, rdo='1', data=date(2026, 3, 1))
+
+        # Passar os=9999 na querystring não deve filtrar para fora os RDOs da OS 7032
+        response = self.client.get(
+            reverse('api_rdo_os_rdos', args=[os_record.id]),
+            {'os': '9999'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        self.assertEqual([item['id'] for item in payload['rdos']], [rdo1.id])
+
+    def test_rdo_os_rdos_returns_empty_list_when_no_rdo_matches_filter(self):
+        os_record = self._create_os(7033)
+        RDO.objects.create(ordem_servico=os_record, rdo='1', data=date(2026, 4, 1))
+
+        response = self.client.get(
+            reverse('api_rdo_os_rdos', args=[os_record.id]),
+            {'date_start': '2027-01-01', 'date_end': '2027-12-31'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['rdos'], [])
