@@ -2,12 +2,13 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from GO.models import Cliente, OrdemServico, RDO, Unidade
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class RdoOsRdosEndpointTest(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='rdo_export_user', password='x')
@@ -62,7 +63,7 @@ class RdoOsRdosEndpointTest(TestCase):
             [(first_rdo.id, '1'), (last_rdo.id, '29')],
         )
 
-    def test_only_latest_rdo_across_duplicate_os_records_can_open_new_rdo(self):
+    def test_all_rows_across_duplicate_os_records_can_open_new_rdo(self):
         first_os_record = self._create_os(7022)
         second_os_record = self._create_os(7022)
         old_rdo = RDO.objects.create(
@@ -83,10 +84,10 @@ class RdoOsRdosEndpointTest(TestCase):
         html = response.content.decode()
         old_row = html.split(f'data-rdo-id="{old_rdo.id}"', 1)[1].split('</tr>', 1)[0]
         latest_row = html.split(f'data-rdo-id="{latest_rdo.id}"', 1)[1].split('</tr>', 1)[0]
-        self.assertIn('data-is-latest-for-os="0"', old_row)
         self.assertIn('data-latest-rdo-id="%s"' % latest_rdo.id, old_row)
-        self.assertIn('disabled aria-disabled="true"', old_row)
-        self.assertIn('data-is-latest-for-os="1"', latest_row)
+        self.assertNotIn('disabled aria-disabled="true"', old_row)
+        self.assertIn('open-supervisor', old_row)
+        self.assertIn('open-supervisor', latest_row)
         self.assertNotIn('Somente o último RDO da OS pode originar', latest_row)
 
     def test_rdo_os_rdos_filters_by_date_range(self):

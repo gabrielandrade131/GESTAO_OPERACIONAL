@@ -3969,22 +3969,24 @@
       if (!supRdoEl) return;
       var rc = ctx.rdo_count || '';
       var osId = ctx.os_id || '';
-      if ((!osId || String(osId).trim() === '') && rc != null && String(rc).trim() !== '' && /^\d+$/.test(String(rc).trim())) {
+      var numeroOs = ctx.numero_os || ctx.os || '';
+      if (!osId && !numeroOs && rc != null && String(rc).trim() !== '' && /^\d+$/.test(String(rc).trim())) {
         try { supRdoEl.value = String(parseInt(String(rc).trim(),10) + 1); return; } catch(_){ }
       }
-  if (!osId) return;
-  try { supRdoEl.dataset.prev = supRdoEl.value || ''; supRdoEl.value = 'Carregando...'; } catch(_){}
+      if (!osId && !numeroOs) return;
+      try { supRdoEl.dataset.prev = supRdoEl.value || ''; supRdoEl.value = 'Carregando...'; } catch(_){}
+      var queryParam = osId ? ('os_id=' + encodeURIComponent(osId)) : ('numero_os=' + encodeURIComponent(numeroOs));
       var candidates = [
-        '/rdo/next_rdo/?os_id=',
-        '/rdo/next/?os_id=',
-        '/api/rdo/next/?os_id=',
-        '/api/rdo/next_rdo/?os_id=',
-        '/rdo/next_rdo?os_id=',
-        '/rdo/next?os_id='
+        '/rdo/next_rdo/?' + queryParam,
+        '/rdo/next/?' + queryParam,
+        '/api/rdo/next/?' + queryParam,
+        '/api/rdo/next_rdo/?' + queryParam,
+        '/rdo/next_rdo?' + queryParam,
+        '/rdo/next?' + queryParam
       ];
       for (var i=0;i<candidates.length;i++){
         try {
-          var url = candidates[i] + encodeURIComponent(osId);
+          var url = candidates[i];
           var resp = await fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
           if (!resp.ok) continue;
           var data = await resp.json();
@@ -4825,26 +4827,15 @@
           try { openBtn = tr.querySelector('.open-supervisor, .btn-rdo.open-supervisor, .action-btn.open-supervisor'); } catch(_){ openBtn = null; }
           if (rc && max && rc < max) {
             lockElement(tr);
-            if (openBtn) {
-              try {
-                openBtn.classList.add('disabled');
-                openBtn.disabled = true;
-                openBtn.setAttribute('aria-disabled','true');
-                openBtn.setAttribute('data-tooltip','Abrir disponível apenas a partir do último RDO (RDO ' + String(max) + ')');
-              } catch(_){ }
-            }
-          } else {
-            if (openBtn) {
-              try {
-                openBtn.classList.remove('disabled');
-                openBtn.disabled = false;
-                openBtn.removeAttribute('aria-disabled');
-                try {
-                  var d = openBtn.getAttribute('data-tooltip');
-                  if (d && d.indexOf('Abrir disponível apenas') === 0) openBtn.removeAttribute('data-tooltip');
-                } catch(_){ }
-              } catch(_){ }
-            }
+          }
+          if (openBtn) {
+            try {
+              openBtn.classList.remove('disabled');
+              openBtn.disabled = false;
+              openBtn.removeAttribute('aria-disabled');
+              openBtn.removeAttribute('data-tooltip');
+              openBtn.title = 'Abrir novo RDO para esta OS';
+            } catch(_){ }
           }
         } catch(_){ }
       });
@@ -7609,38 +7600,7 @@
   try { onReady(_initEditorActivityDragReorder); } catch(_){ }
 
   async function _confirmLatestRdoBeforeCreate(context, sourceEl){
-    try {
-      if (sourceEl && sourceEl.getAttribute('data-is-latest-for-os') === '0') {
-        showToast('Somente o último RDO da OS pode originar um novo RDO.', 'info');
-        return false;
-      }
-
-      var osId = String((context && context.os_id) || '').trim();
-      var currentRdoId = String((context && context.rdo_id) || '').trim();
-      if (!osId || !currentRdoId) return true;
-
-      var response = await fetch('/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/', {
-        credentials: 'same-origin',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      });
-      var payload = null;
-      try { payload = await response.json(); } catch(_){ payload = null; }
-      if (!response.ok || !payload || !payload.success) {
-        showToast('Não foi possível confirmar o último RDO da OS. Atualize a página e tente novamente.', 'error');
-        return false;
-      }
-
-      var rdos = Array.isArray(payload.rdos) ? payload.rdos : [];
-      var latest = rdos.length ? rdos[rdos.length - 1] : null;
-      if (latest && String(latest.id || '') !== currentRdoId) {
-        showToast('Este não é mais o último RDO. O RDO atual da OS é o ' + String(latest.rdo || latest.id || '') + '.', 'info');
-        return false;
-      }
-      return true;
-    } catch(_){
-      showToast('Não foi possível confirmar o último RDO da OS. Atualize a página e tente novamente.', 'error');
-      return false;
-    }
+    return true;
   }
 
   function _setNewRdoButtonAvailability(container, enabled, latestRdoLabel){
@@ -7649,75 +7609,26 @@
       var buttons = container.querySelectorAll('.open-supervisor');
       Array.prototype.forEach.call(buttons, function(button){
         try {
-          button.disabled = !enabled;
-          button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-          button.classList.toggle('rdo-new-rdo-disabled', !enabled);
-          if (!enabled) {
-            var suffix = latestRdoLabel ? (' O último é o RDO ' + latestRdoLabel + '.') : '';
-            button.title = 'Somente o último RDO da OS pode originar um novo RDO.' + suffix;
-          } else {
-            button.removeAttribute('title');
-          }
+          button.disabled = false;
+          button.removeAttribute('disabled');
+          button.setAttribute('aria-disabled', 'false');
+          button.classList.remove('rdo-new-rdo-disabled');
+          button.title = 'Abrir novo RDO para esta OS';
         } catch(_){ }
       });
-      container.setAttribute('data-is-latest-for-os', enabled ? '1' : '0');
+      container.setAttribute('data-is-latest-for-os', '1');
     } catch(_){ }
   }
 
   async function _refreshNewRdoAvailability(){
-    var containers = [];
     try {
-      containers = Array.prototype.slice.call(document.querySelectorAll(
+      var containers = Array.prototype.slice.call(document.querySelectorAll(
         '.rdo-admin-table tbody tr[data-rdo-id], .rdo-mobile-card[data-rdo-id], .rdo-mobile-item[data-rdo-id]'
       ));
-    } catch(_){ containers = []; }
-
-    var groups = Object.create(null);
-    containers.forEach(function(container){
-      try {
-        var rdoId = String(container.getAttribute('data-rdo-id') || '').trim();
-        if (!rdoId) return;
-        var osNumber = String(
-          container.getAttribute('data-numero-os') || container.getAttribute('data-os') || ''
-        ).trim();
-        var osId = String(container.getAttribute('data-os-id') || '').trim();
-        var key = osNumber ? ('number:' + osNumber) : ('id:' + osId);
-        if (!groups[key]) groups[key] = { osId: osId, containers: [] };
-        if (!groups[key].osId && osId) groups[key].osId = osId;
-        groups[key].containers.push(container);
-
-        // Estado seguro enquanto a sequencia completa e consultada.
-        _setNewRdoButtonAvailability(container, false, '');
-      } catch(_){ }
-    });
-
-    var tasks = Object.keys(groups).map(async function(key){
-      var group = groups[key];
-      if (!group || !group.osId) return;
-      try {
-        var response = await fetch('/api/rdo/os/' + encodeURIComponent(group.osId) + '/rdos/', {
-          credentials: 'same-origin',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        var payload = null;
-        try { payload = await response.json(); } catch(_){ payload = null; }
-        if (!response.ok || !payload || !payload.success) return;
-        var rdos = Array.isArray(payload.rdos) ? payload.rdos : [];
-        var latest = rdos.length ? rdos[rdos.length - 1] : null;
-        if (!latest || !latest.id) return;
-        group.containers.forEach(function(container){
-          var currentId = String(container.getAttribute('data-rdo-id') || '').trim();
-          _setNewRdoButtonAvailability(
-            container,
-            currentId === String(latest.id),
-            String(latest.rdo || latest.id || '')
-          );
-        });
-      } catch(_){
-        // Em caso de falha, permanece bloqueado para nunca partir de RDO antigo.
-      }
-    });
-    await Promise.all(tasks);
+      containers.forEach(function(container){
+        _setNewRdoButtonAvailability(container, true, '');
+      });
+    } catch(_){ }
   }
 
   onReady(function(){
@@ -7727,14 +7638,9 @@
         var editorIntent = ev.target && ev.target.closest && ev.target.closest('.action-btn.edit, .action-btn.open-editor, .action-btn.edit-editor, [data-open="editor"]');
         if (editorIntent) return;
         var supTrigger = ev.target && ev.target.closest && ev.target.closest('[data-open="supervisor"], .open-supervisor, .btn-rdo.open-supervisor');
-  if (supTrigger && supTrigger.closest && supTrigger.closest('.rdo-locked') && !supTrigger.closest('.allow-edit')) return;
         if (supTrigger) {
           var tr = supTrigger.closest('tr');
           if (tr) {
-            if (tr.classList && tr.classList.contains('rdo-locked')) {
-              var bypass = (supTrigger && supTrigger.closest && supTrigger.closest('.allow-edit')) || tr.classList.contains('allow-edit') || !!tr.querySelector('.allow-edit');
-              if (!bypass) return;
-            }
             var ctx = {
               os_id: tr.getAttribute('data-os-id') || tr.dataset && tr.dataset.osId || '',
               numero_os: tr.getAttribute('data-numero-os') || tr.dataset && tr.dataset.numeroOs || '',
@@ -7753,21 +7659,6 @@
               current_tanques: tr.getAttribute('data-current-tanques-os') || tr.dataset && (tr.dataset.currentTanquesOs || tr.dataset.totalTanquesOs) || ''
             };
             try {
-              try {
-                var curRaw = String(ctx.rdo_count || '').replace(/[^0-9]/g, '');
-                var curNum = curRaw === '' ? 0 : parseInt(curRaw, 10) || 0;
-                var osKey = ctx.os_id || ctx.numero_os || '';
-                if (osKey) {
-                  var selector = 'tr[data-os-id="' + String(osKey).replace(/"/g,'') + '"][data-rdo-count]';
-                  var peers = document.querySelectorAll(selector);
-                  var max = 0;
-                  Array.prototype.forEach.call(peers, function(p){ try { var v = String(p.getAttribute('data-rdo-count') || (p.dataset && p.dataset.rdoCount) || '').replace(/[^0-9]/g,''); var n = v === '' ? 0 : parseInt(v,10) || 0; if (n > max) max = n; } catch(_){ } });
-                  if (max > 0 && curNum > 0 && curNum < max) {
-                    showToast('Atenção: só é possível abrir a partir do último RDO (RDO ' + String(max) + ').', 'info');
-                    return;
-                  }
-                }
-              } catch(_){ }
               console.log && console.log('rdo: supTrigger (table) opening modal, ctx', ctx);
             } catch(_){ }
             if (!(await _confirmLatestRdoBeforeCreate(ctx, tr))) return;
@@ -11916,7 +11807,7 @@
   try {
     var lockStyleId = 'rdo-locked-style';
     if (!document.getElementById(lockStyleId)) {
-  var css = '\n.rdo-locked { opacity: 0.6; position: relative; }\n.rdo-locked .rdo-lock-icon { position: absolute; right: 8px; top: 8px; font-family: "Material Icons"; font-size: 18px; color: #444; }\n.rdo-locked .open-supervisor, .rdo-locked .action-btn.edit { opacity: 0.5; }\n/* allow explicit edits when element has allow-edit class inside locked rows */\n.rdo-locked .allow-edit, .rdo-locked .allow-edit * { pointer-events: auto !important; opacity: 1 !important; }\n';
+  var css = '\n.rdo-locked { opacity: 0.6; position: relative; }\n.rdo-locked .rdo-lock-icon { position: absolute; right: 8px; top: 8px; font-family: "Material Icons"; font-size: 18px; color: #444; }\n.rdo-locked .action-btn.edit { opacity: 0.5; }\n.rdo-locked .open-supervisor, .rdo-locked .open-supervisor * { pointer-events: auto !important; opacity: 1 !important; cursor: pointer !important; }\n/* allow explicit edits when element has allow-edit class inside locked rows */\n.rdo-locked .allow-edit, .rdo-locked .allow-edit * { pointer-events: auto !important; opacity: 1 !important; }\n';
       var s = document.createElement('style'); s.id = lockStyleId; s.type = 'text/css'; s.appendChild(document.createTextNode(css)); document.head.appendChild(s);
     }
   } catch(_){ }

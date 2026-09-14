@@ -8,6 +8,7 @@ from GO.models import Cliente, OrdemServico, RDO, Unidade
 
 
 @override_settings(
+    SECURE_SSL_REDIRECT=False,
     STATICFILES_STORAGE='django.contrib.staticfiles.storage.StaticFilesStorage',
     STORAGES={
         'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
