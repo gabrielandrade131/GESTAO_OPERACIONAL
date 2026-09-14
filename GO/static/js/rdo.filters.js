@@ -389,6 +389,24 @@
   }
 
   function bind(){
+    var btnToggle = document.getElementById('btn_rdo_filtros');
+    var filtersPanel = document.getElementById('rdo-filters-panel');
+    if (btnToggle && filtersPanel && !btnToggle.dataset.filterToggleBound) {
+      btnToggle.dataset.filterToggleBound = '1';
+      btnToggle.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var isHidden = (filtersPanel.getAttribute('aria-hidden') !== 'false');
+        if (isHidden) {
+          filtersPanel.setAttribute('aria-hidden', 'false');
+          btnToggle.setAttribute('aria-expanded', 'true');
+          try { filtersPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(_){}
+        } else {
+          filtersPanel.setAttribute('aria-hidden', 'true');
+          btnToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
     var btnApply = document.getElementById('btn_apply_filters');
     var btnClear = document.getElementById('btn_clear_filters');
     if (btnApply) btnApply.addEventListener('click', function(ev){ ev.preventDefault(); applyFromInputsAndPersist(); });
