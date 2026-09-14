@@ -54,6 +54,56 @@
         overflow: hidden;
         border: 1px solid #e2e8f0;
     }
+    .filters-card {
+        display: grid;
+        grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(160px, 1fr));
+        gap: 12px;
+        align-items: end;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 20px;
+    }
+    .filter-field { display: grid; gap: 6px; min-width: 0; }
+    .filter-field label { color: #475569; font-size: 12px; font-weight: 700; }
+    .filter-field input, .filter-field select {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 40px;
+        padding: 8px 10px;
+        color: #1e293b;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+    }
+    .filter-field input:focus, .filter-field select:focus { outline: 2px solid #7dd3fc; outline-offset: 1px; border-color: #0284c7; }
+    .filter-actions {
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+        align-self: end;
+        padding-bottom: 0;
+    }
+    .btn-filter, .btn-clear {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        width: 88px;
+        height: 40px;
+        padding: 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    .btn-filter { border: 1px solid #0284c7; background: #0284c7; color: #ffffff; }
+    .btn-filter:hover { background: #0369a1; }
+    .btn-clear { border: 1px solid #cbd5e1; background: #ffffff; color: #475569; }
+    .btn-clear:hover { background: #f1f5f9; }
+    .filter-dates { display: flex; gap: 8px; grid-column: span 2; }
+    .filter-dates .filter-field { flex: 1; }
     .handover-table {
         width: 100%;
         border-collapse: collapse;
@@ -134,6 +184,18 @@
         margin: 0 0 16px 0;
         font-size: 14px;
     }
+    @media (max-width: 900px) {
+        .filters-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .filter-dates { grid-column: auto; }
+    }
+    @media (max-width: 640px) {
+        .handover-container { padding: 16px; }
+        .page-header { align-items: flex-start; flex-direction: column; gap: 16px; }
+        .filters-card { grid-template-columns: 1fr; }
+        .filter-dates { grid-column: auto; }
+        .handover-card { overflow-x: auto; }
+        .handover-table { min-width: 900px; }
+    }
 </style>
 {% endblock %}
 
@@ -157,6 +219,63 @@
             Nova Passagem de Serviço
         </a>
     </div>
+
+    <form method="get" class="filters-card" aria-label="Filtros de passagens de serviço">
+        <div class="filter-field">
+            <label for="filtro-busca">Busca geral</label>
+            <input id="filtro-busca" type="search" name="busca" value="{{ filtros.busca }}" placeholder="Período, projeto, cliente ou supervisor">
+        </div>
+        <div class="filter-field">
+            <label for="filtro-cliente">Cliente</label>
+            <select id="filtro-cliente" name="cliente">
+                <option value="">Todos os clientes</option>
+                {% for cliente in clientes %}
+                    <option value="{{ cliente.id }}"{% if filtros.cliente == cliente.id|stringformat:"s" %} selected{% endif %}>{{ cliente.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="filtro-unidade">Unidade</label>
+            <select id="filtro-unidade" name="unidade">
+                <option value="">Todas as unidades</option>
+                {% for unidade in unidades %}
+                    <option value="{{ unidade.id }}"{% if filtros.unidade == unidade.id|stringformat:"s" %} selected{% endif %}>{{ unidade.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="filtro-supervisor">Supervisor</label>
+            <input id="filtro-supervisor" type="search" name="supervisor" list="supervisores-datalist" value="{{ filtros.supervisor }}" placeholder="Digite o nome do supervisor" autocomplete="off">
+            <datalist id="supervisores-datalist">
+                {% for supervisor in supervisores %}
+                    <option value="{{ supervisor.get_full_name|default:supervisor.username }}"></option>
+                {% endfor %}
+            </datalist>
+        </div>
+        <div class="filter-field">
+            <label for="filtro-coordenador">Coordenador da OS</label>
+            <input id="filtro-coordenador" type="search" name="coordenador" list="coordenadores-datalist" value="{{ filtros.coordenador }}" placeholder="Digite o nome do coordenador" autocomplete="off">
+            <datalist id="coordenadores-datalist">
+                {% for coordenador in coordenadores %}
+                    <option value="{{ coordenador }}"></option>
+                {% endfor %}
+            </datalist>
+        </div>
+        <div class="filter-dates">
+            <div class="filter-field">
+                <label for="filtro-data-inicio">Registro da passagem — de</label>
+                <input id="filtro-data-inicio" type="date" name="data_inicio" value="{{ filtros.data_inicio }}">
+            </div>
+            <div class="filter-field">
+                <label for="filtro-data-fim">Registro da passagem — até</label>
+                <input id="filtro-data-fim" type="date" name="data_fim" value="{{ filtros.data_fim }}">
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn-filter"><span class="material-icons" aria-hidden="true">filter_alt</span>&nbsp;Filtrar</button>
+            <a href="{% url 'handover_list' %}" class="btn-clear">Limpar</a>
+        </div>
+    </form>
 
     <div class="handover-card">
         <table class="handover-table">

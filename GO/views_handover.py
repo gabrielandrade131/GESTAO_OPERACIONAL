@@ -5,7 +5,9 @@ from django.views.decorators.http import require_GET, require_POST
 from django.template.loader import render_to_string
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 import logging
+from datetime import date
 
 from .models import SupervisorHandover, Cliente, Unidade, OrdemServico
 
@@ -84,6 +86,7 @@ def handover_criar_api(request):
     try:
         handover = SupervisorHandover.objects.create(
             periodo_data=periodo_data[:100],
+            ordem_servico=ordem_servico,
             cliente=getattr(ordem_servico, 'Cliente', None),
             unidade=getattr(ordem_servico, 'Unidade', None),
             projeto=str(
@@ -109,9 +112,76 @@ def handover_criar_api(request):
 
 @login_required
 def handover_list(request):
-    handovers = SupervisorHandover.objects.all().order_by('-criado_em')
+    """Lista as passagens de serviço aplicando os filtros informados via GET."""
+    filtros = {
+        'busca': (request.GET.get('busca') or '').strip(),
+        'cliente': (request.GET.get('cliente') or '').strip(),
+        'unidade': (request.GET.get('unidade') or '').strip(),
+        'supervisor': (request.GET.get('supervisor') or '').strip(),
+        'coordenador': (request.GET.get('coordenador') or '').strip(),
+        'data_inicio': (request.GET.get('data_inicio') or '').strip(),
+        'data_fim': (request.GET.get('data_fim') or '').strip(),
+    }
+
+    handovers = SupervisorHandover.objects.select_related(
+        'cliente', 'unidade', 'supervisor_atual', 'supervisor_back', 'ordem_servico',
+        'ordem_servico__coordenador_cadastro'
+    )
+
+    if filtros['busca']:
+        handovers = handovers.filter(
+            Q(periodo_data__icontains=filtros['busca'])
+            | Q(projeto__icontains=filtros['busca'])
+            | Q(cliente__nome__icontains=filtros['busca'])
+            | Q(unidade__nome__icontains=filtros['busca'])
+            | Q(supervisor_atual__username__icontains=filtros['busca'])
+            | Q(supervisor_atual__first_name__icontains=filtros['busca'])
+            | Q(supervisor_atual__last_name__icontains=filtros['busca'])
+            | Q(supervisor_back__username__icontains=filtros['busca'])
+            | Q(supervisor_back__first_name__icontains=filtros['busca'])
+            | Q(supervisor_back__last_name__icontains=filtros['busca'])
+        )
+
+    for nome_filtro, campo in (('cliente', 'cliente_id'), ('unidade', 'unidade_id')):
+        try:
+            valor = int(filtros[nome_filtro])
+        except (TypeError, ValueError):
+            continue
+        handovers = handovers.filter(**{campo: valor})
+
+    if filtros['supervisor']:
+        handovers = handovers.filter(
+            Q(supervisor_atual__username__icontains=filtros['supervisor'])
+            | Q(supervisor_atual__first_name__icontains=filtros['supervisor'])
+            | Q(supervisor_atual__last_name__icontains=filtros['supervisor'])
+            | Q(supervisor_back__username__icontains=filtros['supervisor'])
+            | Q(supervisor_back__first_name__icontains=filtros['supervisor'])
+            | Q(supervisor_back__last_name__icontains=filtros['supervisor'])
+        )
+
+    if filtros['coordenador']:
+        handovers = handovers.filter(
+            Q(ordem_servico__coordenador__icontains=filtros['coordenador'])
+            | Q(ordem_servico__coordenador_cadastro__nome__icontains=filtros['coordenador'])
+        )
+
+    for nome_filtro, lookup in (('data_inicio', 'criado_em__date__gte'), ('data_fim', 'criado_em__date__lte')):
+        try:
+            valor = date.fromisoformat(filtros[nome_filtro])
+        except (TypeError, ValueError):
+            continue
+        handovers = handovers.filter(**{lookup: valor})
+
+    handovers = handovers.order_by('-criado_em')
     return render(request, 'handover_list.html', {
         'handovers': handovers,
+        'clientes': Cliente.objects.order_by('nome'),
+        'unidades': Unidade.objects.order_by('nome'),
+        'supervisores': User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username'),
+        'coordenadores': OrdemServico.objects.exclude(coordenador__isnull=True).exclude(
+            coordenador__exact=''
+        ).order_by('coordenador').values_list('coordenador', flat=True).distinct(),
+        'filtros': filtros,
         'synchro_active_module': 'handover',
     })
 
@@ -168,12 +238,12 @@ def handover_criar(request):
         cliente = Cliente.objects.filter(id=cliente_id).first() if cliente_id else None
         unidade = Unidade.objects.filter(id=unidade_id).first() if unidade_id else None
         supervisor_back = User.objects.filter(id=supervisor_back_id).first() if supervisor_back_id else None
-        # A OS é usada pelo formulário para pré-preencher os dados, mas o
-        # modelo atual de passagem de serviço não mantém esse vínculo.
+        ordem_servico = OrdemServico.objects.filter(id=ordem_servico_id).first() if ordem_servico_id else None
         
         try:
             handover = SupervisorHandover.objects.create(
                 periodo_data=periodo_data,
+                ordem_servico=ordem_servico,
                 cliente=cliente,
                 unidade=unidade,
                 projeto=projeto,
@@ -219,6 +289,8 @@ def handover_editar(request, pk):
         handover.unidade = Unidade.objects.filter(id=unidade_id).first() if unidade_id else None
         
         handover.projeto = request.POST.get('projeto', '').strip()
+        ordem_servico_id = request.POST.get('ordem_servico', '').strip()
+        handover.ordem_servico = OrdemServico.objects.filter(id=ordem_servico_id).first() if ordem_servico_id else None
         
         supervisor_back_id = request.POST.get('supervisor_back', '').strip()
         handover.supervisor_back = User.objects.filter(id=supervisor_back_id).first() if supervisor_back_id else None
