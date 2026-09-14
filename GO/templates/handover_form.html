@@ -215,7 +215,7 @@
                                     data-cliente-id="{{ os.Cliente.id|default:'' }}" 
                                     data-unidade-id="{{ os.Unidade.id|default:'' }}" 
                                     data-projeto="{{ os.especificacao|default:os.servico|default:'' }}"
-                                    {% if prefilled_os and prefilled_os.id == os.id %}selected{% endif %}>
+                                    {% if prefilled_os and prefilled_os.id == os.id %}selected{% elif handover.ordem_servico_id == os.id %}selected{% endif %}>
                                 OS {{ os.numero_os }} - {{ os.Cliente.nome|default:'' }} - {{ os.Unidade.nome|default:'' }}
                             </option>
                         {% endfor %}

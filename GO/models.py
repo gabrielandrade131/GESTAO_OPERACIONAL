@@ -5589,6 +5589,13 @@ def default_handover_items():
 
 class SupervisorHandover(models.Model):
     periodo_data = models.CharField(max_length=100)
+    ordem_servico = models.ForeignKey(
+        'OrdemServico',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='handovers',
+    )
     cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
     unidade = models.ForeignKey('Unidade', on_delete=models.SET_NULL, null=True, blank=True)
     projeto = models.CharField(max_length=150, blank=True, default='')
