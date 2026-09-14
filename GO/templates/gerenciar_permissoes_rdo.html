@@ -64,7 +64,10 @@
         </header>
 
         <nav class="admin-tabs" aria-label="Áreas de administração">
-            {% if can_manage_users_tab %}<a href="?aba=usuarios" class="admin-tab" data-tab="usuarios">Usuários e Permissões</a>{% endif %}
+            {% if can_manage_users_tab %}
+            <a href="?aba=usuarios" class="admin-tab" data-tab="usuarios">Demais usuários</a>
+            <a href="?aba=supervisores" class="admin-tab" data-tab="supervisores">Supervisores</a>
+            {% endif %}
             {% if can_manage_people_tab %}<a href="?aba=responsaveis" class="admin-tab" data-tab="responsaveis">Responsáveis e Coordenadores</a>{% endif %}
         </nav>
 
@@ -74,7 +77,6 @@
             <section class="admin-card">
                 <div class="admin-toolbar">
                     <label class="admin-search"><span class="material-icons">search</span><input id="userSearch" type="search" placeholder="Buscar por usuário, nome ou e-mail..."></label>
-                    <select id="userProfile"><option value="todos">Perfil: Todos</option><option value="superusers">Superusuários</option><option value="supervisores">Supervisores</option></select>
                     <select id="userStatus"><option value="ativos">Status: Ativos</option><option value="inativos">Status: Inativos</option><option value="todos">Status: Todos</option></select>
                     <button class="admin-button admin-button--secondary" id="aboutPermissions" type="button">Sobre as permissões</button>
                 </div>
@@ -102,6 +104,6 @@
     <div class="admin-modal" id="adminModal" hidden aria-hidden="true"><div class="admin-modal__backdrop" data-close-modal></div><section class="admin-modal__card" role="dialog" aria-modal="true"><button class="admin-modal__close" data-close-modal type="button"><span class="material-icons">close</span></button><div id="adminModalContent"></div></section></div>
     <div class="admin-toast" id="adminToast" role="status" aria-live="polite"></div>
     <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
-    <script src="{% static 'js/administracao_sistema.js' %}?v=20260806c"></script>
+    <script src="{% static 'js/administracao_sistema.js' %}?v=20260914a"></script>
 </body>
 </html>

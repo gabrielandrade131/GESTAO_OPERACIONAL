@@ -1,6 +1,7 @@
 import json
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
@@ -28,13 +29,28 @@ class AdministracaoSistemaTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'synchro-header-search--permissions')
         self.assertContains(response, 'synchro-page-search-mirror is-placeholder')
-        self.assertContains(response, 'Usuários e Permissões')
+        self.assertContains(response, 'Demais usuários')
+        self.assertContains(response, 'Supervisores')
         self.assertNotContains(response, 'Responsáveis e Coordenadores')
 
     def test_people_manager_cannot_call_user_endpoint(self):
         self.client.force_login(self.people_manager)
         response = self.client.get(reverse('administracao_listar_usuarios'))
         self.assertEqual(response.status_code, 403)
+
+    def test_user_list_is_separated_between_supervisors_and_other_users(self):
+        User = get_user_model()
+        supervisor = User.objects.create_user('supervisor_user', password='secret')
+        supervisor.groups.add(Group.objects.create(name='Supervisor'))
+        other = User.objects.create_user('other_user', password='secret')
+        self.client.force_login(self.admin)
+
+        supervisors = self.client.get(reverse('administracao_listar_usuarios'), {'grupo': 'supervisores', 'status': 'todos'}).json()
+        others = self.client.get(reverse('administracao_listar_usuarios'), {'grupo': 'demais', 'status': 'todos'}).json()
+
+        self.assertEqual([item['username'] for item in supervisors['items']], [supervisor.username])
+        self.assertIn(other.username, [item['username'] for item in others['items']])
+        self.assertNotIn(supervisor.username, [item['username'] for item in others['items']])
 
     def test_regular_user_cannot_access_administration(self):
         self.client.force_login(self.regular)
