@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.models import Group, User
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 import pytz
@@ -11,6 +11,7 @@ import pytz
 from GO.models import Cliente, OrdemServico, Pessoa, RDO, RDOAtividade, RDOMembroEquipe, Unidade
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class RdoSupervisorLimitedUpdateTests(TestCase):
     def setUp(self):
         self.client = Client()

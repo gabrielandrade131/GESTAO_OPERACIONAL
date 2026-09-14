@@ -667,8 +667,8 @@
                             {% if can_open_or_edit_rdo %}
                             <td class="action-cell">
                                 <button class="action-btn open-supervisor" type="button"
-                                        {% if not r.is_latest_for_os %}disabled aria-disabled="true" title="Somente o último RDO da OS pode originar um novo RDO (último: RDO {{ r.latest_rdo_number_for_os|default:'-' }})"{% endif %}
-                                        aria-label="Abrir novo RDO a partir do último RDO da OS">
+                                        aria-label="Abrir novo RDO para esta OS"
+                                        title="Abrir novo RDO">
                                      <span class="material-icons" aria-hidden="true">add</span>
                                   </button>
                             </td>
@@ -752,7 +752,7 @@
                                                 <span class="rdo-pill" title="RDO">RDO {{ r.rdo|default:'-' }}</span>
                                             </div>
                                             <div class="foot-right">
-                                                {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor" type="button" {% if not r.is_latest_for_os %}disabled aria-disabled="true" title="Somente o último RDO da OS pode originar um novo RDO"{% endif %}>Abrir</button>{% endif %}
+                                                {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor" type="button" aria-label="Abrir novo RDO" title="Abrir novo RDO">Abrir</button>{% endif %}
                                                 {% if can_open_rdo %}
                                                 {% if r.rdo_id|default:r.id %}
                                                 <button class="btn-rdo secondary small open-editor" type="button" data-open="editor" data-limited-supervisor-edit="true" data-editor-scope="supervisor-card"
@@ -825,7 +825,7 @@
                                             <span class="rdo-pill" title="RDO">RDO {{ r.rdo|default:'-' }}</span>
                                         </div>
                                         <div class="foot-right">
-                                            {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor" type="button" {% if not r.is_latest_for_os %}disabled aria-disabled="true" title="Somente o último RDO da OS pode originar um novo RDO"{% endif %}>Abrir</button>{% endif %}
+                                            {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor" type="button" aria-label="Abrir novo RDO" title="Abrir novo RDO">Abrir</button>{% endif %}
                                             {% if can_open_rdo %}
                                             {% if r.rdo_id|default:r.id %}
                                             <button class="btn-rdo secondary small open-editor" type="button" data-open="editor" data-limited-supervisor-edit="true" data-editor-scope="supervisor-card"

@@ -318,23 +318,19 @@
 												var n = parseInt(String(attr||'').replace(/[^0-9\-]/g,''), 10);
 												if (!isFinite(n)) return;
 												if (n < cur) {
-													// Preferir desabilitar o botão de abrir do cartão (classe .open-supervisor)
+													// Manter botão de abrir habilitado para permitir gerar o próximo RDO da OS
 													var btns = Array.from(node.querySelectorAll('.open-supervisor, .btn-rdo.open-supervisor'));
 													if (btns.length) {
 														btns.forEach(function(b){
 															try {
-																b.classList.add('disabled-by-next-rdo');
-																b.disabled = true;
-																b.setAttribute('aria-disabled','true');
-																// set a tooltip explaining why the open button is disabled
-																try { b.setAttribute('data-tooltip', 'Abrir disponível apenas a partir do último RDO (RDO ' + String(cur) + ')'); } catch(_){}
-																// keep hover possible so tooltip can show on desktop; visually mute
-																b.style.opacity = '0.5';
+																b.classList.remove('disabled-by-next-rdo');
+																b.disabled = false;
+																b.removeAttribute('aria-disabled');
+																b.title = 'Abrir novo RDO para esta OS';
+																b.removeAttribute('data-tooltip');
+																b.style.opacity = '1';
 															} catch(e){}
 														});
-													} else {
-														// fallback: desabilitar o próprio cartão
-														try { node.classList.add('disabled-by-next-rdo'); node.setAttribute('aria-disabled','true'); node.style.opacity = '0.5'; } catch(e){}
 													}
 												}
 											} catch(e){}
