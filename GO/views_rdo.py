@@ -6986,6 +6986,173 @@ def rdo_detail(request, rdo_id):
         'rdo': payload
     })
 
+def _supervisor_search_q(val):
+    import unicodedata
+
+    def _strip_accents(s):
+        if not s:
+            return s
+        try:
+            nkfd = unicodedata.normalize('NFKD', s)
+            return ''.join([c for c in nkfd if not unicodedata.combining(c)])
+        except Exception:
+            return s
+
+    raw = (val or '').strip()
+    if not raw:
+        return Q()
+
+    raw_noaccent = _strip_accents(raw).lower()
+    parts = [p for p in raw_noaccent.split() if p]
+
+    q = Q(ordem_servico__supervisor__username__icontains=raw) | Q(ordem_servico__supervisor__first_name__icontains=raw) | Q(ordem_servico__supervisor__last_name__icontains=raw)
+    q |= Q(ordem_servico__supervisor__username__icontains=raw_noaccent) | Q(ordem_servico__supervisor__first_name__icontains=raw_noaccent) | Q(ordem_servico__supervisor__last_name__icontains=raw_noaccent)
+
+    if len(parts) >= 2:
+        first = parts[0]
+        last = parts[-1]
+        q |= (Q(ordem_servico__supervisor__first_name__icontains=first) & Q(ordem_servico__supervisor__last_name__icontains=last))
+        q |= (Q(ordem_servico__supervisor__first_name__icontains=last) & Q(ordem_servico__supervisor__last_name__icontains=first))
+
+        try:
+            uname_dot = '.'.join(parts)
+            uname_nospace = ''.join(parts)
+            q |= Q(ordem_servico__supervisor__username__icontains=uname_dot) | Q(ordem_servico__supervisor__username__icontains=uname_nospace)
+        except Exception:
+            pass
+    else:
+        try:
+            p = parts[0] if parts else ''
+            if p:
+                q |= Q(ordem_servico__supervisor__username__icontains=p)
+        except Exception:
+            pass
+
+    return q
+
+
+def _parse_date_flexible(s):
+    if not s:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(s).date()
+    except Exception:
+        pass
+    try:
+        return datetime.strptime(s, '%d/%m/%Y').date()
+    except Exception:
+        pass
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except Exception:
+        pass
+    return None
+
+
+def _filter_rdo_queryset(base_qs, get_params, ignore_os=False):
+    def _g(name):
+        v = get_params.get(name) if hasattr(get_params, 'get') else None
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s != '' else None
+
+    contrato = _g('contrato')
+    os_q = _g('os')
+    empresa = _g('empresa')
+    unidade = _g('unidade')
+    turno = _g('turno')
+    servico = _g('servico')
+    metodo = _g('metodo')
+    date_start = _g('date_start')
+    date_end = _g('date_end')
+    tanque = _g('tanque')
+    supervisor = _g('supervisor')
+    rdo_val = _g('rdo')
+    status_geral = _g('status_geral')
+    status_operacao = _g('status_operacao')
+
+    q_filters = Q()
+    active_filters = 0
+
+    if contrato:
+        active_filters += 1
+        q_filters &= (Q(contrato_po__icontains=contrato) | Q(po__icontains=contrato))
+    if os_q and not ignore_os:
+        active_filters += 1
+        q_filters &= Q(ordem_servico__numero_os__icontains=os_q)
+    if empresa:
+        active_filters += 1
+        q_filters &= Q(ordem_servico__Cliente__nome__icontains=empresa)
+    if unidade:
+        active_filters += 1
+        q_filters &= Q(ordem_servico__Unidade__nome__icontains=unidade)
+    if turno:
+        active_filters += 1
+        q_filters &= Q(turno__icontains=turno)
+    if servico:
+        active_filters += 1
+        q_filters &= (Q(servico_exec__icontains=servico) | Q(tanques__servico_exec__icontains=servico) | Q(ordem_servico__servico__icontains=servico))
+    if metodo:
+        active_filters += 1
+        q_filters &= (Q(metodo_exec__icontains=metodo) | Q(tanques__metodo_exec__icontains=metodo) | Q(ordem_servico__metodo__icontains=metodo))
+    if tanque:
+        active_filters += 1
+        q_filters &= (Q(nome_tanque__icontains=tanque) | Q(tanques__nome_tanque__icontains=tanque) | Q(tanque_codigo__icontains=tanque) | Q(tanques__tanque_codigo__icontains=tanque))
+    if supervisor:
+        active_filters += 1
+        try:
+            q_filters &= _supervisor_search_q(supervisor)
+        except Exception:
+            q_filters &= (Q(ordem_servico__supervisor__username__icontains=supervisor) | Q(ordem_servico__supervisor__first_name__icontains=supervisor) | Q(ordem_servico__supervisor__last_name__icontains=supervisor))
+    if rdo_val:
+        try:
+            active_filters += 1
+            q_filters &= (Q(rdo__icontains=rdo_val) | Q(rdo__iexact=rdo_val))
+        except Exception:
+            pass
+    if status_geral:
+        active_filters += 1
+        q_filters &= Q(ordem_servico__status_geral__icontains=status_geral)
+    if status_operacao:
+        active_filters += 1
+        q_filters &= Q(ordem_servico__status_operacao__icontains=status_operacao)
+
+    d = _parse_date_flexible(date_start) if date_start else None
+    d2 = _parse_date_flexible(date_end) if date_end else None
+    if d:
+        active_filters += 1
+    if d2:
+        active_filters += 1
+
+    eff_qs = base_qs
+    if d or d2:
+        try:
+            from django.db.models.functions import Coalesce
+            eff_qs = eff_qs.annotate(_eff_date=Coalesce('data_inicio', 'data'))
+            if d and d2:
+                if d > d2:
+                    d, d2 = d2, d
+                eff_qs = eff_qs.filter(_eff_date__gte=d, _eff_date__lte=d2)
+            elif d:
+                eff_qs = eff_qs.filter(_eff_date__gte=d)
+            elif d2:
+                eff_qs = eff_qs.filter(_eff_date__lte=d2)
+        except Exception:
+            eff_qs = base_qs
+
+    try:
+        filtered_qs = eff_qs.filter(q_filters).distinct()
+    except Exception:
+        filtered_qs = eff_qs.distinct()
+
+    return filtered_qs, active_filters
+
+
 @login_required(login_url='/login/')
 @require_GET
 def rdo_os_rdos(request, os_id):
@@ -7027,23 +7194,43 @@ def rdo_os_rdos(request, os_id):
         # o usuario enxerga e o numero da OS; filtrar apenas pela FK do registro
         # clicado omite os RDOs vinculados aos demais registros desse numero.
         if numero_os not in (None, ''):
-            rdo_qs = list(
-                RDO.objects.filter(
+            rdo_qs = (
+                RDO.objects
+                .select_related(
+                    'ordem_servico',
+                    'ordem_servico__supervisor',
+                    'ordem_servico__Cliente',
+                    'ordem_servico__Unidade',
+                )
+                .prefetch_related('tanques')
+                .filter(
                     ordem_servico__numero_os=numero_os,
                 )
             )
         else:
-            rdo_qs = list(RDO.objects.filter(ordem_servico=os_obj))
+            rdo_qs = (
+                RDO.objects
+                .select_related(
+                    'ordem_servico',
+                    'ordem_servico__supervisor',
+                    'ordem_servico__Cliente',
+                    'ordem_servico__Unidade',
+                )
+                .prefetch_related('tanques')
+                .filter(ordem_servico=os_obj)
+            )
+        filtered_qs, _ = _filter_rdo_queryset(rdo_qs, request.GET, ignore_os=True)
+        rdo_list = list(filtered_qs)
     except Exception:
-        rdo_qs = []
+        rdo_list = []
 
     try:
-        rdo_qs.sort(key=_rdo_sequence_sort_key)
+        rdo_list.sort(key=_rdo_sequence_sort_key)
     except Exception:
         pass
 
     rdos_payload = []
-    for r in rdo_qs:
+    for r in rdo_list:
         try:
             dt_val = getattr(r, 'data', None) or getattr(r, 'data_inicio', None)
             dt_str = dt_val.isoformat() if hasattr(dt_val, 'isoformat') else (str(dt_val) if dt_val else '')
@@ -14198,208 +14385,8 @@ def rdo(request):
             base_qs = base_qs.none()
 
     try:
-        def _g(name):
-            v = request.GET.get(name)
-            if v is None:
-                return None
-            s = str(v).strip()
-            return s if s != '' else None
-
-        contrato = _g('contrato')
-        os_q = _g('os')
-        empresa = _g('empresa')
-        unidade = _g('unidade')
-        turno = _g('turno')
-        servico = _g('servico')
-        metodo = _g('metodo')
-        date_start = _g('date_start')
-        date_end = _g('date_end')
-        tanque = _g('tanque')
-        supervisor = _g('supervisor')
-        rdo = _g('rdo')
-        status_geral = _g('status_geral')
-        status_operacao = _g('status_operacao')
-
-        q_filters = Q()
-        active_filters = 0
-
-        if contrato:
-            active_filters += 1
-            q_filters &= (Q(contrato_po__icontains=contrato) | Q(po__icontains=contrato))
-        if os_q:
-            active_filters += 1
-            q_filters &= Q(ordem_servico__numero_os__icontains=os_q)
-        if empresa:
-            active_filters += 1
-            q_filters &= Q(ordem_servico__Cliente__nome__icontains=empresa)
-        if unidade:
-            active_filters += 1
-            q_filters &= Q(ordem_servico__Unidade__nome__icontains=unidade)
-        if turno:
-            active_filters += 1
-            q_filters &= Q(turno__icontains=turno)
-        if servico:
-            active_filters += 1
-            q_filters &= (Q(servico_exec__icontains=servico) | Q(tanques__servico_exec__icontains=servico) | Q(ordem_servico__servico__icontains=servico))
-        if metodo:
-            active_filters += 1
-            q_filters &= (Q(metodo_exec__icontains=metodo) | Q(tanques__metodo_exec__icontains=metodo) | Q(ordem_servico__metodo__icontains=metodo))
-        if tanque:
-            active_filters += 1
-            q_filters &= (Q(nome_tanque__icontains=tanque) | Q(tanques__nome_tanque__icontains=tanque) | Q(tanque_codigo__icontains=tanque) | Q(tanques__tanque_codigo__icontains=tanque))
-        if supervisor:
-            active_filters += 1
-            def _supervisor_search_q(val):
-                import unicodedata
-                def _strip_accents(s):
-                    if not s:
-                        return s
-                    try:
-                        nkfd = unicodedata.normalize('NFKD', s)
-                        return ''.join([c for c in nkfd if not unicodedata.combining(c)])
-                    except Exception:
-                        return s
-
-                raw = (val or '').strip()
-                if not raw:
-                    return Q()
-
-                raw_noaccent = _strip_accents(raw).lower()
-                parts = [p for p in raw_noaccent.split() if p]
-
-                q = Q(ordem_servico__supervisor__username__icontains=raw) | Q(ordem_servico__supervisor__first_name__icontains=raw) | Q(ordem_servico__supervisor__last_name__icontains=raw)
-                q |= Q(ordem_servico__supervisor__username__icontains=raw_noaccent) | Q(ordem_servico__supervisor__first_name__icontains=raw_noaccent) | Q(ordem_servico__supervisor__last_name__icontains=raw_noaccent)
-
-                if len(parts) >= 2:
-                    first = parts[0]
-                    last = parts[-1]
-                    q |= (Q(ordem_servico__supervisor__first_name__icontains=first) & Q(ordem_servico__supervisor__last_name__icontains=last))
-                    q |= (Q(ordem_servico__supervisor__first_name__icontains=last) & Q(ordem_servico__supervisor__last_name__icontains=first))
-
-                    try:
-                        uname_dot = '.'.join(parts)
-                        uname_nospace = ''.join(parts)
-                        q |= Q(ordem_servico__supervisor__username__icontains=uname_dot) | Q(ordem_servico__supervisor__username__icontains=uname_nospace)
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        p = parts[0] if parts else ''
-                        if p:
-                            q |= Q(ordem_servico__supervisor__username__icontains=p)
-                    except Exception:
-                        pass
-
-                return q
-
-            try:
-                q_filters &= _supervisor_search_q(supervisor)
-            except Exception:
-                q_filters &= (Q(ordem_servico__supervisor__username__icontains=supervisor) | Q(ordem_servico__supervisor__first_name__icontains=supervisor) | Q(ordem_servico__supervisor__last_name__icontains=supervisor))
-        if rdo:
-            try:
-                active_filters += 1
-                q_filters &= (Q(rdo__icontains=rdo) | Q(rdo__iexact=rdo))
-            except Exception:
-                pass
-        if status_geral:
-            active_filters += 1
-            q_filters &= Q(ordem_servico__status_geral__icontains=status_geral)
-        if status_operacao:
-            active_filters += 1
-            q_filters &= Q(ordem_servico__status_operacao__icontains=status_operacao)
-        def _parse_date_flexible(s):
-            if not s:
-                return None
-            s = str(s).strip()
-            if not s:
-                return None
-            from datetime import datetime
-            try:
-                return datetime.fromisoformat(s).date()
-            except Exception:
-                pass
-            try:
-                return datetime.strptime(s, '%d/%m/%Y').date()
-            except Exception:
-                pass
-            try:
-                return datetime.strptime(s, '%Y-%m-%d').date()
-            except Exception:
-                return None
-
-        try:
-            d = _parse_date_flexible(date_start) if date_start else None
-            d2 = _parse_date_flexible(date_end) if date_end else None
-            if d:
-                active_filters += 1
-            if d2:
-                active_filters += 1
-
-            if d or d2:
-                try:
-                    from django.db.models.functions import Coalesce
-                    eff_qs = base_qs.annotate(_eff_date=Coalesce('data_inicio', 'data'))
-                    if d and d2:
-                        try:
-                            if d > d2:
-                                d, d2 = d2, d
-                        except Exception:
-                            pass
-                        eff_qs = eff_qs.filter(_eff_date__gte=d, _eff_date__lte=d2)
-                    else:
-                        if d:
-                            eff_qs = eff_qs.filter(_eff_date__gte=d)
-                        if d2:
-                            eff_qs = eff_qs.filter(_eff_date__lte=d2)
-                    date_filtered_qs = eff_qs
-                except Exception:
-                    date_filtered_qs = None
-            else:
-                date_filtered_qs = None
-        except Exception:
-            pass
-
-        try:
-            try:
-                import logging
-                logger = logging.getLogger(__name__)
-                do_log = (getattr(settings, 'DEBUG', False) or (hasattr(request, 'user') and getattr(request.user, 'is_staff', False)))
-            except Exception:
-                logger = None
-                do_log = False
-            if do_log and logger:
-                try:
-                    before_count = base_qs.count()
-                except Exception:
-                    before_count = None
-            if 'date_filtered_qs' in locals() and date_filtered_qs is not None:
-                try:
-                    filtered_qs = date_filtered_qs.filter(q_filters).distinct()
-                except Exception:
-                    filtered_qs = date_filtered_qs.distinct()
-            else:
-                try:
-                    filtered_qs = base_qs.filter(q_filters).distinct()
-                except Exception:
-                    filtered_qs = base_qs.distinct()
-            if do_log and logger:
-                try:
-                    after_count = filtered_qs.count()
-                except Exception:
-                    after_count = None
-                try:
-                    logger.debug('RDO filters: date_start=%r date_end=%r parsed_start=%r parsed_end=%r before_count=%r after_count=%r SQL=%s',
-                                 date_start, date_end, (locals().get('d') if 'd' in locals() else None), (locals().get('d2') if 'd2' in locals() else None),
-                                 before_count, after_count, getattr(filtered_qs, 'query', None))
-                except Exception:
-                    try:
-                        logger.debug('RDO filters applied (counts): before=%r after=%r', before_count, after_count)
-                    except Exception:
-                        pass
-            base_qs = filtered_qs
-        except Exception:
-            pass
+        filtered_qs, active_filters = _filter_rdo_queryset(base_qs, request.GET, ignore_os=False)
+        base_qs = filtered_qs
     except Exception:
         active_filters = 0
 

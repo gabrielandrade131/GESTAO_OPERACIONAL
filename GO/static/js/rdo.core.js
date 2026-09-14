@@ -12069,8 +12069,54 @@
     }catch(_){ return Promise.resolve(); }
   }
 
-  async function _fetchOsRdos(osId){
-    var url = '/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/';
+  function _getActiveRdoFilterParams(){
+    var params = new URLSearchParams(window.location.search || '');
+    try {
+      if (window.RDO_filters && typeof window.RDO_filters.get === 'function') {
+        var stored = window.RDO_filters.get() || {};
+        Object.keys(stored).forEach(function(k){
+          if (stored[k] && !params.has(k)) {
+            params.set(k, stored[k]);
+          }
+        });
+      }
+    } catch(_){ }
+    try {
+      var filterInputs = {
+        contrato: document.getElementById('f-contrato'),
+        empresa: document.getElementById('f-empresa'),
+        unidade: document.getElementById('f-unidade'),
+        turno: document.getElementById('f-turno'),
+        servico: document.getElementById('f-servico'),
+        metodo: document.getElementById('f-metodo'),
+        date_start: document.getElementById('f-date-start'),
+        date_end: document.getElementById('f-date-end'),
+        tanque: document.getElementById('f-tanque'),
+        supervisor: document.getElementById('f-supervisor'),
+        status_operacao: document.getElementById('f-status-operacao'),
+        status_geral: document.getElementById('f-status_geral'),
+        rdo: document.getElementById('f-rdo')
+      };
+      Object.keys(filterInputs).forEach(function(k){
+        var el = filterInputs[k];
+        if (el && el.value && el.value.trim() && !params.has(k)) {
+          params.set(k, el.value.trim());
+        }
+      });
+    } catch(_){ }
+    // O único filtro fixo é o da OS clicada: removemos o filtro global de OS e de paginação
+    params.delete('os');
+    params.delete('page');
+    return params;
+  }
+
+  async function _fetchOsRdos(osId, filterParams){
+    var qs = '';
+    if (filterParams) {
+      var str = filterParams.toString ? filterParams.toString() : String(filterParams);
+      if (str) qs = '?' + str;
+    }
+    var url = '/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/' + qs;
     var resp = await fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     var data = null;
     try { data = await resp.json(); } catch(_){ data = null; }
@@ -12391,10 +12437,11 @@
       var prevBodyClass = '';
       try { prevBodyClass = document.body.className || ''; } catch(_){ prevBodyClass = ''; }
       try { document.body.classList.add('exporting-pdf'); } catch(_){ }
-      var data = await _fetchOsRdos(osId);
+      var filterParams = _getActiveRdoFilterParams();
+      var data = await _fetchOsRdos(osId, filterParams);
       var list = _sortRdosForPdfExport((data && data.rdos) ? data.rdos : []);
       if (!list.length){
-        showToast('Nenhum RDO encontrado para esta OS.', 'error');
+        showToast('Nenhum RDO encontrado para esta OS com os filtros aplicados.', 'error');
         return;
       }
       var cssRef = await _ensureRdoCss();
@@ -13118,8 +13165,13 @@
     }catch(_){ return Promise.resolve(); }
   }
 
-  async function _fetchOsRdos(osId){
-    var url = '/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/';
+  async function _fetchOsRdos(osId, filterParams){
+    var qs = '';
+    if (filterParams) {
+      var str = filterParams.toString ? filterParams.toString() : String(filterParams);
+      if (str) qs = '?' + str;
+    }
+    var url = '/api/rdo/os/' + encodeURIComponent(osId) + '/rdos/' + qs;
     var resp = await fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     var data = null;
     try { data = await resp.json(); } catch(_){ data = null; }
@@ -13440,10 +13492,11 @@
       var prevBodyClass = '';
       try { prevBodyClass = document.body.className || ''; } catch(_){ prevBodyClass = ''; }
       try { document.body.classList.add('exporting-pdf'); } catch(_){ }
-      var data = await _fetchOsRdos(osId);
+      var filterParams = _getActiveRdoFilterParams();
+      var data = await _fetchOsRdos(osId, filterParams);
       var list = _sortRdosForPdfExport((data && data.rdos) ? data.rdos : []);
       if (!list.length){
-        showToast('Nenhum RDO encontrado para esta OS.', 'error');
+        showToast('Nenhum RDO encontrado para esta OS com os filtros aplicados.', 'error');
         return;
       }
       var cssRef = await _ensureRdoCss();
