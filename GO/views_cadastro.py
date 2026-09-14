@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.http import HttpResponseForbidden, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_GET, require_POST
 
@@ -26,6 +26,7 @@ from .rdo_access import (
     user_has_read_only_access,
     user_can_manage_rdo_permission_users,
     user_can_manage_responsaveis_coordenadores,
+    user_can_edit_system,
 )
 
 
@@ -790,6 +791,140 @@ def administracao_confirmar_substituicao(request, person_id):
     return JsonResponse({'success': True, 'updated': {'propostas': proposal_count, 'os': os_count}})
 
 
+# Cadastro mestre: centraliza clientes, unidades e pessoas em uma única tela.
+CADASTRO_MASTER_MODELS = {'clientes': 'Cliente', 'unidades': 'Unidade', 'pessoas': 'Pessoa', 'funcoes': 'Funcao'}
+
+
+def _cadastro_master_denied(request):
+    if not user_can_edit_system(getattr(request, 'user', None)):
+        return JsonResponse({'success': False, 'error': 'Sem permissao para gerenciar cadastros.'}, status=403)
+    return None
+
+
+def _cadastro_master_model(kind):
+    from .models import Cliente, Funcao, Pessoa, Unidade
+    return {'clientes': Cliente, 'unidades': Unidade, 'pessoas': Pessoa, 'funcoes': Funcao}.get(kind)
+
+
+def _serialize_cadastro_master(item, kind):
+    data = {'id': item.id, 'nome': item.nome, 'ativo': item.ativo}
+    if kind == 'pessoas':
+        data['funcao'] = item.funcao
+        data['funcao_label'] = item.funcao
+    return data
+
+
+@login_required(login_url='/login/')
+@require_GET
+def gerenciar_cadastros(request):
+    if not user_can_edit_system(request.user):
+        return HttpResponseForbidden('Sem permissao para gerenciar cadastros.')
+    active_tab = request.GET.get('aba', 'clientes')
+    if active_tab not in CADASTRO_MASTER_MODELS:
+        active_tab = 'clientes'
+    return render(request, 'gerenciar_cadastros.html', {'cadastro_active_tab': active_tab})
+
+
+@login_required(login_url='/login/')
+@require_GET
+def cadastro_master_listar(request, kind):
+    denied = _cadastro_master_denied(request)
+    if denied:
+        return denied
+    query = ' '.join(str(request.GET.get('q', '')).split())
+    try:
+        page = max(int(request.GET.get('page', 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(max(int(request.GET.get('page_size', 20)), 5), 50)
+    except (TypeError, ValueError):
+        page_size = 20
+    status = request.GET.get('status', 'ativos')
+    model = _cadastro_master_model(kind)
+    if model is None:
+        return JsonResponse({'success': False, 'error': 'Tipo de cadastro invalido.'}, status=404)
+    items = model.objects.all()
+    if status == 'ativos':
+        items = items.filter(ativo=True)
+    elif status == 'inativos':
+        items = items.filter(ativo=False)
+    if query:
+        items = items.filter(nome__icontains=query)
+    total = items.count()
+    last_page = max((total + page_size - 1) // page_size, 1)
+    page = min(page, last_page)
+    start = (page - 1) * page_size
+    records = items.order_by('nome')[start:start + page_size]
+    return JsonResponse({
+        'success': True,
+        'items': [_serialize_cadastro_master(item, kind) for item in records],
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+    })
+
+
+def _save_cadastro_master(request, kind, item=None):
+    denied = _cadastro_master_denied(request)
+    if denied:
+        return denied
+    model = _cadastro_master_model(kind)
+    if model is None:
+        return JsonResponse({'success': False, 'error': 'Tipo de cadastro invalido.'}, status=404)
+    payload = _json_body(request)
+    nome = ' '.join(str(payload.get('nome', '')).split())
+    if not nome:
+        return JsonResponse({'success': False, 'error': 'Informe o nome.'}, status=400)
+    if item is None:
+        item = model()
+    item.nome = nome
+    if kind == 'pessoas':
+        from .models import Funcao
+        default_role = Funcao.objects.filter(ativo=True).order_by('nome').values_list('nome', flat=True).first() or ''
+        funcao = str(payload.get('funcao', item.funcao or default_role)).strip()
+        if not funcao:
+            return JsonResponse({'success': False, 'error': 'Cadastre uma funcao ativa antes de cadastrar pessoas.'}, status=400)
+        item.funcao = funcao
+    try:
+        item.save()
+    except ValidationError as exc:
+        return JsonResponse({'success': False, 'error': exc.messages[0] if exc.messages else str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    return JsonResponse({'success': True, 'item': _serialize_cadastro_master(item, kind)})
+
+
+@login_required(login_url='/login/')
+@require_POST
+def cadastro_master_criar(request, kind):
+    return _save_cadastro_master(request, kind)
+
+
+@login_required(login_url='/login/')
+@require_POST
+def cadastro_master_editar(request, kind, item_id):
+    model = _cadastro_master_model(kind)
+    if model is None:
+        return JsonResponse({'success': False, 'error': 'Tipo de cadastro invalido.'}, status=404)
+    return _save_cadastro_master(request, kind, get_object_or_404(model, pk=item_id))
+
+
+@login_required(login_url='/login/')
+@require_POST
+def cadastro_master_alterar_status(request, kind, item_id):
+    denied = _cadastro_master_denied(request)
+    if denied:
+        return denied
+    model = _cadastro_master_model(kind)
+    if model is None:
+        return JsonResponse({'success': False, 'error': 'Tipo de cadastro invalido.'}, status=404)
+    item = get_object_or_404(model, pk=item_id)
+    item.ativo = bool(_json_body(request).get('ativo'))
+    item.save(update_fields=['ativo'])
+    return JsonResponse({'success': True, 'item': _serialize_cadastro_master(item, kind)})
+
+
 @csrf_protect
 def cadastrar_cliente(request):
     if user_has_read_only_access(getattr(request, 'user', None)):
@@ -850,18 +985,4 @@ def cadastrar_pessoa(request):
 
 @csrf_protect
 def cadastrar_funcao(request):
-    if user_has_read_only_access(getattr(request, 'user', None)):
-        return build_read_only_forbidden_response('cadastrar funcoes')
-
-    from .models import Funcao
-
-    if request.method == 'POST':
-        nome = request.POST.get('nome', '').strip()
-        if not nome:
-            return render(request, 'cadastrar_funcao.html', {'error': 'Preencha o nome da funcao.'})
-        if Funcao.objects.filter(nome__iexact=nome).exists():
-            return render(request, 'cadastrar_funcao.html', {'error': 'Funcao ja cadastrada.'})
-        Funcao.objects.create(nome=nome)
-        return render(request, 'cadastrar_funcao.html', {'success': True})
-
-    return render(request, 'cadastrar_funcao.html')
+    return redirect('/cadastros/gerenciar/?aba=funcoes')

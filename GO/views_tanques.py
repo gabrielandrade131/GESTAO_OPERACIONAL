@@ -55,13 +55,13 @@ def cadastrar_tanque(request):
         except ValidationError as e:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({'success': False, 'error': str(e)})
-            unidades = Unidade.objects.all()
+            unidades = Unidade.objects.filter(ativo=True)
             return render(request, 'cadastrar_tanque.html', {
                 'error': str(e),
                 'unidades': unidades
             })
     
-    unidades = Unidade.objects.all()
+    unidades = Unidade.objects.filter(ativo=True)
     return render(request, 'cadastrar_tanque.html', {'unidades': unidades})
 
 @login_required

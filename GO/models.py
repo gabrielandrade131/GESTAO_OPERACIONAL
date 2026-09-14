@@ -247,6 +247,7 @@ def _normalize_instance_decimal_fields(instance):
 
 class Cliente(models.Model):
     nome = models.CharField(max_length=100, unique=True)
+    ativo = models.BooleanField(default=True)
 
     def clean(self):
         self.nome = re.sub(r'\s+', ' ', str(self.nome or '')).strip()
@@ -275,6 +276,7 @@ class Cliente(models.Model):
 
 class Unidade(models.Model):
     nome = models.CharField(max_length=50, unique=True)
+    ativo = models.BooleanField(default=True)
 
     def clean(self):
         self.nome = re.sub(r'\s+', ' ', str(self.nome or '')).strip()
@@ -778,7 +780,8 @@ class OrdemServico(models.Model):
 
 class Pessoa(models.Model):
     nome = models.CharField(max_length=100, unique=True)
-    funcao = models.CharField(max_length=100, choices=OrdemServico.FUNCOES)
+    funcao = models.CharField(max_length=100)
+    ativo = models.BooleanField(default=True)
 
     def __str__(self):
         return self.nome
@@ -902,7 +905,7 @@ class PlanejamentoEquipeMembro(models.Model):
         related_name='planejamentos_equipe',
     )
     nome_snapshot = models.CharField(max_length=150)
-    funcao_planejada = models.CharField(max_length=100, choices=OrdemServico.FUNCOES)
+    funcao_planejada = models.CharField(max_length=100)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ATIVO)
     substitui = models.ForeignKey(
         'self',
@@ -950,7 +953,7 @@ class PlanejamentoEquipeMembro(models.Model):
             raise ValidationError({'nome_snapshot': 'Informe o nome do membro planejado.'})
         if not str(self.funcao_planejada or '').strip():
             raise ValidationError({'funcao_planejada': 'Informe a função planejada.'})
-        funcoes_validas = {value for value, _ in OrdemServico.FUNCOES}
+        funcoes_validas = set(Funcao.objects.filter(ativo=True).values_list('nome', flat=True))
         if self.funcao_planejada not in funcoes_validas:
             raise ValidationError({'funcao_planejada': 'Função planejada inválida.'})
         if self.substitui_id and self.planejamento_id and self.substitui.planejamento_id != self.planejamento_id:
@@ -964,6 +967,7 @@ class PlanejamentoEquipeMembro(models.Model):
 
 class Funcao(models.Model):
     nome = models.CharField(max_length=100, unique=True)
+    ativo = models.BooleanField(default=True)
 
     def __str__(self):
         return self.nome

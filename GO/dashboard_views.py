@@ -2898,8 +2898,8 @@ def rdo_dashboard_view(request):
     try:
         from .models import Cliente, Unidade, RDO, RdoTanque
         
-        clientes = Cliente.objects.all().order_by('nome')
-        unidades = Unidade.objects.all().order_by('nome')
+        clientes = Cliente.objects.filter(ativo=True).order_by('nome')
+        unidades = Unidade.objects.filter(ativo=True).order_by('nome')
         supervisores = (
             get_user_model()
             .objects

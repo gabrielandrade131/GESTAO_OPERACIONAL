@@ -10,7 +10,7 @@ from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from GO.models import OrdemServico, Pessoa, PlanejamentoEquipeHistorico, PlanejamentoEquipeMembro, PlanejamentoEquipeOS
+from GO.models import Funcao, OrdemServico, Pessoa, PlanejamentoEquipeHistorico, PlanejamentoEquipeMembro, PlanejamentoEquipeOS
 
 
 def _get_user_display_name(user):
@@ -73,8 +73,8 @@ def _get_os_edit_block_reason(os_obj):
 
 
 def _validar_funcao_planejada(funcao):
-    funcoes_validas = {value for value, _ in OrdemServico.FUNCOES}
-    if not funcao or funcao not in funcoes_validas:
+    from .models import Funcao
+    if not funcao or not Funcao.objects.filter(nome__iexact=funcao, ativo=True).exists():
         raise ValidationError('Função planejada inválida.')
 
 
@@ -427,8 +427,8 @@ def planejamento_home(request):
         request,
         'planejamento.html',
         {
-            'pessoas_planejamento': list(Pessoa.objects.order_by('nome').values('id', 'nome', 'funcao')),
-            'funcoes_planejamento': [{'value': value, 'label': label} for value, label in OrdemServico.FUNCOES if value],
+            'pessoas_planejamento': list(Pessoa.objects.filter(ativo=True).order_by('nome').values('id', 'nome', 'funcao')),
+            'funcoes_planejamento': [{'value': item.nome, 'label': item.nome} for item in Funcao.objects.filter(ativo=True).order_by('nome')],
         },
     )
 
