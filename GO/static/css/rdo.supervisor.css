@@ -2962,14 +2962,15 @@
 }
 
 .rdo-whatsapp-header {
-  background: linear-gradient(135deg, #075e54 0%, #128c7e 65%, #25d366 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #b9ed00 0%, #aee000 100%) !important;
+  color: #172033 !important;
   padding: 18px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
 
 .rdo-whatsapp-title-group {
@@ -2979,9 +2980,9 @@
 }
 
 .rdo-whatsapp-icon {
-  font-size: 32px !important;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.2);
+  font-size: 30px !important;
+  color: #172033 !important;
+  background: rgba(255, 255, 255, 0.6) !important;
   padding: 6px;
   border-radius: 50%;
   display: inline-flex;
@@ -2995,22 +2996,23 @@
   background: transparent !important;
   border: none !important;
   font-size: 1.15rem !important;
-  font-weight: 700 !important;
-  color: #ffffff !important;
+  font-weight: 800 !important;
+  color: #172033 !important;
   letter-spacing: -0.01em !important;
   display: block !important;
 }
 
 .rdo-whatsapp-subtitle {
-  margin: 2px 0 0 0;
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.9);
+  margin: 2px 0 0 0 !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  color: #344054 !important;
 }
 
 .rdo-whatsapp-close {
-  background: rgba(255, 255, 255, 0.15);
-  border: none;
-  color: #ffffff;
+  background: rgba(0, 0, 0, 0.07) !important;
+  border: none !important;
+  color: #172033 !important;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -3022,7 +3024,7 @@
 }
 
 .rdo-whatsapp-close:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.15) !important;
   transform: scale(1.05);
 }
 
@@ -3041,16 +3043,16 @@
   align-items: center;
   gap: 10px;
   font-size: 0.85rem;
-  color: #0b4f3f;
-  background: #e6f7ef;
+  color: #273044;
+  background: #f5f8ef;
   padding: 10px 14px;
   border-radius: 8px;
-  border: 1px solid #b7e4cf;
+  border: 1px solid #dce8bd;
 }
 
 .rdo-whatsapp-tip .material-icons {
   font-size: 20px;
-  color: #128c7e;
+  color: #7cab00;
   flex-shrink: 0;
 }
 
@@ -3108,16 +3110,16 @@
 .rdo-whatsapp-footer-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .rdo-whatsapp-footer-right #rdo-whatsapp-done-btn,
 .rdo-whatsapp-footer-right .btn-rdo.outline {
   background: #ffffff !important;
-  color: #172033 !important;
-  border: 2px solid #b9ed00 !important;
-  font-weight: 700 !important;
+  color: #344054 !important;
+  border: 1.5px solid #d0d7de !important;
+  font-weight: 600 !important;
   border-radius: 8px !important;
   padding: 9px 16px !important;
   min-height: 40px !important;
@@ -3128,34 +3130,38 @@
 
 .rdo-whatsapp-footer-right #rdo-whatsapp-done-btn:hover,
 .rdo-whatsapp-footer-right .btn-rdo.outline:hover {
-  background: #f7fbe9 !important;
-  border-color: #aee000 !important;
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
   transform: translateY(-1px);
 }
 
 .rdo-whatsapp-copy-btn {
-  background: #075e54 !important;
-  color: #ffffff !important;
-  font-weight: 600 !important;
+  background: #b9ed00 !important;
+  color: #172033 !important;
+  font-weight: 800 !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  border: none !important;
-  padding: 9px 16px !important;
+  gap: 7px !important;
+  border: 1px solid #a4d400 !important;
+  padding: 9px 18px !important;
   border-radius: 8px !important;
   cursor: pointer !important;
+  box-shadow: 0 3px 10px rgba(185, 237, 0, 0.35) !important;
   transition: all 0.2s ease !important;
 }
 
 .rdo-whatsapp-copy-btn:hover {
-  background: #054c44 !important;
+  background: #aee000 !important;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(7, 94, 84, 0.25);
+  box-shadow: 0 5px 14px rgba(185, 237, 0, 0.5) !important;
 }
 
 .rdo-whatsapp-copy-btn.copied {
-  background: #25d366 !important;
-  color: #064e3b !important;
+  background: #172033 !important;
+  color: #b9ed00 !important;
+  border-color: #172033 !important;
+  box-shadow: 0 3px 10px rgba(23, 32, 51, 0.3) !important;
 }
 
 .rdo-whatsapp-send-btn {

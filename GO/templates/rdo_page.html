@@ -81,12 +81,27 @@
              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
          }
          .rdo-wp-page-header {
-             background: linear-gradient(135deg, #075e54, #128c7e);
-             color: #fff;
+             background: linear-gradient(135deg, #b9ed00, #aee000) !important;
+             color: #172033 !important;
              padding: 16px 20px;
              display: flex;
              align-items: center;
              justify-content: space-between;
+             border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+         }
+         .rdo-wp-page-header h3,
+         .rdo-wp-page-header strong {
+             margin: 0 !important;
+             padding: 0 !important;
+             background: transparent !important;
+             border: none !important;
+             color: #172033 !important;
+             font-size: 16px !important;
+             font-weight: 800 !important;
+             display: block !important;
+         }
+         .rdo-wp-page-header .material-icons {
+             color: #172033 !important;
          }
          .rdo-wp-page-body {
              padding: 16px 20px;
@@ -101,10 +116,16 @@
              font-size: 13px;
              line-height: 1.45;
              padding: 12px;
-             border: 1px solid #ced4da;
+             border: 1.5px solid #d0d7de;
              border-radius: 8px;
              box-sizing: border-box;
              white-space: pre-wrap;
+             transition: border-color 0.2s, box-shadow 0.2s;
+         }
+         .rdo-wp-page-textarea:focus {
+             border-color: #b9ed00 !important;
+             box-shadow: 0 0 0 3px rgba(185, 237, 0, 0.25) !important;
+             outline: none !important;
          }
          .rdo-wp-page-footer {
              padding: 12px 20px;
@@ -114,6 +135,39 @@
              align-items: center;
              justify-content: flex-end;
              gap: 10px;
+         }
+         .rdo-wp-page-btn-close {
+             background: #ffffff !important;
+             color: #344054 !important;
+             border: 1.5px solid #d0d7de !important;
+             padding: 8px 16px !important;
+             border-radius: 8px !important;
+             font-weight: 600 !important;
+             cursor: pointer !important;
+             transition: all 0.2s ease !important;
+         }
+         .rdo-wp-page-btn-close:hover {
+             background: #f8fafc !important;
+             border-color: #94a3b8 !important;
+             color: #0f172a !important;
+         }
+         .rdo-wp-page-btn-copy {
+             background: #b9ed00 !important;
+             color: #172033 !important;
+             font-weight: 800 !important;
+             display: inline-flex !important;
+             align-items: center !important;
+             gap: 6px !important;
+             padding: 8px 18px !important;
+             border-radius: 8px !important;
+             border: 1px solid #a4d400 !important;
+             cursor: pointer !important;
+             box-shadow: 0 3px 10px rgba(185, 237, 0, 0.35) !important;
+             transition: all 0.2s ease !important;
+         }
+         .rdo-wp-page-btn-copy:hover {
+             background: #aee000 !important;
+             box-shadow: 0 5px 14px rgba(185, 237, 0, 0.5) !important;
          }
      </style>
   </head>
@@ -694,14 +748,11 @@
                 <textarea id="rdo-wp-page-textarea" class="rdo-wp-page-textarea" rows="18" readonly></textarea>
             </div>
             <div class="rdo-wp-page-footer">
-                <button type="button" id="rdo-wp-page-copy" class="rdo-page-toolbar-btn wp" style="padding: 8px 16px;">
+                <button type="button" id="rdo-wp-page-close-btn" class="rdo-wp-page-btn-close">Fechar</button>
+                <button type="button" id="rdo-wp-page-copy" class="rdo-wp-page-btn-copy">
                     <span class="material-icons" style="font-size:18px;">content_copy</span>
                     <span id="rdo-wp-page-copy-text">Copiar Texto</span>
                 </button>
-                <a href="#" target="_blank" rel="noopener noreferrer" id="rdo-wp-page-send" class="rdo-page-toolbar-btn wp" style="padding: 8px 16px;">
-                    <span class="material-icons" style="font-size:18px;">send</span>
-                    Abrir no WhatsApp
-                </a>
             </div>
         </div>
     </div>
@@ -717,11 +768,11 @@
             var copyBtnText = document.getElementById('rdo-wp-page-copy-text');
             var sendBtn = document.getElementById('rdo-wp-page-send');
             var closeBtn = document.getElementById('rdo-wp-page-close');
+            var closeBtn2 = document.getElementById('rdo-wp-page-close-btn');
             var triggerBtn = document.getElementById('rdo-page-wp-btn');
 
             function openModal(text) {
                 textarea.value = text || '';
-                sendBtn.href = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text || '');
                 overlay.classList.add('open');
             }
 
@@ -730,6 +781,7 @@
             }
 
             if (closeBtn) closeBtn.onclick = closeModal;
+            if (closeBtn2) closeBtn2.onclick = closeModal;
             if (overlay) overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
 
             if (triggerBtn) {
