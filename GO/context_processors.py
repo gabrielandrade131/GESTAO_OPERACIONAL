@@ -77,6 +77,7 @@ ACTIVE_MODULES = {
     'rdo_detail': 'rdo',
     'cadastrar_usuario': 'usuarios',
     'gerenciar_permissoes_rdo': 'permissoes',
+    'gerenciar_cadastros': 'cadastros',
     'cadastrar_pessoa': 'pessoas',
     'cadastrar_funcao': 'funcoes',
     'cadastrar_cliente': 'clientes',

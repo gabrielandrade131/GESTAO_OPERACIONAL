@@ -710,7 +710,7 @@ def _canonicalize_funcao_choice(raw_value):
             return None
         lookup = _build_choice_lookup(
             getattr(OrdemServico, 'FUNCOES', []) or [],
-            [(f.nome, f.nome) for f in Funcao.objects.only('nome').all()],
+            [(f.nome, f.nome) for f in Funcao.objects.filter(ativo=True).only('nome')],
         )
         return lookup.get(key)
     except Exception:
@@ -5936,7 +5936,7 @@ def rdo_detail(request, rdo_id):
                         return str(label or '').lower().strip()
                 pessoas_by_func = defaultdict(list)
                 try:
-                    pessoas_qs = Pessoa.objects.all().only('nome', 'funcao')
+                    pessoas_qs = Pessoa.objects.filter(ativo=True).only('nome', 'funcao')
                 except Exception:
                     pessoas_qs = []
                 for p in pessoas_qs:
@@ -6920,17 +6920,10 @@ def rdo_detail(request, rdo_id):
             try:
                 try:
                     from types import SimpleNamespace
-                    db_funcoes_qs = Funcao.objects.order_by('nome').all() if hasattr(Funcao, 'objects') else []
-                    db_funcoes_names = [getattr(f, 'nome', None) for f in db_funcoes_qs]
-                    const_funcoes = [t[0] for t in getattr(OrdemServico, 'FUNCOES', [])]
-                    const_only = [SimpleNamespace(nome=name) for name in const_funcoes if name not in db_funcoes_names]
-                    db_funcoes_objs = [SimpleNamespace(nome=getattr(f, 'nome', None)) for f in db_funcoes_qs]
-                    get_funcoes_ctx = const_only + db_funcoes_objs
+                    db_funcoes_qs = Funcao.objects.filter(ativo=True).order_by('nome')
+                    get_funcoes_ctx = [SimpleNamespace(nome=getattr(f, 'nome', None)) for f in db_funcoes_qs]
                 except Exception:
-                    try:
-                        get_funcoes_ctx = Funcao.objects.order_by('nome').all() if hasattr(Funcao, 'objects') else []
-                    except Exception:
-                        get_funcoes_ctx = []
+                    get_funcoes_ctx = []
 
                 try:
                     payload.setdefault('active_tanque', None)
@@ -6988,7 +6981,7 @@ def rdo_detail(request, rdo_id):
                     'atividades_choices': getattr(RDO, 'ATIVIDADES_CHOICES', []),
                     'servico_choices': getattr(OrdemServico, 'SERVICO_CHOICES', []),
                     'metodo_choices': [ ('Manual','Manual'), ('Mecanizada','Mecanizada'), ('Robotizada','Robotizada') ],
-                    'get_pessoas': Pessoa.objects.order_by('nome').all() if hasattr(Pessoa, 'objects') else [],
+                    'get_pessoas': Pessoa.objects.filter(ativo=True).order_by('nome') if hasattr(Pessoa, 'objects') else [],
                     'get_funcoes': get_funcoes_ctx,
                 }, request=request)
                 return JsonResponse({
@@ -14732,17 +14725,13 @@ def rdo(request):
         ('Robotizada', 'Robotizada'),
     ]
     try:
-        get_pessoas = Pessoa.objects.order_by('nome').all()
+        get_pessoas = Pessoa.objects.filter(ativo=True).order_by('nome')
     except Exception:
         get_pessoas = []
     try:
         from types import SimpleNamespace
-        db_funcoes_qs = Funcao.objects.order_by('nome').all()
-        db_funcoes_names = [f.nome for f in db_funcoes_qs]
-        const_funcoes = [t[0] for t in getattr(OrdemServico, 'FUNCOES', [])]
-        const_only = [SimpleNamespace(nome=name) for name in const_funcoes if name not in db_funcoes_names]
-        db_funcoes_objs = [SimpleNamespace(nome=f.nome) for f in db_funcoes_qs]
-        get_funcoes = const_only + db_funcoes_objs
+        db_funcoes_qs = Funcao.objects.filter(ativo=True).order_by('nome')
+        get_funcoes = [SimpleNamespace(nome=f.nome) for f in db_funcoes_qs]
     except Exception:
         get_funcoes = []
     try:

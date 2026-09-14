@@ -1597,8 +1597,8 @@ def lista_servicos(request):
         'page_start': page_start,
         'page_end': page_end,
         'qtd_alertas_inteligentes': qtd_alertas_inteligentes,
-        'clientes': Cliente.objects.all().order_by('nome'),
-        'unidades': Unidade.objects.all().order_by('nome'),
+        'clientes': Cliente.objects.filter(ativo=True).order_by('nome'),
+        'unidades': Unidade.objects.filter(ativo=True).order_by('nome'),
         **_build_home_filter_choices(),
     })
 
@@ -2844,8 +2844,8 @@ def home(request):
         'page_start': page_start,
         'page_end': page_end,
         'qtd_alertas_inteligentes': qtd_alertas_inteligentes,
-        'clientes': Cliente.objects.all().order_by('nome'),
-        'unidades': Unidade.objects.all().order_by('nome'),
+        'clientes': Cliente.objects.filter(ativo=True).order_by('nome'),
+        'unidades': Unidade.objects.filter(ativo=True).order_by('nome'),
         **_build_home_filter_choices(),
     })
 

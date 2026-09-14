@@ -1471,8 +1471,8 @@ def _distinct_ordered_values(values):
 def _build_metadata():
     ordem_servicos = OrdemServico.objects.select_related("Cliente", "Unidade").order_by("-id")[:500]
 
-    clientes = list(Cliente.objects.order_by("nome").values_list("nome", flat=True))
-    unidades = list(Unidade.objects.order_by("nome").values_list("nome", flat=True))
+    clientes = list(Cliente.objects.filter(ativo=True).order_by("nome").values_list("nome", flat=True))
+    unidades = list(Unidade.objects.filter(ativo=True).order_by("nome").values_list("nome", flat=True))
     solicitantes = _distinct_ordered_values(getattr(item, "solicitante", "") for item in ordem_servicos)
     coordenadores = _distinct_ordered_values(getattr(item, "coordenador", "") for item in ordem_servicos)
     servicos = _distinct_ordered_values([

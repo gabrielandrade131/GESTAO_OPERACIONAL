@@ -190,10 +190,10 @@ def _client_unit_results(term, user):
     if not user_can_edit_system(user):
         return []
     results = []
-    for row in Cliente.objects.filter(nome__icontains=term).values("nome")[:RESULT_LIMIT]:
+    for row in Cliente.objects.filter(ativo=True, nome__icontains=term).values("nome")[:RESULT_LIMIT]:
         results.append(_result("person_add_alt", row["nome"], "Cliente", "Clientes e Unidades", f"{reverse('home')}?cliente={row['nome']}"))
     remaining = max(0, RESULT_LIMIT - len(results))
-    for row in Unidade.objects.filter(nome__icontains=term).values("nome")[:remaining]:
+    for row in Unidade.objects.filter(ativo=True, nome__icontains=term).values("nome")[:remaining]:
         results.append(_result("business", row["nome"], "Unidade", "Clientes e Unidades", f"{reverse('home')}?unidade={row['nome']}"))
     return results
 

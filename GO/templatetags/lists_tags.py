@@ -6,13 +6,13 @@ register = template.Library()
 @register.simple_tag
 def get_pessoas():
     try:
-        return Pessoa.objects.all()
+        return Pessoa.objects.filter(ativo=True)
     except Exception:
         return []
 
 @register.simple_tag
 def get_funcoes():
     try:
-        return Funcao.objects.all()
+        return Funcao.objects.filter(ativo=True).order_by('nome')
     except Exception:
         return []

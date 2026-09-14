@@ -1,0 +1,35 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciar Cadastros | Synchro</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/synchro_shell.css' %}?v=20260902a">
+    <link rel="stylesheet" href="{% static 'css/gerenciar_cadastros.css' %}?v=20260914a">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body class="catalog-body">
+    {% include '_synchro_shell.html' %}
+    <main class="catalog-system" id="catalogSystem" data-active-tab="{{ cadastro_active_tab }}" data-api-base="{% url 'cadastro_master_listar' 'clientes' %}">
+        <header class="catalog-heading"><span class="catalog-eyebrow">Cadastros</span><h1>Gerenciar cadastros</h1><p>Centralize a manutenção de clientes, unidades e pessoas utilizadas nas operações.</p></header>
+        <nav class="catalog-tabs" aria-label="Tipos de cadastro">
+            <a href="?aba=clientes" class="catalog-tab" data-tab="clientes"><span class="material-icons">business_center</span>Clientes</a>
+            <a href="?aba=unidades" class="catalog-tab" data-tab="unidades"><span class="material-icons">location_city</span>Unidades</a>
+            <a href="?aba=pessoas" class="catalog-tab" data-tab="pessoas"><span class="material-icons">groups</span>Pessoas</a>
+            <a href="?aba=funcoes" class="catalog-tab" data-tab="funcoes"><span class="material-icons">badge</span>Funções</a>
+        </nav>
+        <section class="catalog-card">
+            <div class="catalog-toolbar"><label class="catalog-search"><span class="material-icons">search</span><input id="catalogSearch" type="search" placeholder="Buscar..." aria-label="Buscar cadastro"></label><select class="catalog-status-filter" id="catalogStatus" aria-label="Filtrar por status"><option value="ativos">Status: Ativos</option><option value="inativos">Status: Inativos</option><option value="todos">Status: Todos</option></select><button class="catalog-button catalog-button--primary" id="addCatalogItem" type="button"><span class="material-icons">add</span><span id="addCatalogLabel">Adicionar</span></button></div>
+            <div class="catalog-summary" id="catalogSummary" aria-live="polite"></div>
+            <div class="catalog-table-wrap"><table class="catalog-table"><thead id="catalogTableHead"></thead><tbody id="catalogTableBody"></tbody></table></div>
+            <div class="catalog-pagination" id="catalogPagination" aria-live="polite"></div>
+        </section>
+    </main>
+    <div class="catalog-modal" id="catalogModal" hidden aria-hidden="true"><div class="catalog-modal__backdrop" data-close-catalog-modal></div><section class="catalog-modal__card" role="dialog" aria-modal="true" aria-labelledby="catalogModalTitle"><button class="catalog-modal__close" type="button" data-close-catalog-modal aria-label="Fechar"><span class="material-icons">close</span></button><div id="catalogModalContent"></div></section></div>
+    <div class="catalog-toast" id="catalogToast" role="status" aria-live="polite"></div>
+    <script src="{% static 'js/synchro_shell.js' %}?v=20260812a"></script>
+    <script src="{% static 'js/gerenciar_cadastros.js' %}?v=20260914d"></script>
+</body>
+</html>

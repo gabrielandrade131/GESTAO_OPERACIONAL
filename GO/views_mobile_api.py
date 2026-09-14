@@ -1877,7 +1877,7 @@ def mobile_bootstrap(request):
     pessoas_choices = []
     try:
         seen_pessoas = set()
-        for pessoa in Pessoa.objects.order_by('nome').all()[:2000]:
+        for pessoa in Pessoa.objects.filter(ativo=True).order_by('nome')[:2000]:
             nome = _clean_text(getattr(pessoa, 'nome', None))
             if not nome:
                 continue
@@ -1909,7 +1909,7 @@ def mobile_bootstrap(request):
             seen_funcoes.add(key)
             funcoes_choices.append({'value': value, 'label': label or value})
 
-        for funcao in Funcao.objects.order_by('nome').all()[:1200]:
+        for funcao in Funcao.objects.filter(ativo=True).order_by('nome')[:1200]:
             nome = _clean_text(getattr(funcao, 'nome', None))
             if not nome:
                 continue
@@ -1918,6 +1918,7 @@ def mobile_bootstrap(request):
                 continue
             seen_funcoes.add(key)
             funcoes_choices.append({'value': nome, 'label': nome})
+
     except Exception:
         logger.exception('Falha ao montar funcoes_choices no bootstrap mobile')
 

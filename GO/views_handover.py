@@ -175,8 +175,8 @@ def handover_list(request):
     handovers = handovers.order_by('-criado_em')
     return render(request, 'handover_list.html', {
         'handovers': handovers,
-        'clientes': Cliente.objects.order_by('nome'),
-        'unidades': Unidade.objects.order_by('nome'),
+        'clientes': Cliente.objects.filter(ativo=True).order_by('nome'),
+        'unidades': Unidade.objects.filter(ativo=True).order_by('nome'),
         'supervisores': User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username'),
         'coordenadores': OrdemServico.objects.exclude(coordenador__isnull=True).exclude(
             coordenador__exact=''
@@ -187,8 +187,8 @@ def handover_list(request):
 
 @login_required
 def handover_criar(request):
-    clientes = Cliente.objects.all()
-    unidades = Unidade.objects.all()
+    clientes = Cliente.objects.filter(ativo=True)
+    unidades = Unidade.objects.filter(ativo=True)
     ordens_servico = OrdemServico.objects.all().order_by('-numero_os')
     usuarios = User.objects.filter(is_active=True).order_by('first_name', 'last_name')
     
@@ -274,8 +274,8 @@ def handover_criar(request):
 @login_required
 def handover_editar(request, pk):
     handover = get_object_or_404(SupervisorHandover, pk=pk)
-    clientes = Cliente.objects.all()
-    unidades = Unidade.objects.all()
+    clientes = Cliente.objects.filter(ativo=True)
+    unidades = Unidade.objects.filter(ativo=True)
     ordens_servico = OrdemServico.objects.all().order_by('-numero_os')
     usuarios = User.objects.filter(is_active=True).order_by('first_name', 'last_name')
     
