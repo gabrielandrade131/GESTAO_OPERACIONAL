@@ -124,6 +124,7 @@ urlpatterns = [
     path('api/os/<int:os_id>/', views_rdo.lookup_os, name='api_lookup_os'),
     path('api/os/<int:os_id>/tanks/', views_rdo.tanks_for_os, name='api_os_tanks'),
     path('api/rdo/<int:rdo_id>/', views_rdo.rdo_detail, name='api_rdo_detail'),
+    path('api/rdo/<int:rdo_id>/whatsapp-text/', views_rdo.rdo_whatsapp_text_api, name='api_rdo_whatsapp_text'),
     path('api/rdo/<int:rdo_id>/avaliacoes-equipe/', views_rdo.api_rdo_avaliacoes_equipe, name='api_rdo_avaliacoes_equipe'),
     path('api/rdo/membros/<int:membro_id>/avaliacao/', views_rdo.api_rdo_membro_avaliacao, name='api_rdo_membro_avaliacao'),
     path('api/rdo/os/<int:os_id>/rdos/', views_rdo.rdo_os_rdos, name='api_rdo_os_rdos'),

@@ -43,6 +43,7 @@ from .rdo_access import (
     user_can_open_rdo as _user_can_open_rdo,
     user_can_open_or_edit_rdo as _user_can_open_or_edit_rdo,
 )
+from .rdo_whatsapp import build_rdo_whatsapp_text
 from alertas_inteligentes.services import marcar_rdo_para_reanalise
 from alertas_inteligentes.services.rdo_immediate_analysis import agendar_analise_rdo
 import logging
@@ -5648,6 +5649,27 @@ def rdo_tank_detail(request, codigo):
 
 @login_required(login_url='/login/')
 @require_GET
+def rdo_whatsapp_text_api(request, rdo_id):
+    """Retorna o texto de status operacional formatado para WhatsApp sob demanda."""
+    try:
+        rdo_obj = RDO.objects.select_related('ordem_servico', 'ordem_servico__Unidade', 'ordem_servico__Cliente').get(pk=rdo_id)
+    except RDO.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'RDO não encontrado.'}, status=404)
+
+    try:
+        text = build_rdo_whatsapp_text(rdo_obj)
+        return JsonResponse({
+            'success': True,
+            'rdo_id': rdo_id,
+            'whatsapp_text': text,
+        })
+    except Exception as exc:
+        logging.getLogger(__name__).exception('Erro ao gerar texto para WhatsApp')
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+
+@login_required(login_url='/login/')
+@require_GET
 def rdo_detail(request, rdo_id):
     try:
         rdo_obj = RDO.objects.select_related('ordem_servico').get(pk=rdo_id)
@@ -6974,9 +6996,15 @@ def rdo_detail(request, rdo_id):
     except Exception:
         pass
 
+    try:
+        payload['whatsapp_text'] = build_rdo_whatsapp_text(rdo_obj)
+    except Exception:
+        payload['whatsapp_text'] = ''
+
     return JsonResponse({
         'success': True,
-        'rdo': payload
+        'rdo': payload,
+        'whatsapp_text': payload.get('whatsapp_text', '')
     })
 
 def _supervisor_search_q(val):
@@ -10831,6 +10859,12 @@ def _apply_post_to_rdo(request, rdo_obj):
         except Exception:
             logging.getLogger(__name__).exception('Falha ao montar payload de origem da equipe do RDO')
 
+        try:
+            payload['whatsapp_text'] = build_rdo_whatsapp_text(rdo_obj)
+        except Exception:
+            logging.getLogger(__name__).exception('Falha ao gerar whatsapp_text em _apply_post_to_rdo')
+            payload['whatsapp_text'] = ''
+
         logger.info('_apply_post_to_rdo about to return payload for rdo_id=%s', getattr(rdo_obj, 'id', None))
         return True, payload
     except Exception as e:
@@ -11180,6 +11214,7 @@ def create_rdo_ajax(request):
                         'id': rdo_pk,
                         'pk': rdo_pk,
                         'rdo': payload,
+                        'whatsapp_text': (payload.get('whatsapp_text') if isinstance(payload, dict) else None) or build_rdo_whatsapp_text(rdo_obj),
                         'used_rdo': str(final_rdo),
                         'computed_max': (max_val if max_val is not None else None),
                         'status_promovido_em_andamento': bool(same_os_status_updates),
@@ -11191,6 +11226,7 @@ def create_rdo_ajax(request):
                         'message': 'RDO criado',
                         'id': None,
                         'rdo': payload,
+                        'whatsapp_text': (payload.get('whatsapp_text') if isinstance(payload, dict) else None) or build_rdo_whatsapp_text(rdo_obj),
                         'status_promovido_em_andamento': bool(same_os_status_updates),
                         'same_os_status_updates': same_os_status_updates,
                     }
@@ -11214,6 +11250,7 @@ def create_rdo_ajax(request):
                 'message': 'RDO criado',
                 'id': payload.get('id'),
                 'rdo': payload,
+                'whatsapp_text': (payload.get('whatsapp_text') if isinstance(payload, dict) else None) or build_rdo_whatsapp_text(rdo_obj),
                 'status_promovido_em_andamento': bool(same_os_status_updates),
                 'same_os_status_updates': same_os_status_updates,
             })
@@ -11391,6 +11428,10 @@ def _build_supervisor_limited_rdo_payload(rdo_obj, user=None):
         'edit_restriction_message': edit_access.get('restriction_message') or '',
         'created_at': getattr(rdo_obj, 'created_at', None).isoformat() if getattr(rdo_obj, 'created_at', None) else None,
     }
+    try:
+        payload['whatsapp_text'] = build_rdo_whatsapp_text(rdo_obj)
+    except Exception:
+        payload['whatsapp_text'] = ''
     try:
         payload.update(_build_rdo_team_origin_payload(rdo_obj, equipe_list=equipe_list))
     except Exception:
@@ -11699,6 +11740,7 @@ def update_rdo_ajax(request):
             'success': True,
             'message': 'RDO atualizado',
             'rdo': payload,
+            'whatsapp_text': (payload.get('whatsapp_text') if isinstance(payload, dict) else None) or build_rdo_whatsapp_text(rdo_obj),
             'status_promovido_em_andamento': bool(same_os_status_updates),
             'same_os_status_updates': same_os_status_updates,
         })

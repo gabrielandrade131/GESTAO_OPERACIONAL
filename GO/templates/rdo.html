@@ -586,6 +586,7 @@
                             <th>ABRIR NOVO RDO</th>
                             {% endif %}
                             <th>RDO</th>
+                            <th style="text-align:center">WHATSAPP</th>
                             <th>PDF OS</th>
                         </tr>
                     </thead>
@@ -681,6 +682,15 @@
                                    aria-label="Abrir página do RDO {{ r.rdo|default:r.id }}">
                                     <span class="material-icons" aria-hidden="true">visibility</span>
                                 </a>
+                            </td>
+                            <td class="action-cell">
+                                <button class="action-btn rdo-whatsapp-btn"
+                                        type="button"
+                                        data-rdo-id="{{ r.id }}"
+                                        title="Gerar status operacional para WhatsApp"
+                                        aria-label="Gerar status WhatsApp do RDO {{ r.rdo|default:r.id }}">
+                                    <span class="material-icons" style="color: #25D366;" aria-hidden="true">chat</span>
+                                </button>
                             </td>
                             <td class="action-cell">
                                 {% if r.ordem_servico %}
@@ -2200,6 +2210,39 @@
                         <button type="submit" class="btn-rdo primary">Salvar passagem de serviço</button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- Modal WhatsApp Status Operacional -->
+        <div class="modal-overlay rdo-whatsapp-modal-overlay" id="rdo-whatsapp-modal-overlay" aria-hidden="true" style="display:none;">
+            <div class="rdo-whatsapp-modal" role="dialog" aria-modal="true" aria-labelledby="rdo-whatsapp-title">
+                <div class="rdo-whatsapp-header">
+                    <div class="rdo-whatsapp-title-group">
+                        <span class="material-icons rdo-whatsapp-icon" aria-hidden="true">chat</span>
+                        <div>
+                            <h3 id="rdo-whatsapp-title">Status Operacional</h3>
+                            <p class="rdo-whatsapp-subtitle">Texto pronto para colar no WhatsApp</p>
+                        </div>
+                    </div>
+                    <button type="button" class="rdo-whatsapp-close" id="rdo-whatsapp-close-btn" aria-label="Fechar">
+                        <span class="material-icons">close</span>
+                    </button>
+                </div>
+                <div class="rdo-whatsapp-body">
+                    <div class="rdo-whatsapp-editor-wrapper">
+                        <textarea id="rdo-whatsapp-textarea" class="rdo-whatsapp-textarea" rows="18" spellcheck="false"></textarea>
+                    </div>
+                </div>
+                <div class="rdo-whatsapp-footer">
+                    <div></div>
+                    <div class="rdo-whatsapp-footer-right">
+                        <button type="button" class="btn-rdo outline" id="rdo-whatsapp-done-btn">Fechar</button>
+                        <button type="button" class="btn-rdo rdo-whatsapp-copy-btn" id="rdo-whatsapp-copy-btn">
+                            <span class="material-icons">content_copy</span>
+                            <span id="rdo-whatsapp-copy-btn-text">Copiar Texto</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </main>

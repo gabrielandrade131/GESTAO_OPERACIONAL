@@ -2909,4 +2909,295 @@
   display: none !important;
 }
 
+/* ==========================================================================
+   WhatsApp Status Operacional Modal Styles
+   ========================================================================== */
+.rdo-whatsapp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 15, 26, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 99999;
+  padding: 16px;
+  animation: rdoWpFadeIn 0.2s ease-out;
+}
+
+.rdo-whatsapp-modal-overlay.open,
+.rdo-whatsapp-modal-overlay[aria-hidden="false"] {
+  display: flex !important;
+}
+
+@keyframes rdoWpFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rdoWpSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.rdo-whatsapp-modal {
+  width: 100%;
+  max-width: 680px;
+  max-height: min(90vh, 760px);
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: rdoWpSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rdo-whatsapp-header {
+  background: linear-gradient(135deg, #075e54 0%, #128c7e 65%, #25d366 100%);
+  color: #ffffff;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.rdo-whatsapp-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rdo-whatsapp-icon {
+  font-size: 32px !important;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rdo-whatsapp-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.rdo-whatsapp-subtitle {
+  margin: 2px 0 0 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.rdo-whatsapp-close {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #ffffff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.15s;
+}
+
+.rdo-whatsapp-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.rdo-whatsapp-body {
+  padding: 18px 20px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f4f6f8;
+}
+
+.rdo-whatsapp-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: #0b4f3f;
+  background: #e6f7ef;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #b7e4cf;
+}
+
+.rdo-whatsapp-tip .material-icons {
+  font-size: 20px;
+  color: #128c7e;
+  flex-shrink: 0;
+}
+
+.rdo-whatsapp-editor-wrapper {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.rdo-whatsapp-textarea {
+  width: 100%;
+  min-height: 280px;
+  max-height: 420px;
+  font-family: 'Consolas', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 14px;
+  border: 1.5px solid #d0d7de;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1a202c;
+  resize: vertical;
+  outline: none;
+  white-space: pre-wrap;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  box-sizing: border-box;
+}
+
+.rdo-whatsapp-textarea:focus {
+  border-color: #128c7e;
+  box-shadow: 0 0 0 3px rgba(18, 140, 126, 0.15);
+}
+
+.rdo-whatsapp-textarea[readonly] {
+  background: #fdfdfd;
+}
+
+.rdo-whatsapp-footer {
+  padding: 14px 20px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rdo-whatsapp-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rdo-whatsapp-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rdo-whatsapp-copy-btn {
+  background: #075e54 !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  border: none !important;
+  padding: 9px 16px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.rdo-whatsapp-copy-btn:hover {
+  background: #054c44 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(7, 94, 84, 0.25);
+}
+
+.rdo-whatsapp-copy-btn.copied {
+  background: #25d366 !important;
+  color: #064e3b !important;
+}
+
+.rdo-whatsapp-send-btn {
+  background: #25d366 !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  text-decoration: none !important;
+  padding: 9px 16px !important;
+  border-radius: 8px !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.rdo-whatsapp-send-btn:hover {
+  background: #20ba5a !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+}
+
+.rdo-whatsapp-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background-color 0.2s, transform 0.15s;
+}
+
+.rdo-whatsapp-btn:hover {
+  background-color: rgba(37, 211, 102, 0.15);
+  transform: scale(1.1);
+}
+
+@media (max-width: 600px) {
+  .rdo-whatsapp-modal {
+    max-height: 94vh;
+    border-radius: 12px;
+  }
+  .rdo-whatsapp-header {
+    padding: 14px 16px;
+  }
+  .rdo-whatsapp-body {
+    padding: 14px 16px;
+  }
+  .rdo-whatsapp-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .rdo-whatsapp-footer-left,
+  .rdo-whatsapp-footer-right {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .rdo-whatsapp-footer-right .btn-rdo {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+
 

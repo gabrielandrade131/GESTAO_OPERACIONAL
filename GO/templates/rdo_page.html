@@ -1,14 +1,134 @@
- {% load static %}
+{% load static %}
  <!DOCTYPE html>
  <html lang="pt-BR">
- <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link rel="stylesheet" href="{% static 'css/page_rdo.css' %}?v=20260810c">
- </head>
- <body>
-    <div class="page" id="rdo">
+  <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Relatório Diário de Operação - RDO {{ rdo.rdo }}</title>
+     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+     <link rel="stylesheet" href="{% static 'css/page_rdo.css' %}?v=20260810c">
+     <style>
+         @media print {
+             .no-print { display: none !important; }
+         }
+         .rdo-page-floating-toolbar {
+             position: fixed;
+             top: 14px;
+             right: 20px;
+             z-index: 10000;
+             display: flex;
+             align-items: center;
+             gap: 10px;
+             background: rgba(255, 255, 255, 0.95);
+             padding: 6px 10px;
+             border-radius: 10px;
+             box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+             backdrop-filter: blur(4px);
+             border: 1px solid rgba(0, 0, 0, 0.08);
+         }
+         .rdo-page-toolbar-btn {
+             display: inline-flex;
+             align-items: center;
+             gap: 6px;
+             padding: 8px 14px;
+             border-radius: 6px;
+             font-size: 13px;
+             font-weight: 600;
+             cursor: pointer;
+             border: none;
+             text-decoration: none;
+             transition: all 0.2s;
+         }
+         .rdo-page-toolbar-btn.wp {
+             background: #25D366;
+             color: #ffffff;
+         }
+         .rdo-page-toolbar-btn.wp:hover {
+             background: #20ba5a;
+             transform: translateY(-1px);
+         }
+         .rdo-page-toolbar-btn.pdf {
+             background: #0284c7;
+             color: #ffffff;
+         }
+         .rdo-page-toolbar-btn.pdf:hover {
+             background: #0369a1;
+             transform: translateY(-1px);
+         }
+         /* Modal WhatsApp in Page */
+         .rdo-wp-page-overlay {
+             position: fixed;
+             inset: 0;
+             background: rgba(0,0,0,0.65);
+             z-index: 99999;
+             display: none;
+             align-items: center;
+             justify-content: center;
+             padding: 16px;
+             backdrop-filter: blur(4px);
+         }
+         .rdo-wp-page-overlay.open { display: flex; }
+         .rdo-wp-page-modal {
+             background: #ffffff;
+             width: 100%;
+             max-width: 650px;
+             max-height: 90vh;
+             border-radius: 14px;
+             display: flex;
+             flex-direction: column;
+             overflow: hidden;
+             box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         }
+         .rdo-wp-page-header {
+             background: linear-gradient(135deg, #075e54, #128c7e);
+             color: #fff;
+             padding: 16px 20px;
+             display: flex;
+             align-items: center;
+             justify-content: space-between;
+         }
+         .rdo-wp-page-body {
+             padding: 16px 20px;
+             flex: 1 1 auto;
+             overflow-y: auto;
+             background: #f8f9fa;
+         }
+         .rdo-wp-page-textarea {
+             width: 100%;
+             min-height: 280px;
+             font-family: 'Consolas', 'Menlo', 'Monaco', monospace;
+             font-size: 13px;
+             line-height: 1.45;
+             padding: 12px;
+             border: 1px solid #ced4da;
+             border-radius: 8px;
+             box-sizing: border-box;
+             white-space: pre-wrap;
+         }
+         .rdo-wp-page-footer {
+             padding: 12px 20px;
+             background: #ffffff;
+             border-top: 1px solid #e9ecef;
+             display: flex;
+             align-items: center;
+             justify-content: flex-end;
+             gap: 10px;
+         }
+     </style>
+  </head>
+  <body>
+     <div class="rdo-page-floating-toolbar no-print">
+         <button type="button" class="rdo-page-toolbar-btn wp" id="rdo-page-wp-btn">
+             <span class="material-icons" style="font-size: 18px;">chat</span>
+             Status WhatsApp
+         </button>
+         <button type="button" class="rdo-page-toolbar-btn pdf" onclick="window.print()">
+             <span class="material-icons" style="font-size: 18px;">print</span>
+             Imprimir / PDF
+         </button>
+     </div>
+     <div class="page" id="rdo">
         <header class="page-header">
             <div class="header-top">
                 <div class="brand">
@@ -559,8 +679,101 @@
         </footer>
     </div>
 
+    <div class="rdo-wp-page-overlay no-print" id="rdo-wp-page-overlay">
+        <div class="rdo-wp-page-modal">
+            <div class="rdo-wp-page-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span class="material-icons" style="color:#25D366;font-size:26px;">chat</span>
+                    <strong style="font-size:16px;">Status Operacional para WhatsApp</strong>
+                </div>
+                <button type="button" id="rdo-wp-page-close" style="background:none;border:none;color:#fff;cursor:pointer;">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="rdo-wp-page-body">
+                <textarea id="rdo-wp-page-textarea" class="rdo-wp-page-textarea" rows="18" readonly></textarea>
+            </div>
+            <div class="rdo-wp-page-footer">
+                <button type="button" id="rdo-wp-page-copy" class="rdo-page-toolbar-btn wp" style="padding: 8px 16px;">
+                    <span class="material-icons" style="font-size:18px;">content_copy</span>
+                    <span id="rdo-wp-page-copy-text">Copiar Texto</span>
+                </button>
+                <a href="#" target="_blank" rel="noopener noreferrer" id="rdo-wp-page-send" class="rdo-page-toolbar-btn wp" style="padding: 8px 16px;">
+                    <span class="material-icons" style="font-size:18px;">send</span>
+                    Abrir no WhatsApp
+                </a>
+            </div>
+        </div>
+    </div>
+
     <script src="{% static 'js/page_rdo.js' %}"></script>
     <script src="{% static 'js/rdo_pdf.js' %}"></script>
+    <script>
+        (function() {
+            var rdoId = '{{ rdo.id|default:"" }}';
+            var overlay = document.getElementById('rdo-wp-page-overlay');
+            var textarea = document.getElementById('rdo-wp-page-textarea');
+            var copyBtn = document.getElementById('rdo-wp-page-copy');
+            var copyBtnText = document.getElementById('rdo-wp-page-copy-text');
+            var sendBtn = document.getElementById('rdo-wp-page-send');
+            var closeBtn = document.getElementById('rdo-wp-page-close');
+            var triggerBtn = document.getElementById('rdo-page-wp-btn');
+
+            function openModal(text) {
+                textarea.value = text || '';
+                sendBtn.href = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text || '');
+                overlay.classList.add('open');
+            }
+
+            function closeModal() {
+                overlay.classList.remove('open');
+            }
+
+            if (closeBtn) closeBtn.onclick = closeModal;
+            if (overlay) overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
+
+            if (triggerBtn) {
+                triggerBtn.onclick = async function() {
+                    try {
+                        triggerBtn.disabled = true;
+                        var resp = await fetch('/api/rdo/' + encodeURIComponent(rdoId) + '/whatsapp-text/');
+                        var data = await resp.json();
+                        triggerBtn.disabled = false;
+                        if (data && data.success && data.whatsapp_text) {
+                            openModal(data.whatsapp_text);
+                        } else {
+                            alert((data && data.error) || 'Erro ao gerar texto para WhatsApp.');
+                        }
+                    } catch(err) {
+                        triggerBtn.disabled = false;
+                        alert('Erro ao conectar ao servidor.');
+                    }
+                };
+            }
+
+            if (copyBtn) {
+                copyBtn.onclick = function() {
+                    var val = textarea.value;
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(val).then(function() {
+                            copyBtnText.textContent = '✓ Copiado!';
+                            setTimeout(function() { copyBtnText.textContent = 'Copiar Texto'; }, 2500);
+                        }).catch(function() {
+                            textarea.select();
+                            document.execCommand('copy');
+                            copyBtnText.textContent = '✓ Copiado!';
+                            setTimeout(function() { copyBtnText.textContent = 'Copiar Texto'; }, 2500);
+                        });
+                    } else {
+                        textarea.select();
+                        document.execCommand('copy');
+                        copyBtnText.textContent = '✓ Copiado!';
+                        setTimeout(function() { copyBtnText.textContent = 'Copiar Texto'; }, 2500);
+                    }
+                };
+            }
+        })();
+    </script>
  </body>
  </html>
  
