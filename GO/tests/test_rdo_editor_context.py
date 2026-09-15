@@ -10,7 +10,15 @@ from django.test import TestCase, override_settings
 from django.test.client import RequestFactory
 from django.urls import reverse
 
-from GO.models import Cliente, OrdemServico, RDO, RdoTanque, Unidade
+from GO.models import (
+    Cliente,
+    OrdemServico,
+    PlanejamentoEquipeOS,
+    RDO,
+    RDOMembroEquipe,
+    RdoTanque,
+    Unidade,
+)
 from GO.views_rdo import _build_rdo_page_context, _build_rdo_photo_public_path
 
 
@@ -122,3 +130,57 @@ class RdoEditorContextPageTests(TestCase):
                     '/fotos_rdo/rdos/foto-que-nao-existe.jpg',
                 ),
             )
+
+    def test_equipe_manual_aparece_no_documento_mesmo_com_membros_inativos(self):
+        os_obj = self._build_os('20003')
+        rdo = RDO.objects.create(
+            ordem_servico=os_obj,
+            rdo='1',
+            data=date(2026, 4, 11),
+            data_inicio=date(2026, 4, 11),
+            equipe_origem=RDO.EQUIPE_ORIGEM_MANUAL,
+        )
+        RDOMembroEquipe.objects.create(
+            rdo=rdo,
+            nome='MEMBRO MANUAL',
+            funcao='AJUDANTE',
+            em_servico=False,
+        )
+
+        request = self.factory.get(f'/rdo/{rdo.id}/page/')
+        request.user = self.user
+        context = _build_rdo_page_context(request, rdo.id)
+
+        self.assertEqual(len(context['equipe_rows']), 1)
+        self.assertEqual(context['equipe_rows'][0]['members'][0]['nome_completo'], 'MEMBRO MANUAL')
+
+    def test_equipe_com_planejamento_respeita_membros_em_servico(self):
+        os_obj = self._build_os('20004')
+        PlanejamentoEquipeOS.objects.create(ordem_servico=os_obj, criado_por=self.user)
+        rdo = RDO.objects.create(
+            ordem_servico=os_obj,
+            rdo='1',
+            data=date(2026, 4, 11),
+            data_inicio=date(2026, 4, 11),
+        )
+        RDOMembroEquipe.objects.create(
+            rdo=rdo,
+            nome='MEMBRO FORA',
+            funcao='AJUDANTE',
+            em_servico=False,
+        )
+        RDOMembroEquipe.objects.create(
+            rdo=rdo,
+            nome='MEMBRO ATIVO',
+            funcao='SUPERVISOR',
+            em_servico=True,
+            ordem=1,
+        )
+
+        request = self.factory.get(f'/rdo/{rdo.id}/page/')
+        request.user = self.user
+        context = _build_rdo_page_context(request, rdo.id)
+
+        members = context['equipe_rows'][0]['members']
+        self.assertEqual(members[0]['nome_completo'], 'MEMBRO ATIVO')
+        self.assertEqual(len([member for member in members if member]), 1)
