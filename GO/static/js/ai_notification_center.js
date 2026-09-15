@@ -9,6 +9,7 @@
     const closeButton = document.getElementById("ai-notification-center-close");
     const markAllButton = document.getElementById("ai-notification-mark-all");
     const searchInput = document.getElementById("ai-notification-search");
+    const searchValue = document.getElementById("ai-notification-search-value");
     const searchLoading = document.getElementById("ai-notification-search-loading");
     const prioritySelect = document.getElementById("ai-notification-priority");
     const typeSelect = document.getElementById("ai-notification-type");
@@ -207,10 +208,12 @@
         const empty = element("div", "ai-notification-center__empty");
         empty.append(element("span", "material-icons", "notifications_none"), element("strong", "", copy[0]));
         if (state.query || state.priority || state.alertType) {
-            const clear = element("button", "", copy[1]);
+            const clear = element("button", "ai-notification-center__clear-search", copy[1]);
             clear.type = "button";
+            clear.prepend(element("span", "material-icons", "filter_alt_off"));
             clear.addEventListener("click", function () {
                 searchInput.value = "";
+                syncSearchValue();
                 state.query = "";
                 prioritySelect.value = "";
                 state.priority = "";
@@ -419,6 +422,13 @@
         });
     }
 
+    function syncSearchValue() {
+        if (!searchValue) return;
+        const hasValue = Boolean(searchInput.value);
+        searchValue.textContent = hasValue ? searchInput.value : searchInput.placeholder;
+        searchValue.classList.toggle("is-placeholder", !hasValue);
+    }
+
     function confirmReanalysis(trigger) {
         if (!reanalyseModal || !reanalyseConfirm) return Promise.resolve(true);
         return new Promise(function (resolve) {
@@ -513,6 +523,9 @@
 
     async function loadPage(page, append) {
         const requestId = ++state.requestId;
+        const restoreSearchFocus = !append && document.activeElement === searchInput;
+        const searchSelectionStart = restoreSearchFocus ? searchInput.selectionStart : null;
+        const searchSelectionEnd = restoreSearchFocus ? searchInput.selectionEnd : null;
         setLoading(true, append);
         try {
             const payload = await request(listUrl(page));
@@ -555,7 +568,19 @@
             listFooter.hidden = true;
             detailsEmpty("Não foi possível carregar os alertas.");
         } finally {
-            if (requestId === state.requestId) setLoading(false, append);
+            if (requestId === state.requestId) {
+                setLoading(false, append);
+                // A busca atualiza a lista de forma assíncrona. Mantenha o foco e a
+                // posição do cursor para que a pessoa possa continuar digitando.
+                if (restoreSearchFocus && state.open) {
+                    searchInput.focus({ preventScroll: true });
+                    const valueLength = searchInput.value.length;
+                    searchInput.setSelectionRange(
+                        Math.min(searchSelectionStart, valueLength),
+                        Math.min(searchSelectionEnd, valueLength)
+                    );
+                }
+            }
         }
     }
 
@@ -699,6 +724,7 @@
 
     let debounceTimer;
     searchInput.addEventListener("input", function () {
+        syncSearchValue();
         window.clearTimeout(debounceTimer);
         debounceTimer = window.setTimeout(function () {
             state.query = searchInput.value.trim();
@@ -764,4 +790,5 @@
     window.setInterval(refreshCompactSnapshot, 30000);
 
     center.setAttribute("aria-hidden", "true");
+    syncSearchValue();
 }());

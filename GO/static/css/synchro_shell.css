@@ -1,4 +1,4 @@
-@import url("./ai_notification_center.css?v=20260902c");
+@import url("./ai_notification_center.css?v=20260915e");
 :root{--synchro-green:#b9ed00;--synchro-green-strong:#82b600;--synchro-ink:#172033;--synchro-muted:#667085;--synchro-line:#e7eaf0;--synchro-surface:#fff;--synchro-header-height:72px}
 body>.drawer-nav:not(.synchro-drawer),.site-wrapper>.drawer-nav:not(.synchro-drawer),.mobile-bottom-nav,.mobile-sheet{display:none!important}
 .site-wrapper>header:not(.synchro-header){display:none!important}
