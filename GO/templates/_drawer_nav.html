@@ -64,7 +64,7 @@
                 <a href="{% url 'gerenciar_permissoes_rdo' %}" class="menu-btn{% if synchro_active_module == 'permissoes' %} is-active{% endif %}"><span class="material-icons" aria-hidden="true">verified_user</span><span>Gerenciar Permissões</span></a>
                 {% endif %}
                 {% if can_edit_system %}
-                <a href="{% url 'gerenciar_cadastros' %}" class="menu-btn{% if synchro_active_module == 'cadastros' %} is-active{% endif %}"{% if synchro_active_module == 'cadastros' %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">domain_add</span><span>Gerenciar Cadastros</span></a>
+                {% if can_manage_cadastros %}<a href="{% url 'gerenciar_cadastros' %}" class="menu-btn{% if synchro_active_module == 'cadastros' %} is-active{% endif %}"{% if synchro_active_module == 'cadastros' %} aria-current="page"{% endif %}><span class="material-icons" aria-hidden="true">domain_add</span><span>Gerenciar Cadastros</span></a>{% endif %}
                 <a href="{% url 'cadastrar_pessoa' %}" class="menu-btn{% if synchro_active_module == 'pessoas' %} is-active{% endif %}"><span class="material-icons" aria-hidden="true">badge</span><span>Cadastrar Pessoa</span></a>
                 <a href="{% url 'cadastrar_funcao' %}" class="menu-btn{% if synchro_active_module == 'funcoes' %} is-active{% endif %}"><span class="material-icons" aria-hidden="true">sell</span><span>Cadastrar Função</span></a>
                 <a href="{% url 'cadastrar_cliente' %}" class="menu-btn{% if synchro_active_module == 'clientes' %} is-active{% endif %}"><span class="material-icons" aria-hidden="true">person_add_alt</span><span>Cadastrar Cliente</span></a>

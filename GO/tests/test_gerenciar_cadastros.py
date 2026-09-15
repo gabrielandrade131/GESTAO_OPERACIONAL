@@ -100,3 +100,23 @@ class GerenciarCadastrosTests(TestCase):
         self.client.force_login(readonly)
         self.assertEqual(self.client.get(reverse('gerenciar_cadastros')).status_code, 403)
         self.assertEqual(self.client.get(reverse('cadastro_master_listar', args=['unidades'])).status_code, 403)
+
+    def test_regular_user_needs_explicit_catalog_permission(self):
+        from django.contrib.auth.models import Group
+        from GO.rdo_access import CADASTROS_MANAGER_GROUP_NAME, ensure_rdo_access_groups
+
+        user = get_user_model().objects.create_user(username='catalog_user', password='secret')
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(reverse('gerenciar_cadastros')).status_code, 403)
+
+        ensure_rdo_access_groups()
+        user.groups.add(Group.objects.get(name=CADASTROS_MANAGER_GROUP_NAME))
+        self.assertEqual(self.client.get(reverse('gerenciar_cadastros')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('cadastro_master_listar', args=['clientes'])).status_code, 200)
+
+    def test_catalog_permission_is_available_in_user_permission_screen(self):
+        from GO.rdo_access import CADASTROS_MANAGER_GROUP_NAME
+
+        response = self.client.get(reverse('administracao_usuario_permissoes', args=[self.user.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(CADASTROS_MANAGER_GROUP_NAME, [item['key'] for item in response.json()['permissions']])

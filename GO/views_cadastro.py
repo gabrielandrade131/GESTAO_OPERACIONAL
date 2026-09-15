@@ -18,6 +18,7 @@ from .rdo_access import (
     RDO_PERMISSION_MANAGER_GROUP_NAME,
     RDO_VIEW_ONLY_GROUP_NAME,
     RESPONSAVEIS_COORDENADORES_MANAGER_GROUP_NAME,
+    CADASTROS_MANAGER_GROUP_NAME,
     SUPERVISOR_GROUP_NAME,
     SYSTEM_READ_ONLY_GROUP_NAME,
     build_read_only_forbidden_response,
@@ -26,7 +27,7 @@ from .rdo_access import (
     user_has_read_only_access,
     user_can_manage_rdo_permission_users,
     user_can_manage_responsaveis_coordenadores,
-    user_can_edit_system,
+    user_can_manage_cadastros,
 )
 
 
@@ -317,6 +318,7 @@ USER_PERMISSION_GROUPS = (
     (SYSTEM_READ_ONLY_GROUP_NAME, 'Somente visualização', 'Restringe alterações no sistema.'),
     (RDO_VIEW_ONLY_GROUP_NAME, 'Visualizar RDO', 'Permite abrir o modal completo do RDO em modo somente leitura.'),
     (RESPONSAVEIS_COORDENADORES_MANAGER_GROUP_NAME, 'Gerenciar responsáveis e coordenadores', 'Permite administrar a fonte central de nomes.'),
+    (CADASTROS_MANAGER_GROUP_NAME, 'Gerenciar cadastros', 'Permite administrar clientes, unidades, pessoas e funções.'),
 )
 
 
@@ -796,7 +798,7 @@ CADASTRO_MASTER_MODELS = {'clientes': 'Cliente', 'unidades': 'Unidade', 'pessoas
 
 
 def _cadastro_master_denied(request):
-    if not user_can_edit_system(getattr(request, 'user', None)):
+    if not user_can_manage_cadastros(getattr(request, 'user', None)):
         return JsonResponse({'success': False, 'error': 'Sem permissao para gerenciar cadastros.'}, status=403)
     return None
 
@@ -817,7 +819,7 @@ def _serialize_cadastro_master(item, kind):
 @login_required(login_url='/login/')
 @require_GET
 def gerenciar_cadastros(request):
-    if not user_can_edit_system(request.user):
+    if not user_can_manage_cadastros(request.user):
         return HttpResponseForbidden('Sem permissao para gerenciar cadastros.')
     active_tab = request.GET.get('aba', 'clientes')
     if active_tab not in CADASTRO_MASTER_MODELS:
