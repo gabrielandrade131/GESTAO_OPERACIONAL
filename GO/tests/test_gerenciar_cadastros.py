@@ -8,7 +8,10 @@ from django.urls import reverse
 from GO.models import Cliente, Funcao, OrdemServico, Pessoa
 
 
-@override_settings(STORAGES={'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}})
+@override_settings(
+    SECURE_SSL_REDIRECT=False,
+    STORAGES={'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}}
+)
 class GerenciarCadastrosTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_superuser(
