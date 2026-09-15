@@ -175,6 +175,7 @@ urlpatterns = [
     path('api/mobile/v1/os/<int:os_id>/planning/', views_mobile_api.mobile_os_planning, name='api_mobile_os_planning'),
     path('api/mobile/v1/os/<int:os_id>/rdos/', views_mobile_api.mobile_os_rdos, name='api_mobile_os_rdos'),
     path('api/mobile/v1/rdo/<int:rdo_id>/page/', views_mobile_api.mobile_rdo_page, name='api_mobile_rdo_page'),
+    path('api/mobile/v1/rdo/<int:rdo_id>/whatsapp-text/', views_mobile_api.mobile_rdo_whatsapp_text, name='api_mobile_rdo_whatsapp_text'),
     path('api/mobile/v1/rdo/pdf/', views_mobile_api.mobile_rdo_pdf, name='api_mobile_rdo_pdf'),
     path('api/mobile/v1/rdo/<int:rdo_id>/edit/', views_mobile_api.mobile_rdo_supervisor_edit, name='api_mobile_rdo_supervisor_edit'),
     path('api/mobile/v1/rdo/sync/', views_mobile_api.mobile_rdo_sync, name='api_mobile_rdo_sync'),

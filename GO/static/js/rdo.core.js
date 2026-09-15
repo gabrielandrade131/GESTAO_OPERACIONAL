@@ -14273,7 +14273,7 @@ document.addEventListener('click', async function(ev) {
 
   var rdoId = btn.getAttribute('data-rdo-id');
   if (!rdoId) {
-    var row = btn.closest('tr[data-rdo-id]');
+    var row = btn.closest('tr[data-rdo-id], .rdo-mobile-card[data-rdo-id], .rdo-mobile-item[data-rdo-id], [data-rdo-id]');
     if (row) rdoId = row.getAttribute('data-rdo-id');
   }
   if (!rdoId) {

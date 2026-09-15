@@ -2554,3 +2554,100 @@ class MobileSyncApiIdempotencyTest(TestCase):
             secure=True,
         )
         self.assertEqual(response.status_code, 401)
+
+    def _create_sample_os_and_rdo(self):
+        cliente, _ = Cliente.objects.get_or_create(nome='Cliente Teste WhatsApp')
+        unidade, _ = Unidade.objects.get_or_create(nome='Unidade Teste WhatsApp')
+        os_obj = OrdemServico.objects.create(
+            numero_os=9988,
+            data_inicio=date.today(),
+            dias_de_operacao=3,
+            servico='LIMPEZA DE TANQUES',
+            metodo='Mecanizada',
+            pob=2,
+            volume_tanque=Decimal('100.00'),
+            Cliente=cliente,
+            Unidade=unidade,
+            tipo_operacao='Offshore',
+            solicitante='Teste WS',
+            supervisor=self.user,
+        )
+        rdo_obj = RDO.objects.create(
+            ordem_servico=os_obj,
+            rdo='1',
+            data=date.today(),
+            data_inicio=date.today(),
+            turno='Diurno',
+        )
+        RdoTanque.objects.create(
+            rdo=rdo_obj,
+            tanque_codigo='TQ-01',
+            nome_tanque='Tanque Principal',
+            tipo_tanque='Carga',
+            numero_compartimentos=4,
+            volume_tanque_exec=100.0,
+            espaco_confinado=True,
+            operadores_simultaneos=2,
+            percentual_limpeza_diario=25.0,
+            percentual_limpeza_cumulativo=50.0,
+        )
+        return os_obj, rdo_obj
+
+    def test_mobile_os_rdos_includes_whatsapp_text(self):
+        os_obj, rdo_obj = self._create_sample_os_and_rdo()
+        token_client = Client()
+        response = token_client.get(
+            f'/api/mobile/v1/os/{os_obj.id}/rdos/',
+            HTTP_HOST='localhost',
+            secure=True,
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get('success'))
+        rdos = data.get('rdos') or []
+        self.assertTrue(len(rdos) >= 1)
+        first_rdo = rdos[0]
+        self.assertIn('whatsapp_text', first_rdo)
+        self.assertIn('STATUS OPERACIONAL', first_rdo['whatsapp_text'])
+
+    def test_mobile_rdo_whatsapp_text_endpoint(self):
+        os_obj, rdo_obj = self._create_sample_os_and_rdo()
+        token_client = Client()
+        response = token_client.get(
+            f'/api/mobile/v1/rdo/{rdo_obj.id}/whatsapp-text/',
+            HTTP_HOST='localhost',
+            secure=True,
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get('success'))
+        self.assertEqual(data.get('rdo_id'), rdo_obj.id)
+        self.assertIn('STATUS OPERACIONAL', data.get('whatsapp_text', ''))
+
+        # Another supervisor cannot access this RDO
+        other_client = Client()
+        forbidden_response = other_client.get(
+            f'/api/mobile/v1/rdo/{rdo_obj.id}/whatsapp-text/',
+            HTTP_HOST='localhost',
+            secure=True,
+            HTTP_AUTHORIZATION=f'Bearer {self.other_token.key}',
+        )
+        self.assertEqual(forbidden_response.status_code, 403)
+
+    def test_mobile_rdo_supervisor_edit_get_includes_whatsapp_text(self):
+        os_obj, rdo_obj = self._create_sample_os_and_rdo()
+        token_client = Client()
+        response = token_client.get(
+            f'/api/mobile/v1/rdo/{rdo_obj.id}/edit/',
+            HTTP_HOST='localhost',
+            secure=True,
+            HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get('success'))
+        rdo_payload = data.get('rdo') or {}
+        self.assertIn('whatsapp_text', rdo_payload)
+        self.assertIn('STATUS OPERACIONAL', rdo_payload['whatsapp_text'])

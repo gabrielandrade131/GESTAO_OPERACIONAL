@@ -3203,6 +3203,24 @@
   transform: scale(1.1);
 }
 
+.btn-rdo.rdo-whatsapp-btn {
+  background: #25d366 !important;
+  color: #ffffff !important;
+  border: none !important;
+  font-weight: 700 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.25) !important;
+}
+
+.btn-rdo.rdo-whatsapp-btn:hover {
+  background: #20ba5a !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4) !important;
+}
+
 @media (max-width: 600px) {
   .rdo-whatsapp-modal {
     max-height: 94vh;

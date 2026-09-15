@@ -771,6 +771,7 @@
                                                         data-os-id="{% if r.ordem_servico %}{{ r.ordem_servico.id }}{% endif %}"
                                                         data-os="{% if r.ordem_servico %}{{ r.ordem_servico.numero_os }}{% endif %}"
                                                         data-rdo-count="{{ r.rdo|default:'' }}">{% if can_open_or_edit_rdo %}Editar{% else %}Visualizar{% endif %}</button>
+                                                <button class="btn-rdo secondary small rdo-whatsapp-btn" type="button" data-action="rdo-whatsapp" data-rdo-id="{{ r.rdo_id|default:r.id }}" title="Copiar texto para WhatsApp">WhatsApp</button>
                                                 {% endif %}
                                                 {% endif %}
                                                 <button class="btn-rdo danger small" type="button" disabled aria-disabled="true" title="Gerar RDO desabilitado para supervisores">Gerar RDO</button>
@@ -844,6 +845,7 @@
                                                     data-os-id="{% if r.ordem_servico %}{{ r.ordem_servico.id }}{% endif %}"
                                                     data-os="{% if r.ordem_servico %}{{ r.ordem_servico.numero_os }}{% endif %}"
                                                     data-rdo-count="{{ r.rdo|default:'' }}">{% if can_open_or_edit_rdo %}Editar{% else %}Visualizar{% endif %}</button>
+                                            <button class="btn-rdo secondary small rdo-whatsapp-btn" type="button" data-action="rdo-whatsapp" data-rdo-id="{{ r.rdo_id|default:r.id }}" title="Copiar texto para WhatsApp">WhatsApp</button>
                                             {% endif %}
                                             {% if can_open_or_edit_rdo %}<button class="btn-rdo ghost small open-supervisor add-tanque-card" type="button" data-action="add-tanque" aria-label="Adicionar Tanque" style="display: none;">Adicionar Tanque</button>{% endif %}
                                             {% endif %}

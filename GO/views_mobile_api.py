@@ -45,6 +45,7 @@ from .views_rdo import (
 )
 from .supervisor_access_metrics import record_supervisor_access
 from .translation_utils import translate_pt_to_en
+from .rdo_whatsapp import build_rdo_whatsapp_text
 
 logger = logging.getLogger(__name__)
 
@@ -2188,6 +2189,41 @@ def mobile_rdo_page(request, rdo_id):
 @csrf_exempt
 @mobile_auth_required
 @require_GET
+def mobile_rdo_whatsapp_text(request, rdo_id):
+    try:
+        rdo_obj = (
+            RDO.objects.select_related('ordem_servico')
+            .prefetch_related('tanques', 'membros_equipe__pessoa', 'atividades_rdo')
+            .get(pk=rdo_id)
+        )
+    except RDO.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'RDO não encontrado.'}, status=404)
+
+    try:
+        ordem = getattr(rdo_obj, 'ordem_servico', None)
+        if ordem is None or getattr(ordem, 'supervisor', None) != request.user:
+            return JsonResponse({'success': False, 'error': 'Sem permissão para acessar este RDO.'}, status=403)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Sem permissão para acessar este RDO.'}, status=403)
+
+    try:
+        text = build_rdo_whatsapp_text(rdo_obj)
+        return JsonResponse({
+            'success': True,
+            'rdo_id': rdo_id,
+            'whatsapp_text': text,
+        }, status=200)
+    except Exception as exc:
+        logger.exception('Erro ao gerar texto para WhatsApp no Mobile API')
+        return JsonResponse({
+            'success': False,
+            'error': f'Erro ao gerar texto para WhatsApp: {exc}',
+        }, status=500)
+
+
+@csrf_exempt
+@mobile_auth_required
+@require_GET
 def mobile_rdo_pdf(request):
     raw_values = []
     raw_values.extend(request.GET.getlist('rdo_id'))
@@ -2471,6 +2507,7 @@ def mobile_os_rdos(request, os_id):
                     'edit_restriction_message': (
                         'No Synchro Mobile, somente a data e a equipe podem ser alteradas.'
                     ),
+                    'whatsapp_text': limited_payload.get('whatsapp_text') or '',
                     'created_at': limited_payload.get('created_at'),
                 }
             )
@@ -2515,6 +2552,11 @@ def mobile_rdo_supervisor_edit(request, rdo_id):
         response_payload['edit_restriction_message'] = (
             'No Synchro Mobile, somente a data e a equipe podem ser alteradas.'
         )
+        if not response_payload.get('whatsapp_text'):
+            try:
+                response_payload['whatsapp_text'] = build_rdo_whatsapp_text(rdo_obj)
+            except Exception:
+                response_payload['whatsapp_text'] = ''
         return JsonResponse({'success': True, 'rdo': response_payload}, status=200)
 
     if request.method != 'POST':

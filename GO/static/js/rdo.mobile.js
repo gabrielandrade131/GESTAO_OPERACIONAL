@@ -265,10 +265,16 @@
           }
           if (!isSupervisor && canEdit) {
             html += '<button class="btn-rdo secondary small open-editor" type="button" data-rdo-id="'+(rdoId||'')+'" data-os-id="'+(os_id||'')+'" data-os="'+os+'" data-rdo-count="'+(rdo||'')+'">Editar</button>';
+            if (rdoId) {
+              html += '<button class="btn-rdo secondary small rdo-whatsapp-btn" type="button" data-action="rdo-whatsapp" data-rdo-id="'+rdoId+'" title="Copiar texto para WhatsApp">WhatsApp</button>';
+            }
             html += '<a class="btn-rdo danger small" href="/rdo/'+(it.id||'')+'/page/" target="_blank" rel="noopener noreferrer">Gerar RDO</a>';
           } else {
             if (canEdit && rdoId) {
               html += '<button class="btn-rdo secondary small open-editor" type="button" data-open="editor" data-limited-supervisor-edit="true" data-editor-scope="supervisor-card" data-rdo-id="'+(rdoId||'')+'" data-os-id="'+(os_id||'')+'" data-os="'+os+'" data-rdo-count="'+(rdo||'')+'">Editar</button>';
+            }
+            if (rdoId) {
+              html += '<button class="btn-rdo secondary small rdo-whatsapp-btn" type="button" data-action="rdo-whatsapp" data-rdo-id="'+rdoId+'" title="Copiar texto para WhatsApp">WhatsApp</button>';
             }
             html += '<button class="btn-rdo danger small" type="button" disabled aria-disabled="true" title="Gerar RDO desabilitado para supervisores">Gerar RDO</button>';
           }
