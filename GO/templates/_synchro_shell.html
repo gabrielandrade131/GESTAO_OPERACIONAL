@@ -129,9 +129,10 @@
     <div class="ai-notification-center__toolbar">
         <label class="ai-notification-center__search">
             <span class="material-icons" aria-hidden="true">search</span>
-            <input id="ai-notification-search" type="search" autocomplete="off"
+            <input id="ai-notification-search" type="text" inputmode="search" autocomplete="off"
                    placeholder="Buscar por OS, RDO, cliente ou palavra-chave"
                    aria-label="Buscar notificações da IA">
+            <span class="ai-notification-center__search-value is-placeholder" id="ai-notification-search-value" aria-hidden="true">Buscar por OS, RDO, cliente ou palavra-chave</span>
             <span class="ai-notification-center__loading material-icons" id="ai-notification-search-loading" hidden aria-label="Carregando">progress_activity</span>
         </label>
         <label class="ai-notification-center__priority">
@@ -193,7 +194,7 @@
         </section>
     </div>
 </section>
-<script src="{% static 'js/ai_notification_center.js' %}?v=20260902c" defer></script>
+<script src="{% static 'js/ai_notification_center.js' %}?v=20260915e" defer></script>
 {% endif %}
 
 {% include '_password_change_modal.html' %}

@@ -3438,7 +3438,7 @@ body.comercial-is-loading .commercial-main-content {
 }
 
 .proposal-modal__card {
-    width: min(75vw, 1240px);
+    width: min(calc(100vw - 32px), 1240px);
     max-height: calc(100dvh - 128px);
     margin: 0 auto;
     display: flex;
@@ -4458,6 +4458,18 @@ body.comercial-proposal-modal-open .synchro-header {
     align-items: start;
 }
 
+/* On notebook widths, preserve the complete follow-up row by moving the
+   calendar below the list instead of squeezing six information columns. */
+@media (max-width: 1500px) {
+    .agenda-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .agenda-side {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 .agenda-list-card {
     padding: 16px 16px 8px;
     display: grid;
@@ -4884,7 +4896,7 @@ body.comercial-proposal-modal-open .synchro-header {
 }
 
 .agenda-item--detailed {
-    grid-template-columns: 56px 96px minmax(150px, 0.85fr) minmax(200px, 1.2fr) minmax(150px, 0.85fr) minmax(160px, 0.9fr);
+    grid-template-columns: 56px 126px minmax(150px, 0.82fr) minmax(210px, 1.18fr) minmax(150px, 0.82fr) minmax(160px, 0.88fr);
     gap: 0;
     padding: 12px 0;
     border: 1px solid #e6edf5;
@@ -4920,16 +4932,28 @@ body.comercial-proposal-modal-open .synchro-header {
 }
 
 .agenda-item__contact-meta {
-    gap: 8px;
+    gap: 6px;
     color: #42526b;
     font-size: 0.78rem;
 }
 
-.agenda-item__contact-meta strong,
-.agenda-item__contact-meta span {
+.agenda-item__contact-meta strong {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+}
+
+.agenda-item__contact-meta > span {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr);
+    align-items: start;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 
 .agenda-item__contact-meta strong {
@@ -4946,6 +4970,7 @@ body.comercial-proposal-modal-open .synchro-header {
 
 .agenda-item__contact-meta .material-icons {
     font-size: 15px;
+    line-height: 1.25;
 }
 
 .agenda-item__proposal-detail,
@@ -4964,6 +4989,62 @@ body.comercial-proposal-modal-open .synchro-header {
     font-weight: 800;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Keep all wizard stages readable on notebook-sized displays without making
+   the proposal dialog span the entire screen. */
+@media (max-width: 1360px) {
+    .proposal-modal {
+        padding: 88px 16px 16px;
+    }
+
+    .proposal-modal__card {
+        width: min(calc(100vw - 32px), 1120px);
+        max-height: calc(100dvh - 104px);
+    }
+
+    .proposal-modal__header {
+        padding: 22px 24px 16px;
+    }
+
+    .proposal-modal__header h2 {
+        font-size: 1.2rem;
+    }
+
+    .proposal-stepper {
+        gap: 8px;
+        padding: 12px 24px 0;
+    }
+
+    .proposal-step {
+        min-height: 58px;
+        align-items: flex-start;
+        gap: 8px;
+        padding-bottom: 14px;
+    }
+
+    .proposal-step__index {
+        width: 32px;
+        height: 32px;
+        font-size: 0.88rem;
+    }
+
+    .proposal-step__label {
+        padding-top: 7px;
+        font-size: 0.82rem;
+        line-height: 1.2;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+
+    .proposal-modal__body {
+        padding: 20px 24px;
+    }
+
+    .proposal-modal__footer {
+        padding: 14px 24px;
+    }
 }
 
 .agenda-item__proposal-detail span {
@@ -5008,13 +5089,17 @@ body.comercial-proposal-modal-open .synchro-header {
 
 .agenda-proposal-status {
     align-self: flex-start;
+    display: inline-flex;
+    max-width: 100%;
     padding: 5px 10px;
     border-radius: 999px;
     background: #edf4ff;
     color: #23569d;
     font-size: 0.7rem;
     font-weight: 800;
-    white-space: nowrap;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .agenda-proposal-status.is-em-elaboracao,
@@ -5293,6 +5378,10 @@ body.comercial-proposal-modal-open .synchro-header {
     .agenda-item {
         grid-template-columns: 64px 68px minmax(0, 1fr) 100px 40px 104px;
     }
+
+    .agenda-item--detailed {
+        grid-template-columns: 56px 132px minmax(0, 0.74fr) minmax(0, 1.08fr) minmax(110px, 0.8fr) minmax(135px, 0.86fr);
+    }
 }
 
 @media (max-width: 920px) {
@@ -5307,6 +5396,10 @@ body.comercial-proposal-modal-open .synchro-header {
     .agenda-modal__title-wrap {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .agenda-side {
+        grid-template-columns: 1fr;
     }
 
     .agenda-item {

@@ -4014,7 +4014,17 @@ def _build_rdo_page_context(request, rdo_id):
     try:
         equipe = rdo_payload.get('equipe') or []
         if isinstance(equipe, list):
-            equipe = [m for m in equipe if isinstance(m, dict) and bool(m.get('em_servico', True))]
+            # A participação individual só é aplicável quando a operação possui
+            # planejamento de equipe. Em RDOs manuais, todos os membros
+            # registrados pertencem à equipe do dia; registros históricos podem
+            # conter ``em_servico=False`` sem que isso signifique exclusão.
+            if rdo_payload.get('tem_planejamento_equipe'):
+                equipe = [
+                    m for m in equipe
+                    if isinstance(m, dict) and bool(m.get('em_servico', True))
+                ]
+            else:
+                equipe = [m for m in equipe if isinstance(m, dict)]
             for m in equipe:
                 if not isinstance(m, dict):
                     continue
@@ -6156,6 +6166,10 @@ def rdo_detail(request, rdo_id):
         'fotos': fotos_urls,
         'fotos_raw': fotos_list,
         'equipe': equipe_list,
+        'tem_planejamento_equipe': bool(
+            ordem is not None
+            and PlanejamentoEquipeOS.objects.filter(ordem_servico_id=ordem.id).exists()
+        ),
         'equipe_avaliacoes_json': json.dumps(_build_rdo_team_evaluations_seed(equipe_list), ensure_ascii=False),
         'retorno_equipamentos': getattr(rdo_obj, 'retorno_equipamentos', None),
         'espaco_confinado': getattr(rdo_obj, 'confinado', None),

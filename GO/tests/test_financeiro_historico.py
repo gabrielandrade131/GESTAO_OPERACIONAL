@@ -2,8 +2,8 @@ from datetime import date
 
 from django.test import TestCase
 
-from GO.models import Cliente, Financeiro, FinanceiroCampo, OrdemServico, RDO, RdoTanque, Unidade
-from GO.views_comercial import _serialize_financeiro
+from GO.models import AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, OrdemServico, RDO, RdoTanque, Unidade
+from GO.views_comercial import _serialize_financeiro, _serialize_proposta_anexo
 
 
 class FinanceiroHistoricoIdentityTests(TestCase):
@@ -85,3 +85,15 @@ class FinanceiroHistoricoIdentityTests(TestCase):
         self.assertEqual(serialized["estimativaReceita"], "")
         self.assertIsNone(serialized["estimativaReceitaValor"])
         self.assertEqual(serialized["statusProposta"], "")
+
+    def test_anexo_com_arquivo_ausente_nao_impede_serializacao(self):
+        proposal = self._proposal("Cliente Historico")
+        anexo = AnexoPropostaComercial.objects.create(
+            financeiro=proposal,
+            arquivo="comercial/proposta_999999/arquivo_inexistente.pdf",
+            nome_original="arquivo_inexistente.pdf",
+        )
+
+        serialized = _serialize_proposta_anexo(anexo)
+
+        self.assertEqual(serialized["tamanho"], 0)

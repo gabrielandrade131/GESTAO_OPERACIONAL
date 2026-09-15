@@ -166,6 +166,7 @@
 }
 
 .ai-notification-center__search {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 9px;
@@ -187,18 +188,59 @@
 }
 
 .ai-notification-center__search input {
+    position: relative;
+    z-index: 2;
     width: 100%;
     min-width: 0;
     padding: 0;
     border: 0;
     outline: 0;
     background: transparent;
-    color: #172033;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    caret-color: transparent !important;
+    /* O input real só captura foco/digitação; o texto é mostrado pela camada
+       visual abaixo, evitando o cursor retangular herdado do RDO. */
+    opacity: 0 !important;
+    text-indent: 0 !important;
+    appearance: none;
+    -webkit-appearance: none;
     font: inherit;
-    font-size: 13px;
+    font-size: 14px !important;
+    letter-spacing: normal !important;
+}
+
+/* Reverte o preenchimento transparente que estilos legados de RDO aplicam a
+   inputs e deixa claro que o retângulo de seleção não é o conteúdo do campo. */
+.ai-notification-center__search input::selection {
+    background: transparent;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
 }
 
 .ai-notification-center__search input::placeholder {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+
+.ai-notification-center__search-value {
+    position: absolute;
+    top: 50%;
+    right: 34px;
+    left: 43px;
+    z-index: 1;
+    overflow: hidden;
+    color: #172033;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.35;
+    pointer-events: none;
+    text-overflow: ellipsis;
+    transform: translateY(-50%);
+    white-space: nowrap;
+}
+
+.ai-notification-center__search-value.is-placeholder {
     color: #8b94a5;
 }
 
@@ -651,6 +693,37 @@
     color: #405423;
     font-size: 11px;
     font-weight: 700;
+}
+
+.ai-notification-center__clear-search {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    margin-top: 5px;
+    border-color: #cfe0af;
+    background: #f8fcec;
+    color: #49660c;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.ai-notification-center__clear-search .material-icons {
+    font-size: 16px;
+}
+
+.ai-notification-center__clear-search:hover {
+    border-color: #b8d77a;
+    background: #edf7d9;
+    box-shadow: 0 4px 10px rgba(86, 113, 18, .12);
+    transform: translateY(-1px);
+}
+
+.ai-notification-center__clear-search:focus-visible {
+    outline: 3px solid rgba(137, 182, 0, .3);
+    outline-offset: 2px;
 }
 
 .ai-notification-center__details {
