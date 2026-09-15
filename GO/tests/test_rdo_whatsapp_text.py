@@ -136,7 +136,7 @@ class RDOWhatsAppTextTestCase(TestCase):
         self.assertIn('Intervalo horário 2ª Entrada e 2ª saída: 13:00 às 17:00', text)
         self.assertIn('Operadores simultâneos em espaço confinado: 4', text)
 
-        self.assertIn('👷♂ EQUIPE OPERACIONAL', text)
+        self.assertIn('👷 EQUIPE OPERACIONAL', text)
         self.assertIn('• Gabriel Alves - Supervisor', text)
         self.assertIn('• Carlos Eduardo - Operador', text)
 
@@ -182,3 +182,46 @@ class RDOWhatsAppTextTestCase(TestCase):
         self.assertTrue(data.get('success'))
         self.assertIn('🛠 STATUS OPERACIONAL', data.get('whatsapp_text', ''))
         self.assertIn('6048', data.get('whatsapp_text', ''))
+
+    def test_build_rdo_whatsapp_text_cumulative_across_rdos(self):
+        # RDO Day 1: Comp 10 -> 100%, Comp 9 -> 40%
+        rdo_day1 = RDO.objects.create(
+            ordem_servico=self.os,
+            rdo='02',
+            data=date(2026, 9, 15),
+            nome_tanque='TQ-02',
+            numero_compartimentos=10,
+            compartimentos_avanco_json=json.dumps({
+                '10': {'mecanizada': 100, 'fina': 50},
+                '9': {'mecanizada': 40, 'fina': 0},
+            })
+        )
+
+        # RDO Day 2: Comp 9 -> +60% (total 100%), Comp 8 -> +30% (total 30%), Comp 10 -> fina +50% (total 100%)
+        rdo_day2 = RDO.objects.create(
+            ordem_servico=self.os,
+            rdo='03',
+            data=date(2026, 9, 16),
+            nome_tanque='TQ-02',
+            numero_compartimentos=10,
+            compartimentos_avanco_json=json.dumps({
+                '9': {'mecanizada': 60, 'fina': 0},
+                '8': {'mecanizada': 30, 'fina': 0},
+                '10': {'mecanizada': 0, 'fina': 50},
+            })
+        )
+
+        text_day2 = build_rdo_whatsapp_text(rdo_day2)
+
+        # Cumulative checks for Day 2:
+        self.assertIn('10º → 100%', text_day2)
+        self.assertIn('9º → 100%', text_day2)
+        self.assertIn('8º → 30%', text_day2)
+        self.assertIn('7º → 0%', text_day2)
+        self.assertIn('1º → 0%', text_day2)
+
+        # Fina cumulative checks for Day 2:
+        self.assertIn('• Compartimento em limpeza fina:', text_day2)
+        self.assertIn('10º → 100%', text_day2)
+        self.assertIn('9º → 0%', text_day2)
+        self.assertIn('8º → 0%', text_day2)

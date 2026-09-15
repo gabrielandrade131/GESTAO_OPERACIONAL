@@ -41,6 +41,158 @@ def _format_duration_val(val):
         return str(val).strip()
 
 
+def _extract_cumulative_compartimentos(rdo_obj, first_tank):
+    """
+    Calcula e retorna:
+    - total_comps: número de compartimentos (int)
+    - comp_mec_cum: dict mapeando índice de compartimento (int) -> % cumulativo (float)
+    - comp_fina_cum: dict mapeando índice de compartimento (int) -> % cumulativo (float)
+    - has_any_data: bool indicando se há dados registrados
+    """
+    comp_mec_cum = {}
+    comp_fina_cum = {}
+    has_any_data = False
+
+    # 1. Tentar obter a partir do snapshot oficial (RdoTanque ou RDO)
+    snapshot = None
+    if first_tank and hasattr(first_tank, 'build_compartimento_progress_snapshot'):
+        try:
+            snapshot = first_tank.build_compartimento_progress_snapshot()
+        except Exception:
+            snapshot = None
+
+    if not snapshot and hasattr(rdo_obj, '_build_compartimento_progress_snapshot'):
+        try:
+            snapshot = rdo_obj._build_compartimento_progress_snapshot()
+        except Exception:
+            snapshot = None
+
+    if snapshot and snapshot.get('rows'):
+        for row in snapshot.get('rows', []):
+            try:
+                idx = int(row.get('index') or 0)
+                if idx <= 0:
+                    continue
+                mec_final = row.get('mecanizada', {}).get('final')
+                fina_final = row.get('fina', {}).get('final')
+                if mec_final is not None:
+                    comp_mec_cum[idx] = float(mec_final)
+                    has_any_data = True
+                if fina_final is not None:
+                    comp_fina_cum[idx] = float(fina_final)
+                    has_any_data = True
+            except Exception:
+                pass
+
+    # 2. Se snapshot não tiver dados acumulados completos, acumular manualmente عبر histórico de RDOs
+    comps_raw = (
+        getattr(first_tank, 'compartimentos_avanco_json', None) if first_tank and getattr(first_tank, 'compartimentos_avanco_json', None)
+        else getattr(rdo_obj, 'compartimentos_avanco_json', None)
+    )
+    current_payload = {}
+    if comps_raw:
+        try:
+            current_payload = json.loads(comps_raw) if isinstance(comps_raw, str) else comps_raw
+        except Exception:
+            current_payload = {}
+
+    # Acumular de RDOs anteriores se houver ordem_servico e não tiver vindo do snapshot
+    if (not snapshot or not snapshot.get('rows')):
+        ordem_atual = getattr(rdo_obj, 'ordem_servico', None)
+        if ordem_atual and getattr(rdo_obj, 'data', None):
+            try:
+                from django.db.models import Q
+                from GO.models import RDO as RDOModel
+
+                data_atual = getattr(rdo_obj, 'data', None)
+                rdo_pk = getattr(rdo_obj, 'pk', None)
+
+                prior_rdos = RDOModel.objects.filter(ordem_servico=ordem_atual)
+                if data_atual and rdo_pk:
+                    prior_rdos = prior_rdos.filter(Q(data__lt=data_atual) | (Q(data=data_atual) & Q(pk__lt=rdo_pk)))
+                elif data_atual:
+                    prior_rdos = prior_rdos.filter(data__lt=data_atual)
+                elif rdo_pk:
+                    prior_rdos = prior_rdos.exclude(pk=rdo_pk)
+
+                prior_rdos = prior_rdos.order_by('data', 'id')
+
+                for p_rdo in prior_rdos:
+                    p_tank = None
+                    try:
+                        p_tank = p_rdo.tanques.first()
+                    except Exception:
+                        p_tank = None
+                    p_raw = getattr(p_tank, 'compartimentos_avanco_json', None) or getattr(p_rdo, 'compartimentos_avanco_json', None)
+                    if p_raw:
+                        try:
+                            p_dict = json.loads(p_raw) if isinstance(p_raw, str) else p_raw
+                            if isinstance(p_dict, dict):
+                                for k, v in p_dict.items():
+                                    if str(k).isdigit():
+                                        k_int = int(k)
+                                        m_v = v.get('mecanizada', 0) if isinstance(v, dict) else v
+                                        f_v = v.get('fina', 0) if isinstance(v, dict) else 0
+                                        try:
+                                            m_val = float(m_v or 0)
+                                            f_val = float(f_v or 0)
+                                            comp_mec_cum[k_int] = min(100.0, comp_mec_cum.get(k_int, 0.0) + m_val)
+                                            comp_fina_cum[k_int] = min(100.0, comp_fina_cum.get(k_int, 0.0) + f_val)
+                                            has_any_data = True
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    # Aplicar valores do RDO atual sobre o acumulado se não vieram do snapshot
+    if isinstance(current_payload, dict):
+        for k, v in current_payload.items():
+            if str(k).isdigit():
+                k_int = int(k)
+                m_v = v.get('mecanizada', '') if isinstance(v, dict) else v
+                f_v = v.get('fina', '') if isinstance(v, dict) else ''
+                if m_v not in (None, ''):
+                    try:
+                        m_val = float(m_v)
+                        if k_int in comp_mec_cum and (not snapshot or not snapshot.get('rows')):
+                            comp_mec_cum[k_int] = min(100.0, comp_mec_cum[k_int] + m_val)
+                        elif k_int not in comp_mec_cum:
+                            comp_mec_cum[k_int] = m_val
+                        has_any_data = True
+                    except Exception:
+                        pass
+                if f_v not in (None, ''):
+                    try:
+                        f_val = float(f_v)
+                        if k_int in comp_fina_cum and (not snapshot or not snapshot.get('rows')):
+                            comp_fina_cum[k_int] = min(100.0, comp_fina_cum[k_int] + f_val)
+                        elif k_int not in comp_fina_cum:
+                            comp_fina_cum[k_int] = f_val
+                        has_any_data = True
+                    except Exception:
+                        pass
+
+    # Determinar número total de compartimentos
+    num_comps = (
+        getattr(first_tank, 'numero_compartimentos', None) if first_tank and getattr(first_tank, 'numero_compartimentos', None)
+        else getattr(rdo_obj, 'numero_compartimentos', None)
+    )
+    if not num_comps and snapshot:
+        num_comps = snapshot.get('total_compartimentos')
+    if not num_comps:
+        all_keys = list(comp_mec_cum.keys()) + list(comp_fina_cum.keys())
+        if all_keys:
+            num_comps = max(all_keys)
+    if not num_comps or int(num_comps) <= 0:
+        num_comps = 10
+    else:
+        num_comps = int(num_comps)
+
+    return num_comps, comp_mec_cum, comp_fina_cum, has_any_data
+
+
 def build_rdo_whatsapp_text(rdo_obj):
     """
     Gera o texto completo de Status Operacional para compartilhamento no WhatsApp
@@ -329,49 +481,38 @@ def build_rdo_whatsapp_text(rdo_obj):
         icamento_str = _int_or_empty('icamento', 'icamento_dia')
         cambagem_str = _int_or_empty('cambagem', 'cambagem_dia')
 
-        # Compartimentos
-        comps_raw = (
-            getattr(first_tank, 'compartimentos_avanco_json', None) if first_tank and getattr(first_tank, 'compartimentos_avanco_json', None)
-            else getattr(rdo_obj, 'compartimentos_avanco_json', None)
-        )
-        comps_dict = {}
-        if comps_raw:
-            try:
-                comps_dict = json.loads(comps_raw) if isinstance(comps_raw, str) else comps_raw
-            except Exception:
-                comps_dict = {}
+        # Compartimentos (avanço cumulativo por compartimento de N até 1)
+        num_comps, comp_mec_cum, comp_fina_cum, has_any_data = _extract_cumulative_compartimentos(rdo_obj, first_tank)
 
-        num_comps = (
-            getattr(first_tank, 'numero_compartimentos', None) if first_tank and getattr(first_tank, 'numero_compartimentos', None)
-            else getattr(rdo_obj, 'numero_compartimentos', None)
-        )
-        if not num_comps and comps_dict:
-            try:
-                valid_keys = [int(k) for k in comps_dict.keys() if str(k).isdigit()]
-                if valid_keys:
-                    num_comps = max(valid_keys)
-            except Exception:
-                pass
-        if not num_comps or int(num_comps) <= 0:
-            num_comps = 10
-        else:
-            num_comps = int(num_comps)
-
-        # Montagem dos compartimentos de N a 1 (ordem decrescente)
         compartimentos_mecanizada_linhas = []
         compartimentos_fina_linhas = []
 
         for i in range(num_comps, 0, -1):
-            c_info = comps_dict.get(str(i), {})
-            if isinstance(c_info, dict):
-                mec_val = c_info.get('mecanizada', '')
-                fina_val = c_info.get('fina', '')
+            # Mecanizada / Raspagem / Jateamento cumulativo
+            mec_val = comp_mec_cum.get(i)
+            if mec_val is not None:
+                try:
+                    f_mec = float(mec_val)
+                    mec_str = f"{int(f_mec)}%" if f_mec.is_integer() else f"{f_mec:.1f}%"
+                except Exception:
+                    mec_str = f"{mec_val}%"
+            elif has_any_data:
+                mec_str = "0%"
             else:
-                mec_val = c_info
-                fina_val = ''
+                mec_str = "%"
 
-            mec_str = f"{mec_val}%" if str(mec_val).strip() != '' else "%"
-            fina_str = f"{fina_val}%" if str(fina_val).strip() != '' else "%"
+            # Limpeza fina cumulativa
+            fina_val = comp_fina_cum.get(i)
+            if fina_val is not None:
+                try:
+                    f_fina = float(fina_val)
+                    fina_str = f"{int(f_fina)}%" if f_fina.is_integer() else f"{f_fina:.1f}%"
+                except Exception:
+                    fina_str = f"{fina_val}%"
+            elif has_any_data:
+                fina_str = "0%"
+            else:
+                fina_str = "%"
 
             compartimentos_mecanizada_linhas.append(f"{i}º → {mec_str}")
             compartimentos_fina_linhas.append(f"{i}º → {fina_str}")
@@ -417,7 +558,7 @@ Intervalo horário 4ª Entrada e 4ª saída: {int_4}
  
 Operadores simultâneos em espaço confinado: {op_sim_str}
  
-👷♂ EQUIPE OPERACIONAL
+👷 EQUIPE OPERACIONAL
 {equipe_block}
  
 ⏰ HORÁRIOS E ATIVIDADES

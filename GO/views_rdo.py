@@ -5652,7 +5652,9 @@ def rdo_tank_detail(request, codigo):
 def rdo_whatsapp_text_api(request, rdo_id):
     """Retorna o texto de status operacional formatado para WhatsApp sob demanda."""
     try:
-        rdo_obj = RDO.objects.select_related('ordem_servico', 'ordem_servico__Unidade', 'ordem_servico__Cliente').get(pk=rdo_id)
+        rdo_obj = RDO.objects.select_related(
+            'ordem_servico', 'ordem_servico__Unidade', 'ordem_servico__Cliente'
+        ).prefetch_related('tanques', 'membros_equipe', 'atividades_rdo').get(pk=rdo_id)
     except RDO.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'RDO não encontrado.'}, status=404)
 
