@@ -757,10 +757,19 @@ def _serialize_financeiro_campos(financeiro):
 
 
 def _serialize_proposta_anexo(anexo):
+    tamanho = 0
+    if anexo.arquivo:
+        try:
+            tamanho = anexo.arquivo.size
+        except OSError:
+            # O registro pode ter sido restaurado sem o arquivo correspondente.
+            # Nesse caso, o anexo não deve impedir o carregamento das propostas.
+            logger.warning("Arquivo ausente para o anexo comercial id=%s: %s", anexo.id, anexo.arquivo.name)
+
     return {
         "id": anexo.id,
         "nome": anexo.nome_original,
-        "tamanho": anexo.arquivo.size if anexo.arquivo else 0,
+        "tamanho": tamanho,
         "criadoEm": timezone.localtime(anexo.criado_em).strftime("%d/%m/%Y %H:%M") if anexo.criado_em else "",
         "enviadoPor": _clean_text(getattr(anexo.enviado_por, "get_full_name", lambda: "")()) or _clean_text(getattr(anexo.enviado_por, "username", "")),
         "visualizarUrl": reverse("comercial_visualizar_anexo_proposta", args=[anexo.id]),

@@ -4945,12 +4945,13 @@ body.comercial-proposal-modal-open .synchro-header {
 
 .agenda-item__contact-meta > span {
     display: grid;
-    grid-template-columns: 16px minmax(0, 1fr);
+    grid-template-columns: 14px minmax(0, 1fr);
     align-items: start;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
     max-width: 100%;
-    line-height: 1.3;
+    font-size: 0.7rem;
+    line-height: 1.35;
     overflow-wrap: normal;
     word-break: normal;
 }
@@ -5379,7 +5380,7 @@ body.comercial-proposal-modal-open .synchro-header {
     }
 
     .agenda-item--detailed {
-        grid-template-columns: 56px 118px minmax(0, 0.76fr) minmax(0, 1.1fr) minmax(110px, 0.8fr) minmax(135px, 0.86fr);
+        grid-template-columns: 56px 132px minmax(0, 0.74fr) minmax(0, 1.08fr) minmax(110px, 0.8fr) minmax(135px, 0.86fr);
     }
 }
 
