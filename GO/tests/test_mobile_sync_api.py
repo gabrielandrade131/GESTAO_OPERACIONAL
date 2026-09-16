@@ -454,6 +454,12 @@ class MobileSyncApiIdempotencyTest(TestCase):
             solicitante='Teste',
             supervisor=self.user,
         )
+        modelo = Modelo.objects.create(nome='Bomba Teste Retorno')
+        Equipamentos.objects.create(
+            numero_os=str(os_obj.numero_os),
+            modelo=modelo,
+            situacao='embarcardo',
+        )
         rdo = RDO.objects.create(
             ordem_servico=os_obj,
             rdo='1',
@@ -470,7 +476,8 @@ class MobileSyncApiIdempotencyTest(TestCase):
                     'operation': 'rdo.update',
                     'payload': {
                         'rdo_id': str(rdo.id),
-                        'observacoes': 'Tentativa sem responder retorno.',
+                        'retorno_equipamentos': '1',
+                        'observacoes': 'Tentativa com retorno sem selecionar itens.',
                     },
                 }
             ),
@@ -485,7 +492,7 @@ class MobileSyncApiIdempotencyTest(TestCase):
         error_message = payload.get('error_message') or (
             (payload.get('result') or {}).get('error')
         )
-        self.assertIn('equipamentos retornando', str(error_message))
+        self.assertIn('equipamento embarcado', str(error_message))
 
     def test_mobile_sync_update_saves_equipment_return_prediction(self):
         cliente = Cliente.objects.create(nome='Cliente Retorno Persistencia')
@@ -2651,3 +2658,59 @@ class MobileSyncApiIdempotencyTest(TestCase):
         rdo_payload = data.get('rdo') or {}
         self.assertIn('whatsapp_text', rdo_payload)
         self.assertIn('STATUS OPERACIONAL', rdo_payload['whatsapp_text'])
+
+    def test_mobile_app_update_returns_homolog_metadata(self):
+        token_client = Client()
+        env = {
+            'MOBILE_APP_DOWNLOAD_ENABLED': '1',
+            'MOBILE_APP_ANDROID_HML_AUTO_VERSION': '0',
+            'MOBILE_APP_ANDROID_HML_URL': 'https://example.com/releases/ambipar-synchro-hml-v1.0.0+72.apk',
+            'MOBILE_APP_ANDROID_HML_VERSION_NAME': '1.0.0+72',
+            'MOBILE_APP_ANDROID_HML_BUILD_NUMBER': '72',
+            'MOBILE_APP_ANDROID_HML_MIN_SUPPORTED_BUILD': '70',
+            'MOBILE_APP_ANDROID_HML_FORCE_UPDATE': '0',
+            'MOBILE_APP_ANDROID_HML_RELEASE_NOTES': 'Homolog release notes.',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = token_client.get(
+                '/api/mobile/v1/app/update/?platform=android&channel=homolog',
+                HTTP_HOST='localhost',
+                secure=True,
+                HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get('success'))
+        self.assertEqual(payload.get('channel'), 'homolog')
+        update = payload.get('update') or {}
+        self.assertEqual(update.get('version_name'), '1.0.0+72')
+        self.assertEqual(update.get('build_number'), 72)
+        self.assertEqual(update.get('min_supported_build'), 70)
+        self.assertEqual(update.get('release_notes'), 'Homolog release notes.')
+        self.assertTrue(str(update.get('download_url') or '').endswith('ambipar-synchro-hml-v1.0.0+72.apk'))
+
+    def test_mobile_app_update_homolog_via_headers(self):
+        token_client = Client()
+        env = {
+            'MOBILE_APP_DOWNLOAD_ENABLED': '1',
+            'MOBILE_APP_ANDROID_HML_AUTO_VERSION': '0',
+            'MOBILE_APP_ANDROID_HML_URL': 'https://example.com/releases/ambipar-synchro-hml-latest.apk',
+            'MOBILE_APP_ANDROID_HML_VERSION_NAME': '1.0.0+72',
+            'MOBILE_APP_ANDROID_HML_BUILD_NUMBER': '72',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = token_client.get(
+                '/api/mobile/v1/app/update/?platform=android',
+                HTTP_HOST='localhost',
+                secure=True,
+                HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
+                HTTP_X_RELEASE_CHANNEL='homolog',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get('channel'), 'homolog')
+        update = payload.get('update') or {}
+        self.assertEqual(update.get('build_number'), 72)
+

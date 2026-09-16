@@ -4852,11 +4852,6 @@ class Financeiro(models.Model):
     )
     servico = models.CharField(max_length=100, choices=OrdemServico.SERVICO_CHOICES, blank=True, null=True)
     descricao_proposta = models.TextField(blank=True, null=True)
-    volume_tanque_exec = models.ForeignKey(
-        'GO.RdoTanque',
-        on_delete=models.PROTECT,
-        related_name='financeiro_volume_tanques_exec',
-    )
     comentario = models.TextField(blank=True, null=True)
     requisitos_cliente = models.TextField(blank=True, null=True)
     requisitos_ambipar = models.TextField(blank=True, null=True)
@@ -5634,5 +5629,3 @@ class SupervisorHandover(models.Model):
 
     def __str__(self):
         return f"Passagem de Serviço - {self.cliente} - {self.periodo_data}"
-
-

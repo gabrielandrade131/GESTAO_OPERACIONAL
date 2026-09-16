@@ -523,22 +523,62 @@ def _extract_build_number(*raw_values):
     return None
 
 
-def _discover_android_release_metadata():
+def _resolve_request_release_channel(request):
+    """
+    Identifica se a requisição do aplicativo móvel pertence ao canal 'homolog' ou 'prod'.
+    """
+    raw_channel = str(
+        request.GET.get('channel')
+        or request.headers.get('X-Release-Channel')
+        or request.META.get('HTTP_X_RELEASE_CHANNEL')
+        or ''
+    ).strip().lower()
+    if raw_channel in {'homolog', 'hml', 'staging', 'qa'}:
+        return 'homolog'
+    if raw_channel in {'prod', 'production'}:
+        return 'prod'
+
+    original_uri = str(
+        request.headers.get('X-Original-URI')
+        or request.META.get('HTTP_X_ORIGINAL_URI')
+        or request.META.get('HTTP_REFERER')
+        or ''
+    ).lower()
+    if '/hml-api/' in original_uri or '/hml/' in original_uri:
+        return 'homolog'
+
+    path = str(getattr(request, 'path', '') or '').lower()
+    if path.startswith('/hml-api/') or path.startswith('/hml/'):
+        return 'homolog'
+
+    return 'prod'
+
+
+def _discover_android_release_metadata(channel='prod'):
     """
     Descobre automaticamente a versão/build mais recente a partir dos APKs
-    publicados no servidor, sem depender de atualização manual de env var.
+    publicados no servidor para o canal informado (prod ou homolog).
     """
     globs_to_scan = []
     custom_glob = (os.environ.get('MOBILE_APP_ANDROID_RELEASE_GLOB') or '').strip()
     if custom_glob:
         globs_to_scan.append(custom_glob)
 
-    globs_to_scan.extend(
-        [
-            '/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-v*.apk',
-            '/var/www/mobile/rdo_offline_app/dist/android/*/ambipar-synchro-v*.apk',
-        ]
-    )
+    if channel == 'homolog':
+        globs_to_scan.extend(
+            [
+                '/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-hml-v*.apk',
+                '/var/www/mobile/rdo_offline_app/dist/android/*_homolog_*/ambipar-synchro-hml-v*.apk',
+            ]
+        )
+    else:
+        globs_to_scan.extend(
+            [
+                '/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-v*.apk',
+                '/var/www/mobile/rdo_offline_app/dist/android/*_prod_*/ambipar-synchro-v*.apk',
+                '/var/www/mobile/rdo_offline_app/dist/android/*/ambipar-synchro-v*.apk',
+            ]
+        )
 
     best = None
     for pattern in globs_to_scan:
@@ -549,6 +589,14 @@ def _discover_android_release_metadata():
 
         for apk_path in candidates:
             filename = os.path.basename(apk_path)
+            lowered = filename.lower()
+            if channel == 'homolog':
+                if '-hml-' not in lowered and 'homolog' not in lowered:
+                    continue
+            else:
+                if '-hml-' in lowered or 'homolog' in lowered or 'uml' in lowered:
+                    continue
+
             version_name = _extract_version_name_from_url(filename)
             if not version_name:
                 continue
@@ -582,12 +630,17 @@ def _discover_android_release_metadata():
     return best
 
 
-def _android_release_download_url(request, apk_path=''):
+def _android_release_download_url(request, apk_path='', channel='prod'):
     """
     Converte um APK local publicado em URL pública do Django static.
-    Se não identificar caminho público, usa o alias latest.
+    Se não identificar caminho público, usa o alias latest correspondente ao canal.
     """
-    default_relative = '/static/mobile/releases/ambipar-synchro-latest.apk'
+    default_filename = (
+        'ambipar-synchro-hml-latest.apk'
+        if channel == 'homolog'
+        else 'ambipar-synchro-latest.apk'
+    )
+    default_relative = f'/static/mobile/releases/{default_filename}'
     base_static_dir = '/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/'
     raw_path = str(apk_path or '').strip()
 
@@ -656,7 +709,7 @@ def _build_internal_post_request(source_request, payload):
     explicit_channel = str(getattr(source_request, 'rdo_request_channel', '') or '').strip().lower()
     if explicit_channel in {'web', 'mobile'}:
         req.rdo_request_channel = explicit_channel
-    elif getattr(source_request, 'mobile_api_token', None) is not None:
+    else:
         req.rdo_request_channel = 'mobile'
     req._dont_enforce_csrf_checks = True
     return req
@@ -1317,7 +1370,10 @@ def mobile_bootstrap(request):
     # are not relevant for starting new RDOs in mobile.
     try:
         final_pattern = r'finaliz|encerrad|fechad|conclu|retorn|cancel'
-        qs = qs.exclude(Q(status_operacao__iregex=final_pattern))
+        qs = qs.exclude(
+            Q(status_operacao__iregex=final_pattern)
+            | Q(status_geral__iregex=final_pattern)
+        )
     except Exception:
         pass
 
@@ -1408,9 +1464,10 @@ def mobile_bootstrap(request):
             return None
 
     items = []
+    seen_os_numbers = set()
     for os_obj in qs[:500]:
         numero_os = _clean_text(getattr(os_obj, 'numero_os', None))
-        if not numero_os:
+        if not numero_os or numero_os in seen_os_numbers:
             continue
 
         status_geral = _clean_text(getattr(os_obj, 'status_geral', None))
@@ -1423,7 +1480,7 @@ def mobile_bootstrap(request):
         # Cancelled/finalized lines (or operations) are hidden to avoid confusion.
         if _is_canceled_status(status_linha, status_operacao, status_geral):
             continue
-        if _is_final_status(status_linha, status_operacao):
+        if _is_final_status(status_linha, status_operacao, status_geral):
             continue
         if not (_clean_text(status_linha) or _clean_text(status_operacao) or _clean_text(status_geral)):
             continue
@@ -1440,6 +1497,7 @@ def mobile_bootstrap(request):
         data_inicio = getattr(os_obj, 'data_inicio', None)
         data_fim = getattr(os_obj, 'data_fim', None)
         planning_context = _mobile_planning_context_payload(os_obj)
+        seen_os_numbers.add(numero_os)
         items.append(
             {
             'id': os_obj.id,
@@ -2033,28 +2091,52 @@ def mobile_app_update(request):
     if platform not in {'android', 'ios'}:
         platform = 'android'
 
+    channel = _resolve_request_release_channel(request)
     discovered_android_release = None
-    if platform == 'ios':
-        download_url = (os.environ.get('MOBILE_APP_IOS_URL') or '').strip()
-        version_name = (os.environ.get('MOBILE_APP_IOS_VERSION_NAME') or '').strip()
-        build_number = _env_int('MOBILE_APP_IOS_BUILD_NUMBER', None)
-        min_supported_build = _env_int('MOBILE_APP_IOS_MIN_SUPPORTED_BUILD', None)
-        force_update = _env_bool('MOBILE_APP_IOS_FORCE_UPDATE', False)
-        release_notes = (os.environ.get('MOBILE_APP_IOS_RELEASE_NOTES') or '').strip()
-    else:
-        auto_version_enabled = _env_bool('MOBILE_APP_ANDROID_AUTO_VERSION', True)
-        if auto_version_enabled:
-            discovered_android_release = _discover_android_release_metadata()
 
-        download_url = (os.environ.get('MOBILE_APP_ANDROID_URL') or '').strip()
-        version_name = (os.environ.get('MOBILE_APP_ANDROID_VERSION_NAME') or '').strip()
-        build_number = _env_int('MOBILE_APP_ANDROID_BUILD_NUMBER', None)
-        # Compatibilidade com nomenclaturas alternativas.
-        if build_number is None:
-            build_number = _env_int('MOBILE_APP_ANDROID_VERSION_CODE', None)
-        min_supported_build = _env_int('MOBILE_APP_ANDROID_MIN_SUPPORTED_BUILD', None)
-        force_update = _env_bool('MOBILE_APP_ANDROID_FORCE_UPDATE', False)
-        release_notes = (os.environ.get('MOBILE_APP_ANDROID_RELEASE_NOTES') or '').strip()
+    if platform == 'ios':
+        if channel == 'homolog':
+            download_url = (os.environ.get('MOBILE_APP_IOS_HML_URL') or os.environ.get('MOBILE_APP_IOS_URL') or '').strip()
+            version_name = (os.environ.get('MOBILE_APP_IOS_HML_VERSION_NAME') or os.environ.get('MOBILE_APP_IOS_VERSION_NAME') or '').strip()
+            build_number = _env_int('MOBILE_APP_IOS_HML_BUILD_NUMBER', None) or _env_int('MOBILE_APP_IOS_BUILD_NUMBER', None)
+            min_supported_build = _env_int('MOBILE_APP_IOS_HML_MIN_SUPPORTED_BUILD', None) or _env_int('MOBILE_APP_IOS_MIN_SUPPORTED_BUILD', None)
+            force_update = _env_bool('MOBILE_APP_IOS_HML_FORCE_UPDATE', False) or _env_bool('MOBILE_APP_IOS_FORCE_UPDATE', False)
+            release_notes = (os.environ.get('MOBILE_APP_IOS_HML_RELEASE_NOTES') or os.environ.get('MOBILE_APP_IOS_RELEASE_NOTES') or '').strip()
+        else:
+            download_url = (os.environ.get('MOBILE_APP_IOS_URL') or '').strip()
+            version_name = (os.environ.get('MOBILE_APP_IOS_VERSION_NAME') or '').strip()
+            build_number = _env_int('MOBILE_APP_IOS_BUILD_NUMBER', None)
+            min_supported_build = _env_int('MOBILE_APP_IOS_MIN_SUPPORTED_BUILD', None)
+            force_update = _env_bool('MOBILE_APP_IOS_FORCE_UPDATE', False)
+            release_notes = (os.environ.get('MOBILE_APP_IOS_RELEASE_NOTES') or '').strip()
+    else:
+        if channel == 'homolog':
+            auto_version_enabled = _env_bool('MOBILE_APP_ANDROID_HML_AUTO_VERSION', True)
+            if auto_version_enabled:
+                discovered_android_release = _discover_android_release_metadata(channel='homolog')
+
+            download_url = (os.environ.get('MOBILE_APP_ANDROID_HML_URL') or '').strip()
+            version_name = (os.environ.get('MOBILE_APP_ANDROID_HML_VERSION_NAME') or '').strip()
+            build_number = _env_int('MOBILE_APP_ANDROID_HML_BUILD_NUMBER', None)
+            if build_number is None:
+                build_number = _env_int('MOBILE_APP_ANDROID_HML_VERSION_CODE', None)
+            min_supported_build = _env_int('MOBILE_APP_ANDROID_HML_MIN_SUPPORTED_BUILD', None)
+            force_update = _env_bool('MOBILE_APP_ANDROID_HML_FORCE_UPDATE', False)
+            release_notes = (os.environ.get('MOBILE_APP_ANDROID_HML_RELEASE_NOTES') or '').strip()
+        else:
+            auto_version_enabled = _env_bool('MOBILE_APP_ANDROID_AUTO_VERSION', True)
+            if auto_version_enabled:
+                discovered_android_release = _discover_android_release_metadata(channel='prod')
+
+            download_url = (os.environ.get('MOBILE_APP_ANDROID_URL') or '').strip()
+            version_name = (os.environ.get('MOBILE_APP_ANDROID_VERSION_NAME') or '').strip()
+            build_number = _env_int('MOBILE_APP_ANDROID_BUILD_NUMBER', None)
+            # Compatibilidade com nomenclaturas alternativas.
+            if build_number is None:
+                build_number = _env_int('MOBILE_APP_ANDROID_VERSION_CODE', None)
+            min_supported_build = _env_int('MOBILE_APP_ANDROID_MIN_SUPPORTED_BUILD', None)
+            force_update = _env_bool('MOBILE_APP_ANDROID_FORCE_UPDATE', False)
+            release_notes = (os.environ.get('MOBILE_APP_ANDROID_RELEASE_NOTES') or '').strip()
 
         discovered_build = _extract_build_number(
             (discovered_android_release or {}).get('build_number'),
@@ -2076,10 +2158,13 @@ def mobile_app_update(request):
             (discovered_android_release or {}).get('apk_path') or ''
         ).strip()
         if discovered_path:
-            discovered_download_url = _android_release_download_url(request, discovered_path)
-            points_to_latest_alias = str(download_url or '').strip().endswith(
-                '/static/mobile/releases/ambipar-synchro-latest.apk'
+            discovered_download_url = _android_release_download_url(request, discovered_path, channel=channel)
+            target_latest_suffix = (
+                '/static/mobile/releases/ambipar-synchro-hml-latest.apk'
+                if channel == 'homolog'
+                else '/static/mobile/releases/ambipar-synchro-latest.apk'
             )
+            points_to_latest_alias = str(download_url or '').strip().endswith(target_latest_suffix)
             if not download_url or (auto_version_enabled and points_to_latest_alias):
                 download_url = discovered_download_url
 
@@ -2098,6 +2183,7 @@ def mobile_app_update(request):
     response_payload = {
         'success': True,
         'platform': platform,
+        'channel': channel,
         'checked_at': timezone.now().isoformat(),
         'update': {
             'available': has_package,

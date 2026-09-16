@@ -23,7 +23,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoImagem, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, RdoTanque, SegmentoClienteComercial, ServicoComercial, Unidade
+from .models import AnaliseCriticaOportunidade, AnexoPropostaComercial, Cliente, Financeiro, FinanceiroCampo, ItemEquipamentoComercial, MetodoOperacional, OrdemServico, PropostaDocumentoFinanceiroSnapshot, PropostaDocumentoImagem, PropostaDocumentoLinha, PropostaDocumentoRevisao, ResponsavelCoordenador, SegmentoClienteComercial, ServicoComercial, Unidade
 from .proposal_official_pdf import OfficialProposalPdfError, generate_official_proposal_pdf, load_offshore_template_draft
 from .rdo_access import (
     user_can_access_commercial,
@@ -1834,8 +1834,7 @@ def _resolve_support_references(payload):
     if base_os is None:
         base_os = OrdemServico.objects.order_by("-id").first()
 
-    tanque = RdoTanque.objects.order_by("-id").first()
-    return resolved, base_os, tanque
+    return resolved, base_os, None
 
 
 def _resolve_active_person(raw_value, role):
@@ -1858,16 +1857,11 @@ def _create_financeiro_from_payload(payload):
         else:
             return None, {"revisao": "Informe uma revisão válida."}
 
-    resolved_refs, base_os, tank = _resolve_support_references(payload)
+    resolved_refs, base_os, _unused = _resolve_support_references(payload)
     if base_os is None:
         return None, {
             "referencias": "Cadastre ao menos uma Ordem de Serviço para vincular os campos obrigatórios do Financeiro."
         }
-    if tank is None:
-        return None, {
-            "volume_tanque_exec": "Cadastre ao menos um tanque em RDO para concluir a primeira integração do Comercial."
-        }
-
     emissao = _parse_date_input(payload.get("data_emissao"))
     data_entrega = _parse_date_input(payload.get("data_entrega_proposta"))
     data_solicitacao = _parse_date_input(payload.get("data_solicitacao_proposta"))
@@ -1912,7 +1906,6 @@ def _create_financeiro_from_payload(payload):
         "coordenador_cadastro": coordenador_cadastro,
         "servico": _clean_text(payload.get("servico")),
         "descricao_proposta": _clean_text(payload.get("descricao_proposta")),
-        "volume_tanque_exec": tank,
         "comentario": _clean_text(payload.get("comentario")),
         "requisitos_cliente": _clean_text(payload.get("requisitos_cliente")),
         "requisitos_ambipar": _clean_text(payload.get("requisitos_ambipar")),

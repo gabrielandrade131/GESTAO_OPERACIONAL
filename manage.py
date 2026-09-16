@@ -19,7 +19,31 @@ if _orig_md5 is not None:
             return _orig_md5(data)
     hashlib.md5 = _md5_compat
 
+def _load_env_file_if_needed():
+    if 'DJANGO_SECRET_KEY' in os.environ:
+        return
+    candidates = [
+        '/etc/gestao-operacional/django.env',
+        '/etc/gestao-operacional/django-fallback.env',
+        os.path.join(os.path.dirname(__file__), '.env'),
+    ]
+    for env_path in candidates:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            k, v = line.split('=', 1)
+                            k = k.strip()
+                            v = v.strip().strip('\'"')
+                            if k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
 def main():
+    _load_env_file_if_needed()
     # Prefer local developer settings if present to avoid enabling production HTTPS redirects
     if os.path.exists(os.path.join(os.path.dirname(__file__), 'setup', 'settings_local.py')):
         os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'setup.settings_local')

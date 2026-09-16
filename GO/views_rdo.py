@@ -12010,6 +12010,10 @@ def add_tank_ajax(request, rdo_id):
             except Exception:
                 pass
 
+        is_mobile_req = (
+            str(getattr(request, 'rdo_request_channel', '') or '').strip().lower() == 'mobile'
+            or getattr(request, 'mobile_api_token', None) is not None
+        )
         try:
             is_supervisor_user = (hasattr(request, 'user') and request.user.is_authenticated and request.user.groups.filter(name='Supervisor').exists())
         except Exception:
@@ -12036,7 +12040,7 @@ def add_tank_ajax(request, rdo_id):
             service_limit_count = None
         effective_tank_limit_count = service_limit_count
         effective_tank_labels = service_labels or []
-        if is_supervisor_user:
+        if is_supervisor_user and not is_mobile_req and getattr(rdo_obj, 'ordem_servico', None) is not None and int(configured_tanks_count or 0) > 0:
             effective_tank_limit_count = int(configured_tanks_count or 0)
             effective_tank_labels = configured_tank_labels or []
 
@@ -12285,7 +12289,16 @@ def add_tank_ajax(request, rdo_id):
                 return set()
             return keys
 
-        if is_supervisor_user and int(configured_tanks_count or 0) <= 0:
+        is_mobile_req = (
+            str(getattr(request, 'rdo_request_channel', '') or '').strip().lower() == 'mobile'
+            or getattr(request, 'mobile_api_token', None) is not None
+        )
+        if (
+            is_supervisor_user
+            and not is_mobile_req
+            and getattr(rdo_obj, 'ordem_servico', None) is not None
+            and int(configured_tanks_count or 0) <= 0
+        ):
             return JsonResponse({
                 'success': False,
                 'error': 'Esta OS não possui tanque configurado na Home. Solicite ao coordenador o preenchimento antes de continuar.',
@@ -12494,7 +12507,7 @@ def add_tank_ajax(request, rdo_id):
                 tank_obj = RdoTanque.objects.select_related('rdo__ordem_servico').get(pk=tanque_id_int)
             except RdoTanque.DoesNotExist:
                 return JsonResponse({'success': False, 'error': 'Tanque não encontrado.'}, status=404)
-            if is_supervisor_user:
+            if is_supervisor_user and not is_mobile_req:
                 try:
                     if not (_incoming_tank_identity_candidates(tank_obj=tank_obj) & (configured_tank_keys or set())):
                         return JsonResponse({
@@ -12858,7 +12871,7 @@ def add_tank_ajax(request, rdo_id):
         except Exception:
             pass
 
-        if is_supervisor_user:
+        if is_supervisor_user and not is_mobile_req:
             try:
                 incoming_allowed = _incoming_tank_identity_candidates(data_obj=tanque_data) & (configured_tank_keys or set())
             except Exception:
