@@ -878,6 +878,29 @@ def _save_cadastro_master(request, kind, item=None):
     nome = ' '.join(str(payload.get('nome', '')).split())
     if not nome:
         return JsonResponse({'success': False, 'error': 'Informe o nome.'}, status=400)
+    duplicate = model.objects.filter(nome__iexact=nome)
+    if item is not None:
+        duplicate = duplicate.exclude(pk=item.pk)
+    existing = duplicate.first()
+    if existing:
+        if item is None and not existing.ativo:
+            existing.ativo = True
+            existing.save(update_fields=['ativo'])
+            return JsonResponse({
+                'success': True,
+                'item': _serialize_cadastro_master(existing, kind),
+                'reactivated': True,
+            })
+        labels = {
+            'clientes': 'cliente',
+            'unidades': 'unidade',
+            'pessoas': 'pessoa',
+            'funcoes': 'função',
+        }
+        return JsonResponse(
+            {'success': False, 'error': f'Já existe {labels[kind]} com este nome.'},
+            status=400,
+        )
     if item is None:
         item = model()
     item.nome = nome

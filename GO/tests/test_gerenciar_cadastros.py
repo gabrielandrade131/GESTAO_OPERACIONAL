@@ -83,6 +83,13 @@ class GerenciarCadastrosTests(TestCase):
         )
         self.assertEqual(deactivate.status_code, 200)
         self.assertTrue(Funcao.objects.filter(pk=function_id, nome='Funcao revisada', ativo=False).exists())
+        reactivate = self.client.post(
+            reverse('cadastro_master_criar', args=['funcoes']),
+            data=json.dumps({'nome': 'Funcao revisada'}), content_type='application/json',
+        )
+        self.assertEqual(reactivate.status_code, 200)
+        self.assertTrue(reactivate.json()['reactivated'])
+        self.assertTrue(Funcao.objects.filter(pk=function_id, ativo=True).exists())
 
     def test_listing_is_paginated(self):
         Cliente.objects.bulk_create([Cliente(nome=f'Cliente {index}') for index in range(6)])
