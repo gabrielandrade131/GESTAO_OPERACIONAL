@@ -112,7 +112,7 @@ class Command(BaseCommand):
         # Gerar número de OS único se não fornecido
         numero_os = options.get('numero_os')
         if not numero_os:
-            ultimo_num = OrdemServico.objects.order_by('-numero_os').values_list('numero_os', flat=True).first() or 90000
+            ultimo_num = OrdemServico.objects.filter(numero_os__gte=90000).order_by('-numero_os').values_list('numero_os', flat=True).first() or 90000
             numero_os = max(ultimo_num + 1, 90001)
 
         tanques_str = options['tanques']

@@ -78,18 +78,27 @@ def extract_build_number(*raw_values):
     return None
 
 
-def discover_latest_android_release():
+def discover_latest_android_release(channel="prod"):
     globs_to_scan = []
     custom_glob = (os.environ.get("MOBILE_APP_ANDROID_RELEASE_GLOB") or "").strip()
     if custom_glob:
         globs_to_scan.append(custom_glob)
 
-    globs_to_scan.extend(
-        [
-            "/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-v*.apk",
-            "/var/www/mobile/rdo_offline_app/dist/android/*/ambipar-synchro-v*.apk",
-        ]
-    )
+    if channel == "homolog":
+        globs_to_scan.extend(
+            [
+                "/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-hml-v*.apk",
+                "/var/www/mobile/rdo_offline_app/dist/android/*_homolog_*/ambipar-synchro-hml-v*.apk",
+            ]
+        )
+    else:
+        globs_to_scan.extend(
+            [
+                "/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases/ambipar-synchro-v*.apk",
+                "/var/www/mobile/rdo_offline_app/dist/android/*_prod_*/ambipar-synchro-v*.apk",
+                "/var/www/mobile/rdo_offline_app/dist/android/*/ambipar-synchro-v*.apk",
+            ]
+        )
 
     best = None
     for pattern in globs_to_scan:
@@ -103,8 +112,12 @@ def discover_latest_android_release():
             lowered = filename.lower()
             if not lowered.endswith(".apk"):
                 continue
-            if "-hml-" in lowered or "homolog" in lowered or "uml" in lowered:
-                continue
+            if channel == "homolog":
+                if "-hml-" not in lowered and "homolog" not in lowered:
+                    continue
+            else:
+                if "-hml-" in lowered or "homolog" in lowered or "uml" in lowered:
+                    continue
 
             version_name = extract_version_name_from_text(filename)
             if not version_name:
@@ -142,7 +155,7 @@ def discover_latest_android_release():
     return best
 
 
-def android_release_download_url(request, apk_path=""):
+def android_release_download_url(request, apk_path="", channel="prod"):
     base_static_dir = "/var/www/html/GESTAO_OPERACIONAL/static/mobile/releases"
     filename = os.path.basename(str(apk_path or "").strip())
     if filename:
@@ -150,18 +163,30 @@ def android_release_download_url(request, apk_path=""):
         if os.path.exists(static_filename_path):
             return request.build_absolute_uri(f"/static/mobile/releases/{filename}")
 
-    latest_alias = os.path.join(base_static_dir, "ambipar-synchro-latest.apk")
+    default_alias = (
+        "ambipar-synchro-hml-latest.apk"
+        if channel == "homolog"
+        else "ambipar-synchro-latest.apk"
+    )
+    latest_alias = os.path.join(base_static_dir, default_alias)
     if os.path.exists(latest_alias):
-        return request.build_absolute_uri("/static/mobile/releases/ambipar-synchro-latest.apk")
+        return request.build_absolute_uri(f"/static/mobile/releases/{default_alias}")
     return ""
 
 
 def resolve_mobile_release_context(request):
-    discovered_android_release = discover_latest_android_release() or {}
+    discovered_android_release = discover_latest_android_release(channel="prod") or {}
+    discovered_hml_release = discover_latest_android_release(channel="homolog") or {}
 
     discovered_android_url = android_release_download_url(
         request,
         discovered_android_release.get("apk_path"),
+        channel="prod",
+    )
+    discovered_hml_url = android_release_download_url(
+        request,
+        discovered_hml_release.get("apk_path"),
+        channel="homolog",
     )
 
     env_android_url = (os.environ.get("MOBILE_APP_ANDROID_URL") or "").strip()
@@ -187,13 +212,30 @@ def resolve_mobile_release_context(request):
     if android_build_number is None:
         android_build_number = 0
 
+    hml_url = discovered_hml_url or (os.environ.get("MOBILE_APP_ANDROID_HML_URL") or "").strip()
+    hml_version_name = str(
+        discovered_hml_release.get("version_name")
+        or (os.environ.get("MOBILE_APP_ANDROID_HML_VERSION_NAME") or "").strip()
+        or extract_version_name_from_text(hml_url)
+    ).strip()
+    hml_build_number = extract_build_number(
+        discovered_hml_release.get("build_number"),
+        hml_version_name,
+        hml_url,
+    )
+    if hml_build_number is None:
+        hml_build_number = 0
+
     ios_url = (os.environ.get("MOBILE_APP_IOS_URL") or "").strip()
-    enabled = _env_bool("MOBILE_APP_DOWNLOAD_ENABLED", False) or bool(android_url or ios_url)
+    enabled = _env_bool("MOBILE_APP_DOWNLOAD_ENABLED", False) or bool(android_url or hml_url or ios_url)
 
     return {
         "mobile_app_download_enabled": enabled,
         "mobile_app_android_url": android_url,
         "mobile_app_android_version_name": android_version_name,
         "mobile_app_android_build_number": int(android_build_number or 0),
+        "mobile_app_android_hml_url": hml_url,
+        "mobile_app_android_hml_version_name": hml_version_name,
+        "mobile_app_android_hml_build_number": int(hml_build_number or 0),
         "mobile_app_ios_url": ios_url,
     }

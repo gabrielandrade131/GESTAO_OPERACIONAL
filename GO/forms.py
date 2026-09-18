@@ -467,7 +467,7 @@ class OrdemServicoForm(forms.ModelForm):
         servico_primary = servico_raw
 
         if box_opcao == self.NOVA_OS:
-            ultimo = OrdemServico.objects.order_by('-numero_os').first()
+            ultimo = OrdemServico.objects.filter(numero_os__lt=9000).order_by('-numero_os').first()
             instance.numero_os = (ultimo.numero_os + 1) if ultimo else 1
 
         elif box_opcao == self.EXISTENTE_OS and os_existente:

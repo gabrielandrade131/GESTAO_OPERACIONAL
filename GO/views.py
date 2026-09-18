@@ -3139,7 +3139,6 @@ def creditos(request):
     return render(request, 'creditos.html', context)
 
 
-@login_required(login_url='/login/')
 def mobile_app_download(request):
     return render(request, 'mobile_app_download.html', resolve_mobile_release_context(request))
 

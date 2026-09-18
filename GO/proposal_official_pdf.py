@@ -117,7 +117,10 @@ def _proposal_kind(proposal):
 
     # PC has precedence because existing records can carry both technical and
     # commercial control values while still representing a commercial proposal.
-    if _clean(proposal.pc_ptc).casefold() == "elaborado":
+    # Older commercial records persist the label in the feminine form
+    # ("Elaborada"), while newer records use the field's canonical masculine
+    # value ("Elaborado"). Both mean that the commercial document is ready.
+    if _clean(proposal.pc_ptc).casefold() in {"elaborado", "elaborada"}:
         return "pc_offshore" if is_offshore else "pc_onshore"
     if _clean(proposal.pt_financeiro).casefold() == "elaborada":
         if is_offshore:

@@ -647,9 +647,15 @@ def _android_release_download_url(request, apk_path='', channel='prod'):
     if raw_path and raw_path.startswith(base_static_dir):
         filename = os.path.basename(raw_path)
         if filename:
-            return request.build_absolute_uri(f'/static/mobile/releases/{filename}')
+            url = request.build_absolute_uri(f'/static/mobile/releases/{filename}')
+            if url.startswith('http://') and not ('127.0.0.1' in url or 'localhost' in url or 'testserver' in url):
+                url = 'https://' + url[7:]
+            return url
 
-    return request.build_absolute_uri(default_relative)
+    url = request.build_absolute_uri(default_relative)
+    if url.startswith('http://') and not ('127.0.0.1' in url or 'localhost' in url or 'testserver' in url):
+        url = 'https://' + url[7:]
+    return url
 
 
 def _is_supervisor_user(user):
@@ -2084,7 +2090,6 @@ def mobile_bootstrap(request):
 
 
 @csrf_exempt
-@mobile_auth_required
 @require_GET
 def mobile_app_update(request):
     platform = str(request.GET.get('platform') or 'android').strip().lower()

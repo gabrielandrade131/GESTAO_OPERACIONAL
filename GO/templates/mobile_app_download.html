@@ -1,37 +1,93 @@
 {% extends 'base.html' %}
 
-{% block title %}Synchro Mobile{% endblock %}
+{% block title %}Synchro Mobile - Download do Aplicativo{% endblock %}
 
 {% block content %}
-<section style="max-width:900px;margin:20px auto;padding:20px;background:#fff;border:1px solid #ececec;border-radius:10px;">
-  <h1 style="margin-top:0;display:flex;align-items:center;gap:8px;">
-    <span class="material-icons" aria-hidden="true">smartphone</span>
-    Synchro Mobile
+<section style="max-width:900px;margin:24px auto;padding:24px;background:#fff;border:1px solid #e0e0e0;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+  <h1 style="margin-top:0;display:flex;align-items:center;gap:10px;font-size:24px;color:#1e293b;">
+    <span class="material-icons" style="font-size:32px;color:#059669;" aria-hidden="true">smartphone</span>
+    Download do App Ambipar Synchro Mobile
   </h1>
 
-  {% if mobile_app_download_enabled %}
-    <p>O Synchro Mobile está disponível apenas para Android.</p>
-    <p>Use o link oficial abaixo para instalar o aplicativo real no seu dispositivo Android.</p>
-    {% if mobile_app_android_version_name %}
-      <p style="margin-bottom:0;color:#555;">
-        Versão disponível:
-        <strong>{{ mobile_app_android_version_name }}</strong>
-        {% if mobile_app_android_build_number %}
-          · Build {{ mobile_app_android_build_number }}
+  <p style="color:#64748b;font-size:15px;margin-bottom:24px;">
+    Selecione abaixo a versão correspondente ao seu ambiente para baixar e instalar o aplicativo Android diretamente no seu celular.
+  </p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px;">
+    <!-- Card Homologação (HML) -->
+    <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="font-size:18px;margin:0;color:#0f172a;display:flex;align-items:center;gap:6px;">
+            <span class="material-icons" style="color:#d97706;" aria-hidden="true">science</span>
+            Homologação (HML)
+          </h2>
+          <span style="background:#fef3c7;color:#92400e;font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;">HML</span>
+        </div>
+        <p style="color:#64748b;font-size:14px;margin-bottom:12px;">
+          Versão para testes e validação de novas funcionalidades com os supervisores.
+        </p>
+        {% if mobile_app_android_hml_version_name %}
+          <p style="color:#334155;font-size:13px;margin-bottom:16px;">
+            Versão: <strong>{{ mobile_app_android_hml_version_name }}</strong>
+            {% if mobile_app_android_hml_build_number %}
+              (Build {{ mobile_app_android_hml_build_number }})
+            {% endif %}
+          </p>
         {% endif %}
-      </p>
-    {% endif %}
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-      {% if mobile_app_android_url %}
-        <a href="{{ mobile_app_android_url }}" class="menu-btn" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">
-          <span class="material-icons" aria-hidden="true">android</span>
-          Baixar Synchro Mobile (Android)
-        </a>
-      {% endif %}
+      </div>
+      <div>
+        {% if mobile_app_android_hml_url %}
+          <a href="{{ mobile_app_android_hml_url }}" class="menu-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#d97706;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-size:14px;">
+            <span class="material-icons" aria-hidden="true">download</span>
+            Baixar APK Homologação (Build {{ mobile_app_android_hml_build_number }})
+          </a>
+        {% else %}
+          <p style="color:#94a3b8;font-size:13px;font-style:italic;">Indisponível no momento.</p>
+        {% endif %}
+      </div>
     </div>
-  {% else %}
-    <p>O aplicativo ainda não foi publicado.</p>
-    <p style="margin-bottom:0;color:#555;">Quando os links oficiais forem definidos, os botoes de download aparecem automaticamente.</p>
-  {% endif %}
+
+    <!-- Card Produção (PRD) -->
+    <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="font-size:18px;margin:0;color:#0f172a;display:flex;align-items:center;gap:6px;">
+            <span class="material-icons" style="color:#059669;" aria-hidden="true">verified</span>
+            Produção Oficial
+          </h2>
+          <span style="background:#dcfce7;color:#166534;font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;">PROD</span>
+        </div>
+        <p style="color:#64748b;font-size:14px;margin-bottom:12px;">
+          Versão estável oficial para operações em campo.
+        </p>
+        {% if mobile_app_android_version_name %}
+          <p style="color:#334155;font-size:13px;margin-bottom:16px;">
+            Versão: <strong>{{ mobile_app_android_version_name }}</strong>
+            {% if mobile_app_android_build_number %}
+              (Build {{ mobile_app_android_build_number }})
+            {% endif %}
+          </p>
+        {% endif %}
+      </div>
+      <div>
+        {% if mobile_app_android_url %}
+          <a href="{{ mobile_app_android_url }}" class="menu-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#059669;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-size:14px;">
+            <span class="material-icons" aria-hidden="true">download</span>
+            Baixar APK Oficial (Build {{ mobile_app_android_build_number }})
+          </a>
+        {% else %}
+          <p style="color:#94a3b8;font-size:13px;font-style:italic;">Indisponível no momento.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;">
+    <p style="margin:0;color:#1e40af;font-size:13px;display:flex;align-items:center;gap:8px;">
+      <span class="material-icons" style="font-size:18px;">info</span>
+      <strong>Instruções de Instalação:</strong> Ao baixar o arquivo APK pelo navegador do celular, toque na notificação de download concluído e permita a instalação de apps desta fonte se solicitado pelo Android.
+    </p>
+  </div>
 </section>
 {% endblock %}

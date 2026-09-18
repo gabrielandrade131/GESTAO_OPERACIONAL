@@ -3402,6 +3402,11 @@ def _generate_official_proposal_response(proposta_id, mode="", document_type="",
         if not _has_document_operation(proposta):
             raise OfficialProposalPdfError("PDFs de proposta est\u00e3o dispon\u00edveis somente para opera\u00e7\u00f5es Onshore ou Offshore.")
         if _is_offshore_proposal(proposta):
+            # The operation resolver also supports the explicit
+            # ``ambiente_operacional`` field used by newer proposals. Keep
+            # the PDF template selection aligned with that resolver instead
+            # of falling back to the legacy ``tipo_operacao`` field.
+            template_key = "pc_offshore"
             documento = PropostaDocumentoRevisao.objects.filter(
                 proposta=proposta,
                 numero_revisao=proposta.revisao,

@@ -289,6 +289,8 @@ class MobileSyncApiIdempotencyTest(TestCase):
             '/api/mobile/v1/rdo/sync/',
             data=json.dumps(body),
             content_type='application/json',
+            HTTP_HOST='localhost',
+            secure=True,
             HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
         )
         self.assertEqual(response1.status_code, 200)
@@ -303,6 +305,8 @@ class MobileSyncApiIdempotencyTest(TestCase):
             '/api/mobile/v1/rdo/sync/',
             data=json.dumps(body),
             content_type='application/json',
+            HTTP_HOST='localhost',
+            secure=True,
             HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
         )
         self.assertEqual(response2.status_code, 200)
@@ -326,6 +330,8 @@ class MobileSyncApiIdempotencyTest(TestCase):
 
         response = self.client.get(
             '/api/mobile/v1/bootstrap/',
+            HTTP_HOST='localhost',
+            secure=True,
             HTTP_AUTHORIZATION=f'Bearer {self.token.key}',
         )
         self.assertEqual(response.status_code, 200)
@@ -2553,14 +2559,16 @@ class MobileSyncApiIdempotencyTest(TestCase):
             )
         )
 
-    def test_mobile_app_update_requires_authentication(self):
+    def test_mobile_app_update_allows_anonymous_access(self):
         anon_client = Client()
         response = anon_client.get(
             '/api/mobile/v1/app/update/?platform=android',
             HTTP_HOST='localhost',
             secure=True,
         )
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get('success'))
 
     def _create_sample_os_and_rdo(self):
         cliente, _ = Cliente.objects.get_or_create(nome='Cliente Teste WhatsApp')
