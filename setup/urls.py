@@ -14,6 +14,7 @@ from GO import views_rdo
 from GO import views_equipamentos
 from GO import dashboard_views
 from GO import views_dashboard_rdo
+from GO.synchro_sbm.views import dashboard as synchro_sbm_dashboard
 from GO import views_access_metrics
 from GO import views_mobile_api
 from GO import api_axis_check
@@ -23,6 +24,7 @@ from GO import search_views
 from GO import views_handover
 
 urlpatterns = [
+    path('api/integrations/dashboard-sbm/', synchro_sbm_dashboard, name='integration_dashboard_sbm'),
     path('admin/', admin.site.urls),
     path('login/', views.CustomLoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', views.logout_view, name='logout'),

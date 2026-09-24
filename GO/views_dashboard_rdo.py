@@ -846,13 +846,20 @@ def summary_operations_data(params=None):
                     return 0
 
         rt_totals_by_os = {}
+        rt_values_by_rdo = {}
         if rdo_id_scope:
             rt_scope_rows = RdoTanque.objects.filter(rdo_id__in=rdo_id_scope).values(
+                'rdo_id',
                 'rdo__ordem_servico_id',
                 'ensacamento_dia',
                 'tambores_dia',
+                'total_liquido',
+                'bombeio',
+                'residuos_totais',
+                'residuos_solidos',
             )
             for row in rt_scope_rows:
+                rdo_id = row.get('rdo_id')
                 os_id = row.get('rdo__ordem_servico_id')
                 if not os_id:
                     continue
@@ -861,6 +868,27 @@ def summary_operations_data(params=None):
                 cur = rt_totals_by_os.setdefault(os_id, {'ens': 0, 'tam': 0})
                 cur['ens'] += ens
                 cur['tam'] += tam
+                liquid = 0.0
+                for candidate in (row.get('total_liquido'), row.get('bombeio')):
+                    try:
+                        value = float(candidate or 0)
+                    except (TypeError, ValueError):
+                        value = 0.0
+                    if value:
+                        liquid = value / 1000.0 if abs(value) > 100 else value
+                        break
+                else:
+                    try:
+                        total = float(row.get('residuos_totais') or 0)
+                        solids = float(row.get('residuos_solidos') or 0)
+                        value = total - solids
+                        liquid = value / 1000.0 if abs(value) > 100 else value
+                    except (TypeError, ValueError):
+                        liquid = 0.0
+                values = rt_values_by_rdo.setdefault(rdo_id, {'ens': 0, 'tam': 0, 'liquido': 0.0})
+                values['ens'] += ens
+                values['tam'] += tam
+                values['liquido'] += liquid
 
         out = []
         for o in ordered_ops:
@@ -894,6 +922,61 @@ def summary_operations_data(params=None):
                     supervisor_name = getattr(sup, 'username', None) or str(sup)
 
             rdo_rows = list(rdos_by_os.get(getattr(o, 'id', None), []))
+
+            # Preserve the daily grain needed by the dashboard's point-level
+            # interaction: one operation can have several RDOs in the period.
+            daily_details = {}
+            for r in rdo_rows:
+                rdo_date = getattr(r, 'data', None)
+                if not rdo_date:
+                    continue
+                date_key = rdo_date.isoformat()
+                rt_values = rt_values_by_rdo.get(getattr(r, 'id', None), {})
+                ensacamento_value = rt_values.get('ens', 0)
+                tambores_value = rt_values.get('tam', 0)
+                liquido_value = rt_values.get('liquido', 0.0)
+                detail = daily_details.setdefault(date_key, {
+                    'date': date_key, 'rdos': 0, 'ensacamento': 0,
+                    'tambores': 0, 'hh_efetivo': 0, 'hh_nao_efetivo': 0,
+                })
+                detail['rdos'] += 1
+                detail['ensacamento'] += ensacamento_value
+                detail['tambores'] += tambores_value
+                detail['hh_efetivo'] += _to_int_safe_local(getattr(r, 'total_atividades_efetivas_min', 0))
+                detail['hh_nao_efetivo'] += _to_int_safe_local(getattr(r, 'total_atividades_nao_efetivas_fora_min', 0))
+                confined_minutes = 0.0
+                for slot in range(1, 7):
+                    entry = getattr(r, f'entrada_confinado_{slot}', None)
+                    exit_time = getattr(r, f'saida_confinado_{slot}', None)
+                    if entry and exit_time:
+                        start = entry.hour * 60 + entry.minute + entry.second / 60.0
+                        end = exit_time.hour * 60 + exit_time.minute + exit_time.second / 60.0
+                        confined_minutes += end - start if end >= start else (1440 - start + end)
+                effective_minutes = getattr(r, 'total_atividades_efetivas_min', None)
+                outside_non_effective = getattr(r, 'total_atividades_nao_efetivas_fora_min', None)
+                total_activity = getattr(r, 'total_atividade_min', None)
+                if effective_minutes is not None and outside_non_effective is not None:
+                    outside_minutes = _to_int_safe_local(effective_minutes) + _to_int_safe_local(outside_non_effective)
+                elif total_activity is not None:
+                    outside_minutes = _to_int_safe_local(total_activity) - _to_int_safe_local(getattr(r, 'total_confinado_min', 0)) - _to_int_safe_local(getattr(r, 'total_n_efetivo_confinado_min', 0)) - _to_int_safe_local(getattr(r, 'total_abertura_pt_min', 0))
+                    outside_minutes = max(0, outside_minutes)
+                else:
+                    order = getattr(r, 'ordem_servico', None)
+                    pob = float(getattr(order, 'pob', 0) or 0) if order else 0
+                    outside_minutes = max(0, int(pob * float(getattr(settings, 'PRESENCE_HOURS', 8)) * 60) - int(confined_minutes))
+                detail.setdefault('items', []).append({
+                    'rdo': getattr(r, 'id', None),
+                    'ensacamento': ensacamento_value,
+                    'tambores': tambores_value,
+                    'hh_efetivo': _to_int_safe_local(getattr(r, 'total_atividades_efetivas_min', 0)),
+                    'hh_nao_efetivo': _to_int_safe_local(getattr(r, 'total_atividades_nao_efetivas_fora_min', 0)),
+                    'hh_confinado': round(confined_minutes / 60.0, 2),
+                    'hh_fora': round(float(outside_minutes) / 60.0, 2),
+                    'pob_confinado': _to_int_safe_local(getattr(r, 'operadores_simultaneos', 0)),
+                    'pob_alocado': float(getattr(getattr(r, 'ordem_servico', None), 'pob', 0) or 0),
+                    'liquido': round(liquido_value, 3),
+                    'solido': float(getattr(r, 'total_solidos', 0) or 0),
+                })
 
             sum_operadores = 0
             max_operadores = 0
@@ -995,6 +1078,7 @@ def summary_operations_data(params=None):
             out.append({
                 'id': o.id,
                 'numero_os': getattr(o, 'numero_os', None),
+                'status': getattr(o, 'status_operacao', '') or '',
                 'cliente': cliente_name,
                 'unidade': unidade_name,
                 'metodo': metodo_name,
@@ -1009,6 +1093,7 @@ def summary_operations_data(params=None):
                 'avg_pob': float(getattr(o, 'avg_pob', 0) or 0),
                 'total_volume_tanque': float(getattr(o, 'total_volume_tanque', 0) or 0),
                 'dias_movimentacao': int(dias_movimentacao),
+                'daily_details': list(daily_details.values()),
             })
 
         return out
@@ -1437,7 +1522,7 @@ def top_supervisores(request):
 
 
 @require_GET
-def metodos_eficacia_por_dias(request):
+def metodos_eficacia_por_dias(request, orders=None):
     """Calcula eficácia por método considerando status Finalizada/Em Andamento.
 
     Regras:
@@ -1460,6 +1545,8 @@ def metodos_eficacia_por_dias(request):
             end_date = None
 
         qs = _exclude_internal_os_from_ordem_qs(OrdemServico.objects).all()
+        if orders is not None:
+            qs = qs.filter(pk__in=orders)
         if cliente:
             qs = qs.filter(Cliente__nome__icontains=cliente)
         if unidade:
@@ -1659,7 +1746,8 @@ def metodos_eficacia_por_dias(request):
         }
         try:
             cache_key = f"metodos_eficacia|cliente={cliente or ''}|unidade={unidade or ''}|start={start or ''}|end={end or ''}"
-            cache.set(cache_key, resp, 60)
+            if orders is None:
+                cache.set(cache_key, resp, 60)
         except Exception:
             pass
         return JsonResponse(resp)
@@ -2005,7 +2093,7 @@ def heatmap_metodo_supervisor(request):
 
 
 @require_GET
-def pob_comparativo(request):
+def pob_comparativo(request, orders=None):
     start = request.GET.get('start')
     end = request.GET.get('end')
     os_existente = request.GET.get('os_existente')
@@ -2108,10 +2196,15 @@ def pob_comparativo(request):
         start_date = None
         end_date = None
 
-    if not end_date:
-        end_date = datetime.date.today()
-    if not start_date:
-        start_date = end_date.replace(day=1)
+    if orders is not None and not start and not end:
+        bounds = RDO.objects.filter(ordem_servico__in=orders).aggregate(first=Min('data'), last=Max('data'))
+        start_date = bounds.get('first') or datetime.date.today()
+        end_date = bounds.get('last') or datetime.date.today()
+    else:
+        if not end_date:
+            end_date = datetime.date.today()
+        if not start_date:
+            start_date = end_date.replace(day=1)
 
     try:
         date_field = None
@@ -2162,6 +2255,8 @@ def pob_comparativo(request):
                     filters = {f"{date_field}__date__gte": month_start, f"{date_field}__date__lte": month_end}
 
                 month_qs = _exclude_internal_os_from_rdo_qs(RDO.objects).filter(**filters)
+                if orders is not None:
+                    month_qs = month_qs.filter(ordem_servico__in=orders)
                 if unidade:
                     month_qs = month_qs.filter(ordem_servico__unidade__icontains=unidade)
                 if os_existente:
@@ -2211,6 +2306,8 @@ def pob_comparativo(request):
                     filters = {f"{date_field}__date__gte": day, f"{date_field}__date__lte": day}
 
                 day_qs = _exclude_internal_os_from_rdo_qs(RDO.objects).filter(**filters)
+                if orders is not None:
+                    day_qs = day_qs.filter(ordem_servico__in=orders)
                 if unidade:
                     day_qs = day_qs.filter(ordem_servico__unidade__icontains=unidade)
                 if os_existente:

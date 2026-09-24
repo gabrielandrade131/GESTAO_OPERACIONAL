@@ -45,12 +45,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const AGENDA_RESPONSAVEIS = ["Todos", "Rafael Lima", "Carla Mendes", "Lucas Freitas", "Beatriz Nunes", "Juliana Costa", "Marcos Silva", "Camila Souza"];
     const MOTIVO_OPTIONS = [
         "Selecione o motivo",
-        "Aguardando retorno do cliente",
-        "Perda por preço",
-        "Escopo cancelado",
-        "Mudança de prioridade do cliente",
-        "Sem aderência técnica",
-        "Sem budget aprovado"
+        "Governo",
+        "Desistência do cliente",
+        "Fora do Escopo",
+        "Diretriz Estratégica",
+        "Prazo",
+        "Operações",
+        "Demanda Não Entendida (gap)",
+        "Preço",
+        "Enviado outra unidade AMBIPAR",
+        "Enviado para Repair",
+        "Enviado para C-safety",
+        "Enviado para TDBR",
+        "Enviado para PCTRs",
+        "Enviado para Portal Group",
+        "Técnica",
+        "N/A",
+        "Escopo de Pequeno Porte",
+        "Sem retorno",
+        "Inviabilidade operacional",
+        "Baixa Atratividade Comercial",
+        "Critérios de habilitação"
     ];
 
     STATUS_OPTIONS.splice(0, STATUS_OPTIONS.length, ...[
@@ -2544,7 +2559,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="status-field ${REASON_REQUIRED_STATUSES.has(proposal.statusProposta) ? "is-required" : ""} ${state.statusError ? "has-error" : ""}" id="statusReasonField">
                             <label for="panelReasonSelect">Motivo (quando aplicavel)</label>
                             <select id="panelReasonSelect">
-                                ${renderOptions(MOTIVO_OPTIONS, proposal.motivoDeclinioPerda || "Selecione o motivo")}
+                                ${renderOptions(getMotivoOptions(proposal.motivoDeclinioPerda), proposal.motivoDeclinioPerda || "Selecione o motivo")}
                             </select>
                         </div>
                         <button class="panel-button panel-button--primary" data-panel-action="save-status" type="button">Salvar status</button>
@@ -2663,7 +2678,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="status-field ${REASON_REQUIRED_STATUSES.has(proposal.statusProposta) ? "is-required" : ""} ${state.statusError ? "has-error" : ""}" id="statusReasonField">
                             <label for="panelReasonSelect">Motivo (quando aplicável)</label>
                             <select id="panelReasonSelect">
-                                ${renderOptions(MOTIVO_OPTIONS, proposal.motivoDeclinioPerda || "Selecione o motivo")}
+                                ${renderOptions(getMotivoOptions(proposal.motivoDeclinioPerda), proposal.motivoDeclinioPerda || "Selecione o motivo")}
                             </select>
                         </div>
                         <button class="panel-button panel-button--primary" data-panel-action="save-status" type="button">Salvar status</button>
@@ -2745,7 +2760,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         editableField("RFI", "rfi", proposal.rfi, true)
                     ], "detail-group--contact")}
                     ${renderDataGroup("Controle", [
-                        editableField("Motivo de Declínio ou Perda", "motivoDeclinioPerda", proposal.motivoDeclinioPerda, true, MOTIVO_OPTIONS.slice(1)),
+                        editableField("Motivo de Declínio ou Perda", "motivoDeclinioPerda", proposal.motivoDeclinioPerda, true, ["", ...getDetailSelectOptions("motivoPerdaOptions", proposal.motivoDeclinioPerda)]),
                         editableField("PT", "pt", proposal.pt, true),
                         editableField("PC / PTC", "pcPtc", proposal.pcPtc, true),
                         editableField("Comentário", "comentario", proposal.comentario, true, null, true)
@@ -2817,7 +2832,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             </div>
                             <div class="edit-field">
                                 <label for="scopeTempo">Tempo de contrato em dias</label>
-                                <input id="scopeTempo" type="text" value="${escapeHtml(proposal.tempoContratoDias)}">
+                                <input id="scopeTempo" type="text" value="${escapeHtml(proposal.tempoContratoDiasValor || (proposal.tempoContratoDias ? String(proposal.tempoContratoDias).replace(/\D/g, '') : ''))}">
                             </div>
                         </div>
                         <section class="scope-items-editor">
@@ -3559,6 +3574,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (Array.isArray(metadata.statusOptions) && metadata.statusOptions.length) {
             replaceArrayContents(STATUS_OPTIONS, metadata.statusOptions);
+        }
+
+        if (Array.isArray(metadata.motivoPerdaOptions) && metadata.motivoPerdaOptions.length) {
+            replaceArrayContents(MOTIVO_OPTIONS, ["Selecione o motivo", ...metadata.motivoPerdaOptions]);
         }
 
         if (Array.isArray(metadata.financeiroCampoChoices) && metadata.financeiroCampoChoices.length) {
@@ -6446,184 +6465,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        Object.assign(proposal, updatedValues);
-        state.dataEditMode = false;
-        addHistory(proposal, "Dados comerciais atualizados", "Campos comerciais e de controle foram atualizados no painel.");
-        renderAll();
-        showNotification({
-            type: "success",
-            title: "Alterações salvas com sucesso",
-            message: "Os dados comerciais da proposta foram atualizados."
-        });
-        showBottomToast("Dados atualizados há poucos segundos");
-    }
-
-    function saveScopeData() {
-        const proposal = getSelectedProposal();
-        if (!proposal) {
-            return;
-        }
-
-        if (state.saveProposalError) {
-            showSaveProposalError();
-            return;
-        }
-
-        proposal.escopo = (state.scopeDraftServices || [])
-            .map((service) => String(service || "").trim())
-            .filter(Boolean)
-            .join(" | ") || proposal.escopo;
-        proposal.estimativaReceita = refs.proposalDrawer.querySelector("#scopeReceita")?.value.trim() || proposal.estimativaReceita;
-        proposal.tempoContratoDias = refs.proposalDrawer.querySelector("#scopeTempo")?.value.trim() || proposal.tempoContratoDias;
-        state.scopeEditMode = false;
-        addHistory(proposal, "Escopo atualizado", "Escopo, receita estimada e tempo de contrato ajustados no mock.");
-        renderAll();
-        showNotification({
-            type: "success",
-            title: "Alterações salvas com sucesso",
-            message: "Escopo e valores da proposta foram atualizados."
-        });
-        showBottomToast("Dados atualizados há poucos segundos");
-    }
-
-    function saveFollowup() {
-        const proposal = getSelectedProposal();
-        if (!proposal) {
-            return;
-        }
-
-        const payload = {
-            data: refs.proposalDrawer.querySelector("#followupData")?.value.trim(),
-            hora: refs.proposalDrawer.querySelector("#followupHora")?.value.trim(),
-            responsavel: refs.proposalDrawer.querySelector("#followupResponsavel")?.value.trim(),
-            tipoContato: refs.proposalDrawer.querySelector("#followupTipo")?.value.trim(),
-            comentario: refs.proposalDrawer.querySelector("#followupComentario")?.value.trim(),
-            proximaAcao: refs.proposalDrawer.querySelector("#followupAcao")?.value.trim(),
-            dataProximaAcao: refs.proposalDrawer.querySelector("#followupDataAcao")?.value.trim(),
-            status: refs.proposalDrawer.querySelector("#followupStatus")?.value.trim()
-        };
-
-        if (!payload.data || !payload.comentario || !payload.status) {
-            showNotification({
-                type: "warning",
-                title: "Atenção",
-                message: "Preencha data, atualização e status do acompanhamento."
-            });
-            return;
-        }
-
-        proposal.followUps.unshift(payload);
-        if (payload.dataProximaAcao) {
-            proposal.followUp = payload.dataProximaAcao;
-        }
-        state.followupFormOpen = false;
-        addHistory(proposal, "Acompanhamento registrado", `${payload.tipoContato} registrado por ${payload.responsavel}.`);
-        renderAll();
-        state.activeDetailTab = "followups";
-        renderProposalPanel();
-        showNotification({
-            type: "success",
-            title: "Acompanhamento registrado",
-            message: "Histórico comercial atualizado."
-        });
-        showBottomToast("Dados atualizados há poucos segundos");
-    }
-
-    function saveStatusChange() {
-        const proposal = getSelectedProposal();
-        if (!proposal) {
-            return;
-        }
-
-        const nextStatus = refs.proposalDrawer.querySelector("#panelStatusSelect")?.value || proposal.statusProposta;
-        const reason = refs.proposalDrawer.querySelector("#panelReasonSelect")?.value || "";
-        const needsReason = REASON_REQUIRED_STATUSES.has(nextStatus);
-
-        if (needsReason && (!reason || reason === "Selecione o motivo")) {
-            state.statusError = true;
-            updateStatusReasonState();
-            showNotification({
-                type: "warning",
-                title: "Atenção",
-                message: "Existem campos obrigatórios pendentes."
-            });
-            return;
-        }
-
-        const previousStatus = proposal.statusProposta;
-        proposal.statusProposta = nextStatus;
-        proposal.motivoDeclinioPerda = needsReason ? reason : "";
-        state.statusError = false;
-        addHistory(proposal, "Status alterado", `Status alterado de ${previousStatus} para ${nextStatus}.`);
-        renderAll();
-        showNotification({
-            type: "success",
-            title: "Alterações salvas com sucesso",
-            message: "O status da proposta foi atualizado."
-        });
-        showBottomToast("Dados atualizados há poucos segundos");
-    }
-
-    function saveQuickNote() {
-        const proposal = getSelectedProposal();
-        if (!proposal) {
-            return;
-        }
-        const value = refs.proposalDrawer.querySelector("#panelQuickNote")?.value.trim();
-        proposal.comentario = value || proposal.comentario;
-        state.noteEditMode = false;
-        addHistory(proposal, "Comentário atualizado", "Notas rápidas da proposta foram ajustadas.");
-        renderAll();
-        showNotification({
-            type: "success",
-            title: "Alterações salvas com sucesso",
-            message: "As notas rápidas da proposta foram atualizadas."
-        });
-        showBottomToast("Dados atualizados há poucos segundos");
-    }
-
-    function createNewRevision() {
-        const proposal = getSelectedProposal();
-        if (!proposal) {
-            return;
-        }
-        proposal.rev = String(Number(proposal.rev) + 1).padStart(2, "0");
-        addHistory(proposal, "Revisão criada", `Nova revisão gerada: REV ${proposal.rev}.`);
-        renderAll();
-        showNotification({
-            type: "success",
-            title: "Nova revisão criada",
-            message: `A proposta agora está na REV ${proposal.rev}.`
-        });
-        showBottomToast("Dados atualizados há poucos segundos");
-    }
-
-    function saveCommercialData() {
-        const proposal = getSelectedProposal();
-        if (!proposal) {
-            return;
-        }
-
-        if (state.saveProposalError) {
-            showSaveProposalError();
-            return;
-        }
-
-        const updatedValues = readFieldValues([
-            "rev", "responsavel", "dataEntregaProposta", "dataSolicitacaoProposta", "dataFechamento", "previsaoContratacao", "followUp",
-            "natureza", "ambienteOperacional", "unidade", "heatMap", "statusProposta", "motivoDeclinioPerda", "pt", "pcPtc",
-            "empresa", "uf", "embarcacaoLocal", "solicitante", "emailSolicitante", "telefoneSolicitante", "po", "rfi", "fonteLead", "segmentoCliente", "comentario"
-        ]);
-
-        if (!updatedValues.empresa || !updatedValues.dataEntregaProposta) {
-            showNotification({
-                type: "warning",
-                title: "Atenção",
-                message: "Preencha os dados principais antes de continuar."
-            });
-            return;
-        }
-
         persistProposalUpdate(proposal.id, {
             revisao: updatedValues.rev,
             responsavel: updatedValues.responsavel,
@@ -6692,7 +6533,8 @@ document.addEventListener("DOMContentLoaded", () => {
             .map((service) => String(service || "").trim())
             .filter(Boolean);
         const estimativaReceita = refs.proposalDrawer.querySelector("#scopeReceita")?.value.trim() ?? proposal.estimativaReceita;
-        const tempoContrato = refs.proposalDrawer.querySelector("#scopeTempo")?.value.trim() || proposal.tempoContratoDias;
+        const rawTempo = refs.proposalDrawer.querySelector("#scopeTempo")?.value.trim() ?? "";
+        const tempoContrato = rawTempo ? rawTempo.replace(/\D/g, "") : (proposal.tempoContratoDiasValor ? String(proposal.tempoContratoDiasValor) : "");
         const descricaoProposta = refs.proposalDrawer.querySelector("#scopeDescricaoProposta")?.value.trim() || "";
 
         if (!escopos.length) {
@@ -6739,7 +6581,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotification({
                 type: "warning",
                 title: "Erro ao salvar",
-                message: error.message || "Não foi possível atualizar escopo e valores da proposta."
+                message: Object.values(error.details || {}).join(" ") || error.message || "Não foi possível atualizar escopo e valores da proposta."
             });
         });
     }
@@ -8320,6 +8162,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         return options;
+    }
+
+    function getMotivoOptions(currentValue) {
+        const options = getDetailSelectOptions("motivoPerdaOptions", currentValue);
+        if (options.length) {
+            return ["Selecione o motivo", ...options];
+        }
+        return [...MOTIVO_OPTIONS];
     }
 
     function formatAgendaPeriodLabel(value) {

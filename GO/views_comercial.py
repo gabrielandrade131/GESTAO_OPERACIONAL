@@ -2018,6 +2018,7 @@ def _apply_commercial_bundle_overrides(financeiro, payload):
     empresa = _clean_text(payload.get("cliente"))
     unidade = _clean_text(payload.get("unidade"))
     embarcacao_local = _clean_text(payload.get("embarcacao_local"))
+    tipo_operacao = _clean_text(payload.get("tipo_operacao"))
 
     if empresa:
         overrides["empresa"] = empresa
@@ -2025,6 +2026,8 @@ def _apply_commercial_bundle_overrides(financeiro, payload):
         overrides["unidade"] = unidade
     if embarcacao_local:
         overrides["embarcacao_local"] = embarcacao_local
+    if tipo_operacao:
+        overrides["tipo_operacao"] = tipo_operacao
 
     bundle["overrides"] = overrides
     financeiro.follow_up = _dump_commercial_bundle(bundle)
@@ -2058,7 +2061,7 @@ def _parse_financeiro_campos_payload(payload):
         elif nome not in valid_codes:
             errors[f"campos[{index}].nome"] = "O item/equipamento informado é inválido."
 
-        if preco_unitario <= 0:
+        if preco_unitario < 0:
             errors[f"campos[{index}].preco_unitario"] = "Informe um preço unitário válido."
 
         if quantidade <= 0:
@@ -2153,26 +2156,34 @@ def _update_financeiro_from_payload(financeiro, payload):
 
     if "revisao" in payload:
         revisao_text = _clean_text(payload.get("revisao"))
-        if revisao_text.isdigit():
-            financeiro.revisao = int(revisao_text)
+        digits = re.sub(r"\D", "", revisao_text)
+        if digits:
+            financeiro.revisao = int(digits)
+        elif not revisao_text:
+            pass
         else:
             errors["revisao"] = "Informe uma revisão válida."
 
     if "heat_map" in payload:
         heat_map_text = _clean_text(payload.get("heat_map"))
-        if heat_map_text.isdigit():
-            financeiro.heat_map = int(heat_map_text)
-        elif heat_map_text:
+        digits = re.sub(r"\D", "", heat_map_text)
+        if digits:
+            financeiro.heat_map = int(digits[0])
+        elif not heat_map_text:
+            financeiro.heat_map = 0
+        else:
             errors["heat_map"] = "Informe um heat map válido."
 
     if "tempo_contrato_dias" in payload:
         tempo_text = _clean_text(payload.get("tempo_contrato_dias"))
         if not tempo_text:
             financeiro.tempo_contrato_dias = None
-        elif tempo_text.isdigit():
-            financeiro.tempo_contrato_dias = int(tempo_text)
         else:
-            errors["tempo_contrato_dias"] = "Informe um tempo de contrato válido."
+            digits = re.sub(r"\D", "", tempo_text)
+            if digits:
+                financeiro.tempo_contrato_dias = int(digits)
+            else:
+                errors["tempo_contrato_dias"] = "Informe um tempo de contrato válido."
 
     if "estimativo_receita" in payload:
         receita = _clean_text(payload.get("estimativo_receita"))
@@ -2192,12 +2203,14 @@ def _update_financeiro_from_payload(financeiro, payload):
         if not cleaned_value:
             continue
         resolved = _resolve_os_by_value(payload_key, cleaned_value)
-        if resolved is None and _matches_existing_os_reference(financeiro, model_field, cleaned_value):
-            continue
-        if resolved is None:
-            errors[payload_key] = f"Não foi possível localizar a referência para {payload_key.replace('_', ' ')}."
-            continue
-        setattr(financeiro, model_field, resolved)
+        if resolved is not None:
+            setattr(financeiro, model_field, resolved)
+        else:
+            # If no OS record matches, keep current FK or fallback to base OS
+            if getattr(financeiro, model_field, None) is None:
+                base_os = OrdemServico.objects.order_by("-id").first()
+                if base_os:
+                    setattr(financeiro, model_field, base_os)
 
     if "metodo" in payload:
         raw_method = _clean_text(payload.get("metodo"))
@@ -2205,30 +2218,63 @@ def _update_financeiro_from_payload(financeiro, payload):
             financeiro.metodo_cadastro = None
         else:
             method = _resolve_active_method(raw_method)
-            if method is None:
-                errors["metodo"] = "Selecione ou cadastre um método ativo."
-            else:
+            if method is not None:
                 financeiro.metodo_cadastro = method
+            else:
+                existing_method = getattr(financeiro.metodo_cadastro, "nome", "") or _resolve_os_string(financeiro.metodo, "metodo")
+                if raw_method.lower() == existing_method.lower():
+                    pass
+                else:
+                    method_any = MetodoOperacional.objects.filter(nome__iexact=raw_method).first()
+                    if method_any:
+                        financeiro.metodo_cadastro = method_any
+                    else:
+                        errors["metodo"] = "Selecione ou cadastre um método ativo."
 
     if "responsavel" in payload:
-        person = _resolve_active_person(payload.get("responsavel"), "responsavel")
-        if person is None and will_not_participate and not _clean_text(payload.get("responsavel")):
+        raw_resp = _clean_text(payload.get("responsavel"))
+        if not raw_resp and will_not_participate:
             financeiro.responsavel_cadastro = None
             financeiro.responsavel = "Não informado"
-        elif person is None:
-            errors["responsavel"] = "Selecione um responsável comercial ativo."
+        elif not raw_resp:
+            errors["responsavel"] = "Selecione um responsável comercial."
         else:
-            financeiro.responsavel_cadastro = person
-            financeiro.responsavel = person.nome
+            person = _resolve_active_person(raw_resp, "responsavel")
+            if person is not None:
+                financeiro.responsavel_cadastro = person
+                financeiro.responsavel = person.nome
+            else:
+                existing_resp = getattr(financeiro.responsavel_cadastro, "nome", "") or _clean_text(financeiro.responsavel)
+                if raw_resp.lower() == existing_resp.lower():
+                    financeiro.responsavel = raw_resp
+                else:
+                    person_any = ResponsavelCoordenador.objects.filter(nome__iexact=raw_resp, responsavel_comercial=True).first()
+                    if person_any:
+                        financeiro.responsavel_cadastro = person_any
+                        financeiro.responsavel = person_any.nome
+                    else:
+                        errors["responsavel"] = "Selecione um responsável comercial ativo."
 
     if "coordenador" in payload or "cordenador" in payload:
-        person = _resolve_active_person(payload.get("coordenador") or payload.get("cordenador"), "coordenador")
-        if person is None:
-            errors["coordenador"] = "Selecione um coordenador ativo."
+        raw_coord = _clean_text(payload.get("coordenador") or payload.get("cordenador"))
+        if not raw_coord:
+            financeiro.coordenador_cadastro = None
         else:
-            financeiro.coordenador_cadastro = person
+            person = _resolve_active_person(raw_coord, "coordenador")
+            if person is not None:
+                financeiro.coordenador_cadastro = person
+            else:
+                existing_coord = getattr(financeiro.coordenador_cadastro, "nome", "") or _resolve_os_string(financeiro.cordenador, "coordenador")
+                if raw_coord.lower() == existing_coord.lower():
+                    pass
+                else:
+                    person_any = ResponsavelCoordenador.objects.filter(nome__iexact=raw_coord, coordenador=True).first()
+                    if person_any:
+                        financeiro.coordenador_cadastro = person_any
+                    else:
+                        errors["coordenador"] = "Selecione um coordenador ativo."
 
-    if any(key in payload for key in ("follow_up", "cliente", "unidade", "embarcacao_local")) and "followup_item" not in payload:
+    if any(key in payload for key in ("follow_up", "cliente", "unidade", "embarcacao_local", "tipo_operacao")) and "followup_item" not in payload:
         _apply_commercial_bundle_overrides(financeiro, payload)
 
     if "escopo" in payload:

@@ -177,7 +177,7 @@ def _apply_dashboard_os_common_filters(qs, request):
     return qs
 
 
-def _dashboard_filtered_rdo_qs(request):
+def _dashboard_filtered_rdo_qs(request, orders=None):
     from .models import RDO
 
     start, end = _dashboard_rdo_period(request)
@@ -187,7 +187,13 @@ def _dashboard_filtered_rdo_qs(request):
     unidade = request.GET.get('unidade')
     os_existente = request.GET.get('os_existente')
 
+    if orders is not None and not request.GET.get('start') and not request.GET.get('end'):
+        bounds = RDO.objects.filter(ordem_servico__in=orders).aggregate(first=Min('data'), last=Max('data'))
+        start = bounds.get('first') or start
+        end = bounds.get('last') or end
     qs = RDO.objects.filter(data__gte=start, data__lte=end)
+    if orders is not None:
+        qs = qs.filter(ordem_servico__in=orders)
     if supervisor:
         qs = qs.filter(ordem_servico__supervisor__username=supervisor)
     if tanque:
@@ -1175,9 +1181,9 @@ def supervisores_status(request):
 
 @login_required(login_url='/login/')
 @require_GET
-def rdo_soma_hh_confinado_por_dia(request):
+def rdo_soma_hh_confinado_por_dia(request, orders=None):
     try:
-        qs, start, end = _dashboard_filtered_rdo_qs(request)
+        qs, start, end = _dashboard_filtered_rdo_qs(request, orders)
 
         from collections import Counter
         counter = Counter()
@@ -1250,9 +1256,9 @@ def rdo_soma_hh_confinado_por_dia(request):
 
 @login_required(login_url='/login/')
 @require_GET
-def rdo_soma_hh_fora_confinado_por_dia(request):
+def rdo_soma_hh_fora_confinado_por_dia(request, orders=None):
     try:
-        qs, start, end = _dashboard_filtered_rdo_qs(request)
+        qs, start, end = _dashboard_filtered_rdo_qs(request, orders)
 
         from collections import Counter
         counter = Counter()
@@ -1356,12 +1362,12 @@ def rdo_soma_hh_fora_confinado_por_dia(request):
 
 @login_required(login_url='/login/')
 @require_GET
-def rdo_ensacamento_por_dia(request):
+def rdo_ensacamento_por_dia(request, orders=None):
     try:
         from .models import RdoTanque
         from collections import Counter
 
-        qs, start, end = _dashboard_filtered_rdo_qs(request)
+        qs, start, end = _dashboard_filtered_rdo_qs(request, orders)
         rdo_rows = list(qs.order_by('data', 'id'))
         counter = Counter()
 
@@ -1433,12 +1439,12 @@ def rdo_ensacamento_por_dia(request):
 
 @login_required(login_url='/login/')
 @require_GET
-def rdo_tambores_por_dia(request):
+def rdo_tambores_por_dia(request, orders=None):
     try:
         from .models import RdoTanque
         from collections import Counter
 
-        qs, start, end = _dashboard_filtered_rdo_qs(request)
+        qs, start, end = _dashboard_filtered_rdo_qs(request, orders)
         rdo_rows = list(qs.order_by('data', 'id'))
         counter = Counter()
 
@@ -1535,6 +1541,10 @@ def rdo_tempo_bomba_por_dia(request):
             start = datetime.strptime(start_str, '%Y-%m-%d').date()
         else:
             start = end - td(days=29)
+        if orders is not None and not start_str and not end_str:
+            bounds = RDO.objects.filter(ordem_servico__in=orders).aggregate(first=Min('data'), last=Max('data'))
+            start = bounds.get('first') or start
+            end = bounds.get('last') or end
 
         qs = RDO.objects.filter(data__gte=start, data__lte=end)
         if supervisor:
@@ -2014,12 +2024,12 @@ def rdo_tempo_bomba_por_dia(request):
 
 @login_required(login_url='/login/')
 @require_GET
-def rdo_residuos_liquido_por_dia(request):
+def rdo_residuos_liquido_por_dia(request, orders=None):
     try:
         from .models import RdoTanque
         from collections import Counter
 
-        qs, start, end = _dashboard_filtered_rdo_qs(request)
+        qs, start, end = _dashboard_filtered_rdo_qs(request, orders)
         rdo_rows = list(qs.order_by('data', 'id'))
         counter = Counter()
 
@@ -2122,7 +2132,7 @@ def rdo_residuos_liquido_por_dia(request):
 
 @login_required(login_url='/login/')
 @require_GET
-def rdo_residuos_solido_por_dia(request):
+def rdo_residuos_solido_por_dia(request, orders=None):
     try:
         from .models import RDO
         from datetime import timedelta as td
@@ -2144,8 +2154,14 @@ def rdo_residuos_solido_por_dia(request):
             start = datetime.strptime(start_str, '%Y-%m-%d').date()
         else:
             start = end - td(days=29)
+        if orders is not None and not start_str and not end_str:
+            bounds = RDO.objects.filter(ordem_servico__in=orders).aggregate(first=Min('data'), last=Max('data'))
+            start = bounds.get('first') or start
+            end = bounds.get('last') or end
         
         qs = RDO.objects.filter(data__gte=start, data__lte=end)
+        if orders is not None:
+            qs = qs.filter(ordem_servico__in=orders)
         if supervisor:
             qs = qs.filter(ordem_servico__supervisor__username=supervisor)
         if tanque:
