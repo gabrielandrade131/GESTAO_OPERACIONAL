@@ -1896,11 +1896,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const documentosDisponiveis = Boolean(proposal.documentosDisponiveis);
         const pdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.pdfPattern, proposal.id) : "";
         const criticalAnalysisPdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id) : "";
+        const heatmapInfo = getHeatmapInfo(proposal.heatMap);
 
         return `
             <article class="proposal-card" data-proposal-id="${proposal.id}" role="button" tabindex="0" aria-label="Abrir detalhes de ${escapeHtml(proposal.numeroProposta)}">
                 <div class="proposal-card__top">
-                    <p class="proposal-number">${escapeHtml(proposal.numeroProposta)}</p>
+                    <div class="proposal-card__header-left">
+                        ${heatmapInfo ? `<span class="proposal-heatmap-dot proposal-heatmap-dot--${heatmapInfo.level}" title="Heat Map: ${escapeHtml(heatmapInfo.label)}" aria-label="Heat Map: ${escapeHtml(heatmapInfo.label)}"></span>` : ""}
+                        <p class="proposal-number">${escapeHtml(proposal.numeroProposta)}</p>
+                    </div>
                     <span class="proposal-badge proposal-badge--revision">REV ${escapeHtml(proposal.rev)}</span>
                 </div>
                 <p class="proposal-client">${escapeHtml(proposal.empresa)}</p>
@@ -7382,22 +7386,30 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderSummaryItem(icon, label, value) {
+        const heatmapInfo = label.toLowerCase().includes("heat map") ? getHeatmapInfo(value) : null;
         return `
             <article class="summary-item">
                 <span class="material-icons" aria-hidden="true">${icon}</span>
                 <div class="summary-item__content">
                     <span class="summary-item__label">${escapeHtml(label)}</span>
-                    <strong class="summary-item__value">${escapeHtml(value || "Não informado")}</strong>
+                    <strong class="summary-item__value" style="${heatmapInfo ? "display:inline-flex;align-items:center;gap:6px;" : ""}">
+                        ${heatmapInfo ? `<span class="proposal-heatmap-dot proposal-heatmap-dot--${heatmapInfo.level}"></span>` : ""}
+                        ${escapeHtml(value || "Não informado")}
+                    </strong>
                 </div>
             </article>
         `;
     }
 
     function renderCompactItem(label, value) {
+        const heatmapInfo = label.toLowerCase().includes("heat map") ? getHeatmapInfo(value) : null;
         return `
             <div class="compact-item">
                 <span class="compact-item__label">${escapeHtml(label)}</span>
-                <strong class="compact-item__value">${escapeHtml(value || "Não informado")}</strong>
+                <strong class="compact-item__value" style="${heatmapInfo ? "display:inline-flex;align-items:center;gap:6px;" : ""}">
+                    ${heatmapInfo ? `<span class="proposal-heatmap-dot proposal-heatmap-dot--${heatmapInfo.level}"></span>` : ""}
+                    ${escapeHtml(value || "Não informado")}
+                </strong>
             </div>
         `;
     }
@@ -8170,6 +8182,28 @@ document.addEventListener("DOMContentLoaded", () => {
             return ["Selecione o motivo", ...options];
         }
         return [...MOTIVO_OPTIONS];
+    }
+
+    function getHeatmapInfo(rawHeatmap) {
+        if (rawHeatmap === null || rawHeatmap === undefined || String(rawHeatmap).trim() === "") {
+            return null;
+        }
+        const str = String(rawHeatmap).trim();
+        const match = str.match(/\b([0-3])\b/);
+        const level = match ? match[1] : (["0", "1", "2", "3"].includes(str) ? str : null);
+
+        switch (level) {
+            case "0":
+                return { level: "0", label: "0 – Verde", color: "#22c55e" };
+            case "1":
+                return { level: "1", label: "1 – Amarelo", color: "#eab308" };
+            case "2":
+                return { level: "2", label: "2 – Laranja", color: "#f97316" };
+            case "3":
+                return { level: "3", label: "3 – Vermelho", color: "#ef4444" };
+            default:
+                return null;
+        }
     }
 
     function formatAgendaPeriodLabel(value) {
