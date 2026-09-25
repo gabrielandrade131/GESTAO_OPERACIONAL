@@ -14,6 +14,7 @@ from GO.models import Cliente, OrdemServico
 from GO import dashboard_views as daily
 from GO import views_dashboard_rdo as original
 from django.conf import settings
+from .tank_summary import tank_operations
 
 CLIENT_NAME = "SBM OFFSHORE"
 COMPLETED_CAROUSEL_OS = {6370}
@@ -90,8 +91,9 @@ def build_payload(filters, options, orders):
     card_params.update({key: filters[key] for key in mapping if filters.get(key) and key != "os"})
     if filters.get("os"):
         card_params["os_existente"] = filters["os"]
-    card_summary = [row for row in original.summary_operations_data(card_params)
-                    if row.get("cliente") == CLIENT_NAME]
+    card_summary = summary if card_params == summary_params else [
+        row for row in original.summary_operations_data(card_params)
+        if row.get("cliente") == CLIENT_NAME]
     status_counts = Counter(row.get("status") or "Sem status" for row in card_summary)
     status_order = ("Programada", "Em Andamento", "Paralizada", "Finalizada", "Cancelada")
     status_cards = [{"status": status, "count": status_counts.get(status, 0),
@@ -193,7 +195,8 @@ def build_payload(filters, options, orders):
                      "kpis": {"total_os": len(card_summary), "status_cards": status_cards,
                               "movements_total": sum(row["movements"] for row in movement_rows),
                               "movements_by_os": movement_rows},
-                     "operations": summary, "tank_progress": tank_progress}}
+                     "operations": summary, "tank_operations": tank_operations(orders, filters),
+                     "tank_progress": tank_progress}}
 
 
 @require_GET

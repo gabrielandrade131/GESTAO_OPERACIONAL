@@ -57,6 +57,29 @@ class ScopeTests(TestCase):
         self.assertEqual(self.get(unidade=str(self.other_unit)).status_code, 400)
         self.assertEqual(self.get(os=str(self.own_order)).status_code, 200)
 
+    def test_tank_summary_separates_tanks_and_merges_movements(self):
+        from .tank_summary import tank_operations
+        order = OrdemServico.objects.get(pk=self.own_order)
+        rdo = RDO.objects.create(ordem_servico=order, data=date(2026, 9, 4))
+        RdoTanque.objects.create(rdo=rdo, tanque_codigo='T1', ensacamento_dia=7,
+                                tambores_dia=2, numero_compartimentos=1,
+                                compartimentos_avanco_json='{"1":{"mecanizada":100,"fina":0}}')
+        RdoTanque.objects.create(rdo=rdo, tanque_codigo='T2', ensacamento_dia=90)
+        rows = tank_operations(OrdemServico.objects.filter(pk=self.own_order), {})
+        self.assertEqual(len(rows), 2)
+        first = next(row for row in rows if row['tanque'] == 'T1')
+        self.assertEqual(first['total_ensacamento'], 11)
+        self.assertEqual(first['total_tambores'], 7)
+        self.assertEqual(first['dias_operacao'], 3)
+        self.assertEqual(first['avanco'], 85)
+        self.assertEqual(first['metodo'], 'Manual')
+        self.assertEqual(first['primeiro_rdo'], '2026-09-01')
+        self.assertEqual(first['ultimo_rdo'], '2026-09-04')
+        filtered = tank_operations(OrdemServico.objects.filter(pk=self.own_order),
+                                  {'start':'2026-09-04', 'end':'2026-09-04'})
+        self.assertTrue(all(row['dias_operacao'] == 0 for row in filtered))
+        self.assertEqual(next(row for row in filtered if row['tanque']=='T1')['total_ensacamento'], 7)
+
     def test_requires_service_auth_and_get(self):
         self.assertEqual(self.client.get(self.url).status_code, 403)
         self.assertEqual(self.client.post(self.url).status_code, 405)
