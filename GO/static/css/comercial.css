@@ -1477,6 +1477,19 @@ body.comercial-is-loading .commercial-main-content {
     font-size: 0.84rem;
 }
 
+.proposal-scope {
+    margin: 0;
+    color: #475467;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    word-break: break-word;
+}
+
 .proposal-meta-row {
     display: flex;
     align-items: center;

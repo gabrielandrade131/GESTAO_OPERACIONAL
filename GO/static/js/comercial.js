@@ -79,7 +79,9 @@ document.addEventListener("DOMContentLoaded", () => {
         "Em Elaboração",
         "Declínio",
         "Avaliando escopo",
-        "Aguardando aprovação gestores"
+        "Aguardando aprovação gestores",
+        "Enviada",
+        "Em Negociação"
     ]);
 
     REASON_REQUIRED_STATUSES.clear();
@@ -1897,6 +1899,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const pdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.pdfPattern, proposal.id) : "";
         const criticalAnalysisPdfEndpoint = documentosDisponiveis ? buildEndpoint(state.endpoints.criticalAnalysisPdfPattern, proposal.id) : "";
         const heatmapInfo = getHeatmapInfo(proposal.heatMap);
+        const escopoText = proposal.escopo || proposal.servico || proposal.descricaoProposta || "";
 
         return `
             <article class="proposal-card" data-proposal-id="${proposal.id}" role="button" tabindex="0" aria-label="Abrir detalhes de ${escapeHtml(proposal.numeroProposta)}">
@@ -1910,6 +1913,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <p class="proposal-client">${escapeHtml(proposal.empresa)}</p>
                 <span class="proposal-badge proposal-badge--status is-${statusTone}">${escapeHtml(proposal.statusProposta || "Status não informado")}</span>
                 <p class="proposal-nature">${escapeHtml(proposal.ambienteOperacional || proposal.tipoOperacao || "Opera\u00e7\u00e3o n\u00e3o informada")}</p>
+                ${escopoText ? `<p class="proposal-scope" title="${escapeHtml(escopoText)}">${escapeHtml(escopoText)}</p>` : ""}
                 <div class="proposal-meta-row">
                     <span class="proposal-meta">
                         <span class="material-icons" aria-hidden="true">calendar_today</span>
@@ -3638,6 +3642,8 @@ document.addEventListener("DOMContentLoaded", () => {
             natureza: rawProposal.natureza || "",
             tipoOperacao: rawProposal.tipoOperacao || "",
             ambienteOperacional: rawProposal.ambienteOperacional || "",
+            escopo: rawProposal.escopo || rawProposal.servico || rawProposal.descricaoProposta || "",
+            servico: rawProposal.servico || rawProposal.escopo || "",
             documentosDisponiveis: Boolean(rawProposal.documentosDisponiveis),
             heatMap: String(rawProposal.heatMap ?? ""),
             estimativaReceitaValor: Number(rawProposal.estimativaReceitaValor ?? parseCurrencyValue(rawProposal.estimativaReceita)) || 0,
@@ -3930,53 +3936,70 @@ document.addEventListener("DOMContentLoaded", () => {
                 .filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
         )].sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
 
+        const getMergedFilterOptions = (metadataKey, defaultList, resolver) => {
+            const metaList = Array.isArray(commercialBootstrap?.metadata?.[metadataKey]) && commercialBootstrap.metadata[metadataKey].length
+                ? commercialBootstrap.metadata[metadataKey]
+                : defaultList;
+            const uniqueProposals = getUniqueValues(resolver);
+            const set = new Set();
+            const result = [];
+            [...(metaList || []), ...(uniqueProposals || [])].forEach((item) => {
+                const val = String(item?.value ?? item ?? "").trim();
+                if (val && !set.has(val)) {
+                    set.add(val);
+                    result.push(val);
+                }
+            });
+            return result;
+        };
+
         refs.filterStatus.innerHTML = `
             <option value="">Todos</option>
             ${COLUMN_DEFINITIONS.map((column) => `<option value="${column.key}">${column.label}</option>`).join("")}
         `;
         refs.filterNatureza.innerHTML = `
             <option value="">Todas</option>
-            ${getUniqueValues((proposal) => proposal.natureza).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("naturezas", NATUREZAS, (proposal) => proposal.natureza).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterStatusProposta.innerHTML = `
             <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.statusProposta).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("statusOptions", STATUS_OPTIONS, (proposal) => proposal.statusProposta).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterTipoOperacao.innerHTML = `
             <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.tipoOperacao).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("tipoOperacaoOptions", [], (proposal) => proposal.tipoOperacao).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterResponsavel.innerHTML = `
             <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.responsavel).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("responsaveis", RESPONSAVEIS, (proposal) => proposal.responsavel).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterCliente.innerHTML = `
             <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.empresa).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("clientes", [], (proposal) => proposal.empresa).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterUnidade.innerHTML = `
             <option value="">Todas</option>
-            ${getUniqueValues((proposal) => proposal.unidade).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("unidades", [], (proposal) => proposal.unidade).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterUf.innerHTML = `
             <option value="">Todas</option>
-            ${getUniqueValues((proposal) => proposal.uf).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("ufOptions", UFS, (proposal) => proposal.uf).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterSegmentoCliente.innerHTML = `
             <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.segmentoCliente).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("segmentoOptions", SEGMENTOS, (proposal) => proposal.segmentoCliente).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterFonteLead.innerHTML = `
             <option value="">Todas</option>
-            ${getUniqueValues((proposal) => proposal.fonteLead).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("fonteLeadOptions", FONTE_LEAD, (proposal) => proposal.fonteLead).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterHeatMap.innerHTML = `
             <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.heatMap).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            ${getMergedFilterOptions("heatMaps", HEATMAPS, (proposal) => proposal.heatMap).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
         refs.filterMotivoPerda.innerHTML = `
-            <option value="">Todos</option>
-            ${getUniqueValues((proposal) => proposal.motivoDeclinioPerda).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            <option value="">Todos os motivos</option>
+            ${getMergedFilterOptions("motivoPerdaOptions", MOTIVO_OPTIONS.slice(1), (proposal) => proposal.motivoDeclinioPerda).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
         `;
     }
 
